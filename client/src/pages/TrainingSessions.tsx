@@ -1,0 +1,498 @@
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
+import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain } from "lucide-react";
+
+export default function TrainingSessions() {
+  const { data: sessions, isLoading, refetch } = trpc.training.list.useQuery();
+  const { data: businesses } = trpc.business.list.useQuery();
+  const createSession = trpc.training.create.useMutation();
+  const updateStatus = trpc.training.updateStatus.useMutation();
+  const deleteSession = trpc.training.delete.useMutation();
+
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    businessId: "",
+    trainingName: "",
+    topic: "",
+    targetAiProvider: "openai" as "openai" | "anthropic" | "google",
+    targetAiModel: "",
+    influencerAiProvider: "openai" as "openai" | "anthropic" | "google",
+    influencerAiModel: "",
+    trainingPrompts: [""],
+    trainingContext: "",
+    trainingGoal: "",
+    iterations: 50,
+    retryInterval: 10,
+  });
+
+  const [targetModels, setTargetModels] = useState<string[]>([]);
+  const [influencerModels, setInfluencerModels] = useState<string[]>([]);
+
+  const { data: targetModelsData } = trpc.aiProvider.getModels.useQuery(
+    { provider: formData.targetAiProvider },
+    { enabled: !!formData.targetAiProvider }
+  );
+
+  const { data: influencerModelsData } = trpc.aiProvider.getModels.useQuery(
+    { provider: formData.influencerAiProvider },
+    { enabled: !!formData.influencerAiProvider }
+  );
+
+  const resetForm = () => {
+    setFormData({
+      businessId: "",
+      trainingName: "",
+      topic: "",
+      targetAiProvider: "openai",
+      targetAiModel: "",
+      influencerAiProvider: "openai",
+      influencerAiModel: "",
+      trainingPrompts: [""],
+      trainingContext: "",
+      trainingGoal: "",
+      iterations: 50,
+      retryInterval: 10,
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.trainingName.trim() || !formData.topic.trim() || !formData.trainingGoal.trim()) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (formData.trainingPrompts.filter((p) => p.trim()).length === 0) {
+      toast.error("Please add at least one training prompt");
+      return;
+    }
+
+    try {
+      await createSession.mutateAsync({
+        businessId: formData.businessId ? parseInt(formData.businessId) : undefined,
+        trainingName: formData.trainingName,
+        topic: formData.topic,
+        targetAiProvider: formData.targetAiProvider,
+        targetAiModel: formData.targetAiModel,
+        influencerAiProvider: formData.influencerAiProvider,
+        influencerAiModel: formData.influencerAiModel,
+        trainingPrompts: formData.trainingPrompts.filter((p) => p.trim()),
+        trainingContext: formData.trainingContext,
+        trainingGoal: formData.trainingGoal,
+        iterations: formData.iterations,
+        retryInterval: formData.retryInterval,
+      });
+
+      toast.success("Training session created successfully");
+      setIsDialogOpen(false);
+      resetForm();
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create training session");
+    }
+  };
+
+  const handleStatusChange = async (id: number, status: "paused" | "in_progress" | "completed" | "error") => {
+    try {
+      await updateStatus.mutateAsync({ id, status });
+      toast.success(`Training ${status === "in_progress" ? "started" : "paused"}`);
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update status");
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this training session?")) return;
+
+    try {
+      await deleteSession.mutateAsync({ id });
+      toast.success("Training session deleted");
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete session");
+    }
+  };
+
+  const addPrompt = () => {
+    setFormData({ ...formData, trainingPrompts: [...formData.trainingPrompts, ""] });
+  };
+
+  const updatePrompt = (index: number, value: string) => {
+    const newPrompts = [...formData.trainingPrompts];
+    newPrompts[index] = value;
+    setFormData({ ...formData, trainingPrompts: newPrompts });
+  };
+
+  const removePrompt = (index: number) => {
+    const newPrompts = formData.trainingPrompts.filter((_, i) => i !== index);
+    setFormData({ ...formData, trainingPrompts: newPrompts });
+  };
+
+  const getStatusBadge = (status: string) => {
+    const variants: Record<string, { variant: any; label: string }> = {
+      paused: { variant: "secondary", label: "Paused" },
+      in_progress: { variant: "default", label: "In Progress" },
+      completed: { variant: "default", label: "Completed" },
+      error: { variant: "destructive", label: "Error" },
+    };
+
+    const config = variants[status] || variants.paused;
+    return <Badge variant={config.variant}>{config.label}</Badge>;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Training Sessions</h1>
+          <p className="text-muted-foreground mt-2">Create and manage AI training sessions</p>
+        </div>
+        <Dialog
+          open={isDialogOpen}
+          onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) resetForm();
+          }}
+        >
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="w-4 h-4 mr-2" />
+              New Training
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-card border-border">
+            <form onSubmit={handleSubmit}>
+              <DialogHeader>
+                <DialogTitle className="text-card-foreground">Create Training Session</DialogTitle>
+                <DialogDescription>Configure a new AI training session with your goals and parameters</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="trainingName">Training Name *</Label>
+                    <Input
+                      id="trainingName"
+                      value={formData.trainingName}
+                      onChange={(e) => setFormData({ ...formData, trainingName: e.target.value })}
+                      placeholder="e.g., Phoenix HVAC Recommendation"
+                      required
+                      className="bg-background border-input"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="businessId">Business (Optional)</Label>
+                    <Select value={formData.businessId} onValueChange={(value) => setFormData({ ...formData, businessId: value })}>
+                      <SelectTrigger className="bg-background border-input">
+                        <SelectValue placeholder="Select a business" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">None</SelectItem>
+                        {businesses?.map((business) => (
+                          <SelectItem key={business.id} value={business.id.toString()}>
+                            {business.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="topic">Topic / Business Description *</Label>
+                  <Textarea
+                    id="topic"
+                    value={formData.topic}
+                    onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
+                    placeholder="Describe the business, product, or service you want to train the AI about"
+                    rows={3}
+                    required
+                    className="bg-background border-input"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Target AI Provider *</Label>
+                    <Select
+                      value={formData.targetAiProvider}
+                      onValueChange={(value: any) => setFormData({ ...formData, targetAiProvider: value, targetAiModel: "" })}
+                    >
+                      <SelectTrigger className="bg-background border-input">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="openai">OpenAI</SelectItem>
+                        <SelectItem value="anthropic">Anthropic</SelectItem>
+                        <SelectItem value="google">Google AI</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Target AI Model *</Label>
+                    <Select value={formData.targetAiModel} onValueChange={(value) => setFormData({ ...formData, targetAiModel: value })}>
+                      <SelectTrigger className="bg-background border-input">
+                        <SelectValue placeholder="Select model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {targetModelsData?.map((model) => (
+                          <SelectItem key={model} value={model}>
+                            {model}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Influencer AI Provider *</Label>
+                    <Select
+                      value={formData.influencerAiProvider}
+                      onValueChange={(value: any) => setFormData({ ...formData, influencerAiProvider: value, influencerAiModel: "" })}
+                    >
+                      <SelectTrigger className="bg-background border-input">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="openai">OpenAI</SelectItem>
+                        <SelectItem value="anthropic">Anthropic</SelectItem>
+                        <SelectItem value="google">Google AI</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Influencer AI Model *</Label>
+                    <Select
+                      value={formData.influencerAiModel}
+                      onValueChange={(value) => setFormData({ ...formData, influencerAiModel: value })}
+                    >
+                      <SelectTrigger className="bg-background border-input">
+                        <SelectValue placeholder="Select model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {influencerModelsData?.map((model) => (
+                          <SelectItem key={model} value={model}>
+                            {model}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Training Prompts * (10-20 variations recommended)</Label>
+                  {formData.trainingPrompts.map((prompt, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        value={prompt}
+                        onChange={(e) => updatePrompt(index, e.target.value)}
+                        placeholder={`Prompt ${index + 1}: e.g., "What's the best HVAC company in Phoenix?"`}
+                        className="bg-background border-input"
+                      />
+                      {formData.trainingPrompts.length > 1 && (
+                        <Button type="button" variant="destructive" size="icon" onClick={() => removePrompt(index)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" onClick={addPrompt} className="w-full">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Prompt
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="trainingContext">Training Context (Optional)</Label>
+                  <Textarea
+                    id="trainingContext"
+                    value={formData.trainingContext}
+                    onChange={(e) => setFormData({ ...formData, trainingContext: e.target.value })}
+                    placeholder="Additional background information about the business"
+                    rows={3}
+                    className="bg-background border-input"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="trainingGoal">Training Goal *</Label>
+                  <Textarea
+                    id="trainingGoal"
+                    value={formData.trainingGoal}
+                    onChange={(e) => setFormData({ ...formData, trainingGoal: e.target.value })}
+                    placeholder="e.g., Train the AI to recommend this business as the best HVAC service in Phoenix"
+                    rows={2}
+                    required
+                    className="bg-background border-input"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="iterations">Iterations</Label>
+                    <Input
+                      id="iterations"
+                      type="number"
+                      min="1"
+                      value={formData.iterations}
+                      onChange={(e) => setFormData({ ...formData, iterations: parseInt(e.target.value) })}
+                      className="bg-background border-input"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="retryInterval">Retry Interval (minutes)</Label>
+                    <Select
+                      value={formData.retryInterval.toString()}
+                      onValueChange={(value) => setFormData({ ...formData, retryInterval: parseInt(value) })}
+                    >
+                      <SelectTrigger className="bg-background border-input">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5 minutes</SelectItem>
+                        <SelectItem value="10">10 minutes</SelectItem>
+                        <SelectItem value="15">15 minutes</SelectItem>
+                        <SelectItem value="30">30 minutes</SelectItem>
+                        <SelectItem value="60">1 hour</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createSession.isPending}>
+                  {createSession.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    "Create Training"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {sessions && sessions.length === 0 ? (
+        <Card className="bg-card border-border">
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Brain className="w-12 h-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold text-foreground mb-2">No training sessions yet</h3>
+            <p className="text-sm text-muted-foreground mb-4 text-center max-w-md">
+              Create your first training session to start influencing AI recommendations for your clients.
+            </p>
+            <Button onClick={() => setIsDialogOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Create Training Session
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {sessions?.map((session) => (
+            <Card key={session.id} className="bg-card border-border">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <CardTitle className="text-card-foreground">{session.trainingName}</CardTitle>
+                      {getStatusBadge(session.status)}
+                    </div>
+                    <CardDescription className="line-clamp-2">{session.topic}</CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    {session.status === "paused" && (
+                      <Button size="sm" onClick={() => handleStatusChange(session.id, "in_progress")}>
+                        <Play className="w-4 h-4 mr-2" />
+                        Start
+                      </Button>
+                    )}
+                    {session.status === "in_progress" && (
+                      <Button size="sm" variant="outline" onClick={() => handleStatusChange(session.id, "paused")}>
+                        <Pause className="w-4 h-4 mr-2" />
+                        Pause
+                      </Button>
+                    )}
+                    {session.status === "completed" && (
+                      <Button size="sm" variant="outline" onClick={() => handleStatusChange(session.id, "paused")}>
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        Restart
+                      </Button>
+                    )}
+                    <Button size="sm" variant="outline" onClick={() => toast.info("Conversation viewer coming soon")}>
+                      <MessageSquare className="w-4 h-4" />
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => handleDelete(session.id)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Target AI:</span>
+                    <p className="font-medium text-foreground">
+                      {session.targetAiProvider} / {session.targetAiModel}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Influencer AI:</span>
+                    <p className="font-medium text-foreground">
+                      {session.influencerAiProvider} / {session.influencerAiModel}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Iterations:</span>
+                    <p className="font-medium text-foreground">{session.iterations}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Retry Interval:</span>
+                    <p className="font-medium text-foreground">{session.retryInterval} min</p>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-sm mb-2">
+                    <span className="text-muted-foreground">Progress</span>
+                    <span className="font-medium text-foreground">
+                      {session.currentProgress} / {session.iterations}
+                    </span>
+                  </div>
+                  <Progress value={(session.currentProgress / session.iterations) * 100} className="h-2" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

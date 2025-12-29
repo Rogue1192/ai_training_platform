@@ -4,32 +4,60 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
+import DashboardLayout from "./components/DashboardLayout";
+import Dashboard from "./pages/Dashboard";
+import Businesses from "./pages/Businesses";
+import TrainingSessions from "./pages/TrainingSessions";
+import ScheduledJobs from "./pages/ScheduledJobs";
+import Settings from "./pages/Settings";
+import { LayoutDashboard, Building2, Brain, Calendar, Settings as SettingsIcon } from "lucide-react";
+
+const navigationItems = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/businesses", label: "Businesses", icon: Building2 },
+  { href: "/training", label: "Training", icon: Brain },
+  { href: "/schedule", label: "Schedule", icon: Calendar },
+  { href: "/settings", label: "Settings", icon: SettingsIcon },
+];
 
 function Router() {
-  // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
+      <Route path="/">
+        <DashboardLayout navigationItems={navigationItems}>
+          <Dashboard />
+        </DashboardLayout>
+      </Route>
+      <Route path="/businesses">
+        <DashboardLayout navigationItems={navigationItems}>
+          <Businesses />
+        </DashboardLayout>
+      </Route>
+      <Route path="/training">
+        <DashboardLayout navigationItems={navigationItems}>
+          <TrainingSessions />
+        </DashboardLayout>
+      </Route>
+      <Route path="/schedule">
+        <DashboardLayout navigationItems={navigationItems}>
+          <ScheduledJobs />
+        </DashboardLayout>
+      </Route>
+      <Route path="/settings">
+        <DashboardLayout navigationItems={navigationItems}>
+          <Settings />
+        </DashboardLayout>
+      </Route>
+      <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
-
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
+      <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster />
           <Router />

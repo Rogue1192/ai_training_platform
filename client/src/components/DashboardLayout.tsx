@@ -27,21 +27,28 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Page 1", path: "/" },
-  { icon: Users, label: "Page 2", path: "/some-path" },
-];
-
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 480;
 
+interface NavigationItem {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
 export default function DashboardLayout({
   children,
+  navigationItems,
 }: {
   children: React.ReactNode;
+  navigationItems?: NavigationItem[];
 }) {
+  const menuItems = navigationItems || [
+    { icon: LayoutDashboard, label: "Page 1", path: "/" },
+    { icon: Users, label: "Page 2", path: "/some-path" },
+  ];
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
@@ -90,7 +97,7 @@ export default function DashboardLayout({
         } as CSSProperties
       }
     >
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
+      <DashboardLayoutContent setSidebarWidth={setSidebarWidth} menuItems={menuItems}>
         {children}
       </DashboardLayoutContent>
     </SidebarProvider>
@@ -100,11 +107,13 @@ export default function DashboardLayout({
 type DashboardLayoutContentProps = {
   children: React.ReactNode;
   setSidebarWidth: (width: number) => void;
+  menuItems: any[];
 };
 
 function DashboardLayoutContent({
   children,
   setSidebarWidth,
+  menuItems,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
@@ -112,7 +121,10 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
+  const activeMenuItem = menuItems.find((item: any) => {
+    const itemPath = 'path' in item ? item.path : item.href;
+    return itemPath === location;
+  });
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -180,13 +192,14 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
-                const isActive = location === item.path;
+              {menuItems.map((item) => {
+                const itemPath = 'path' in item ? item.path : item.href;
+                const isActive = location === itemPath;
                 return (
-                  <SidebarMenuItem key={item.path}>
+                  <SidebarMenuItem key={itemPath}>
                     <SidebarMenuButton
                       isActive={isActive}
-                      onClick={() => setLocation(item.path)}
+                      onClick={() => setLocation(itemPath)}
                       tooltip={item.label}
                       className={`h-10 transition-all font-normal`}
                     >
