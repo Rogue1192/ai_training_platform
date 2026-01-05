@@ -83,3 +83,11 @@
 - [ ] Push to GitHub repository
 - [ ] Document setup instructions
 - [ ] Document API provider configuration
+
+
+## Critical Security Fixes
+- [x] Fix hardcoded salt in encryption system
+- [x] Implement job queue to prevent memory leaks in training sessions
+- [x] Fix API key exposure by implementing just-in-time decryption
+- [x] Add rate limiting and retry logic for AI API calls (built into queue)
+- [ ] Add error notifications for failed training sessions

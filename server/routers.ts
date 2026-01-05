@@ -237,7 +237,7 @@ export const appRouter = router({
           status: z.enum(["paused", "in_progress", "completed", "error"]),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const { updateTrainingSession } = await import("./db");
         const { startTrainingSession } = await import("./trainingEngine");
         
@@ -245,7 +245,7 @@ export const appRouter = router({
         
         // Start training in background if status is in_progress
         if (input.status === "in_progress") {
-          startTrainingSession(input.id);
+          startTrainingSession(input.id, ctx.user.id);
         }
         
         return { success: true };
