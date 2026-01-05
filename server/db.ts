@@ -1,5 +1,6 @@
-import { eq, desc, and, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { eq, desc, sql, and } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import {
   InsertUser,
   users,
@@ -24,14 +25,17 @@ import {
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _client: ReturnType<typeof postgres> | null = null;
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _client = postgres(process.env.DATABASE_URL);
+      _db = drizzle(_client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
+      _client = null;
     }
   }
   return _db;
@@ -89,7 +93,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
@@ -116,10 +121,8 @@ export async function createBusiness(business: InsertBusiness): Promise<Business
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(businesses).values(business);
-  const insertedId = Number(result[0].insertId);
-
-  const inserted = await db.select().from(businesses).where(eq(businesses.id, insertedId)).limit(1);
+  const result = await db.insert(businesses).values(business).returning();
+  const inserted = result;
   return inserted[0]!;
 }
 
@@ -158,10 +161,8 @@ export async function createApiKey(apiKey: InsertApiKey): Promise<ApiKey> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(apiKeys).values(apiKey);
-  const insertedId = Number(result[0].insertId);
-
-  const inserted = await db.select().from(apiKeys).where(eq(apiKeys.id, insertedId)).limit(1);
+  const result = await db.insert(apiKeys).values(apiKey).returning();
+  const inserted = result;
   return inserted[0]!;
 }
 
@@ -205,10 +206,8 @@ export async function createTrainingSession(session: InsertTrainingSession): Pro
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(trainingSessions).values(session);
-  const insertedId = Number(result[0].insertId);
-
-  const inserted = await db.select().from(trainingSessions).where(eq(trainingSessions.id, insertedId)).limit(1);
+  const result = await db.insert(trainingSessions).values(session).returning();
+  const inserted = result;
   return inserted[0]!;
 }
 
@@ -247,10 +246,8 @@ export async function createTrainingConversation(conversation: InsertTrainingCon
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(trainingConversations).values(conversation);
-  const insertedId = Number(result[0].insertId);
-
-  const inserted = await db.select().from(trainingConversations).where(eq(trainingConversations.id, insertedId)).limit(1);
+  const result = await db.insert(trainingConversations).values(conversation).returning();
+  const inserted = result;
   return inserted[0]!;
 }
 
@@ -271,10 +268,8 @@ export async function createScheduledJob(job: InsertScheduledJob): Promise<Sched
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(scheduledJobs).values(job);
-  const insertedId = Number(result[0].insertId);
-
-  const inserted = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, insertedId)).limit(1);
+  const result = await db.insert(scheduledJobs).values(job).returning();
+  const inserted = result;
   return inserted[0]!;
 }
 

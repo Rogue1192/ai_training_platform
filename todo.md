@@ -106,3 +106,13 @@
 - [x] Remove remaining OAuth initialization code
 - [ ] Fix undefined path resolution error
 - [ ] Test deployment on Railway
+
+
+## PostgreSQL Migration
+- [x] Install PostgreSQL dependencies (postgres driver)
+- [x] Update Drizzle config to use PostgreSQL
+- [x] Convert schema from MySQL to PostgreSQL syntax
+- [x] Update database connection code
+- [x] Generate PostgreSQL migrations
+- [x] Update deployment documentation
+- [ ] Test with real Supabase database connection

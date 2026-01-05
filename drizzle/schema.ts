@@ -1,144 +1,158 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, json, boolean } from "drizzle-orm/mysql-core";
+import { integer, pgEnum, pgTable, serial, text, timestamp, varchar, json, boolean } from "drizzle-orm/pg-core";
 
 /**
  * Core user table backing auth flow.
+ * Extend this file with additional tables as your product grows.
+ * Columns use camelCase to match both database fields and generated types.
  */
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
+
+// Enums
+export const roleEnum = pgEnum("role", ["user", "admin"]);
+export const aiProviderEnum = pgEnum("ai_provider", ["openai", "anthropic", "google"]);
+export const apiKeyStatusEnum = pgEnum("api_key_status", ["connected", "disconnected"]);
+export const trainingStatusEnum = pgEnum("training_status", ["paused", "in_progress", "completed", "error"]);
+export const scheduleTypeEnum = pgEnum("schedule_type", ["daily", "weekly", "monthly", "custom"]);
+
+// Users table
+export const users = pgTable("users", {
+  /**
+   * Surrogate primary key. Auto-incremented numeric value managed by the database.
+   * Use this for relations between tables.
+   */
+  id: serial("id").primaryKey(),
+  /** Supabase Auth identifier (user.id) returned from authentication. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: roleEnum("role").default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-/**
- * Target businesses/clients for AI training
- */
-export const businesses = mysqlTable("businesses", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+// Businesses table
+export const businesses = pgTable("businesses", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 255 }).notNull(),
-  businessType: varchar("businessType", { length: 100 }), // e.g., "HVAC Company", "Fence Company"
-  location: varchar("location", { length: 255 }), // e.g., "Riverside, CA"
+  businessType: varchar("businessType", { length: 100 }),
+  location: varchar("location", { length: 255 }),
   description: text("description"),
   website: varchar("website", { length: 500 }),
   phone: varchar("phone", { length: 50 }),
   address: text("address"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 export type Business = typeof businesses.$inferSelect;
 export type InsertBusiness = typeof businesses.$inferInsert;
 
-/**
- * API keys for AI providers (encrypted)
- */
-export const apiKeys = mysqlTable("apiKeys", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  provider: mysqlEnum("provider", ["openai", "anthropic", "google"]).notNull(),
-  encryptedKey: text("encryptedKey").notNull(), // AES-256 encrypted
-  status: mysqlEnum("status", ["connected", "disconnected"]).default("connected").notNull(),
+// API Keys table
+export const apiKeys = pgTable("apiKeys", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  provider: aiProviderEnum("provider").notNull(),
+  encryptedKey: text("encryptedKey").notNull(),
+  status: apiKeyStatusEnum("status").default("connected").notNull(),
   lastVerified: timestamp("lastVerified"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = typeof apiKeys.$inferInsert;
 
-/**
- * Training sessions
- */
-export const trainingSessions = mysqlTable("trainingSessions", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  businessId: int("businessId").references(() => businesses.id, { onDelete: "set null" }),
+// Training Sessions table
+export const trainingSessions = pgTable("trainingSessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  businessId: integer("businessId").references(() => businesses.id, { onDelete: "set null" }),
   trainingName: varchar("trainingName", { length: 255 }).notNull(),
-  topic: text("topic").notNull(), // Business/product description
-  targetAiProvider: mysqlEnum("targetAiProvider", ["openai", "anthropic", "google"]).notNull(),
+  topic: text("topic").notNull(),
+  targetAiProvider: aiProviderEnum("targetAiProvider").notNull(),
   targetAiModel: varchar("targetAiModel", { length: 100 }).notNull(),
-  influencerAiProvider: mysqlEnum("influencerAiProvider", ["openai", "anthropic", "google"]).notNull(),
+  influencerAiProvider: aiProviderEnum("influencerAiProvider").notNull(),
   influencerAiModel: varchar("influencerAiModel", { length: 100 }).notNull(),
-  trainingPrompts: json("trainingPrompts").$type<string[]>().notNull(), // Array of prompt variations
-  trainingContext: text("trainingContext"), // Background info about the business
-  trainingGoal: text("trainingGoal").notNull(), // Specific goal for the AI
-  iterations: int("iterations").notNull().default(50),
-  retryInterval: int("retryInterval").notNull().default(10), // in minutes
-  currentProgress: int("currentProgress").notNull().default(0),
-  status: mysqlEnum("status", ["paused", "in_progress", "completed", "error"]).default("paused").notNull(),
+  trainingPrompts: json("trainingPrompts").notNull(),
+  trainingContext: text("trainingContext"),
+  trainingGoal: text("trainingGoal").notNull(),
+  iterations: integer("iterations").default(50).notNull(),
+  retryInterval: integer("retryInterval").default(10).notNull(),
+  currentProgress: integer("currentProgress").default(0).notNull(),
+  status: trainingStatusEnum("status").default("paused").notNull(),
   errorMessage: text("errorMessage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   completedAt: timestamp("completedAt"),
 });
 
 export type TrainingSession = typeof trainingSessions.$inferSelect;
 export type InsertTrainingSession = typeof trainingSessions.$inferInsert;
 
-/**
- * Training conversations - stores the actual AI dialogue
- */
-export const trainingConversations = mysqlTable("trainingConversations", {
-  id: int("id").autoincrement().primaryKey(),
-  trainingSessionId: int("trainingSessionId").notNull().references(() => trainingSessions.id, { onDelete: "cascade" }),
-  iterationNumber: int("iterationNumber").notNull(),
-  conversationHistory: json("conversationHistory").$type<Array<{
-    role: "user" | "assistant";
-    content: string;
-    timestamp: number;
-  }>>().notNull(),
+// Training Conversations table
+export const trainingConversations = pgTable("trainingConversations", {
+  id: serial("id").primaryKey(),
+  trainingSessionId: integer("trainingSessionId")
+    .notNull()
+    .references(() => trainingSessions.id, { onDelete: "cascade" }),
+  iterationNumber: integer("iterationNumber").notNull(),
+  conversationHistory: json("conversationHistory").notNull(),
   promptUsed: text("promptUsed").notNull(),
   goalAchieved: boolean("goalAchieved").default(false).notNull(),
-  responseTime: int("responseTime"), // in milliseconds
+  responseTime: integer("responseTime"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export type TrainingConversation = typeof trainingConversations.$inferSelect;
 export type InsertTrainingConversation = typeof trainingConversations.$inferInsert;
 
-/**
- * Scheduled training jobs
- */
-export const scheduledJobs = mysqlTable("scheduledJobs", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  trainingSessionId: int("trainingSessionId").references(() => trainingSessions.id, { onDelete: "cascade" }),
-  businessId: int("businessId").references(() => businesses.id, { onDelete: "cascade" }),
+// Scheduled Jobs table
+export const scheduledJobs = pgTable("scheduledJobs", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  trainingSessionId: integer("trainingSessionId").references(() => trainingSessions.id, {
+    onDelete: "cascade",
+  }),
+  businessId: integer("businessId").references(() => businesses.id, { onDelete: "cascade" }),
   jobName: varchar("jobName", { length: 255 }).notNull(),
-  scheduleType: mysqlEnum("scheduleType", ["daily", "weekly", "monthly", "custom"]).notNull(),
-  cronExpression: varchar("cronExpression", { length: 100 }), // For custom schedules
+  scheduleType: scheduleTypeEnum("scheduleType").notNull(),
+  cronExpression: varchar("cronExpression", { length: 100 }),
   isActive: boolean("isActive").default(true).notNull(),
   lastRun: timestamp("lastRun"),
   nextRun: timestamp("nextRun"),
-  runCount: int("runCount").default(0).notNull(),
+  runCount: integer("runCount").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 export type ScheduledJob = typeof scheduledJobs.$inferSelect;
 export type InsertScheduledJob = typeof scheduledJobs.$inferInsert;
 
-/**
- * Platform statistics and metrics
- */
-export const platformMetrics = mysqlTable("platformMetrics", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+// Platform Metrics table
+export const platformMetrics = pgTable("platformMetrics", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   date: timestamp("date").notNull(),
-  activeTrainings: int("activeTrainings").default(0).notNull(),
-  completedGoals: int("completedGoals").default(0).notNull(),
-  apiCallsToday: int("apiCallsToday").default(0).notNull(),
-  avgResponseTime: int("avgResponseTime").default(0).notNull(), // in milliseconds
+  activeTrainings: integer("activeTrainings").default(0).notNull(),
+  completedGoals: integer("completedGoals").default(0).notNull(),
+  apiCallsToday: integer("apiCallsToday").default(0).notNull(),
+  avgResponseTime: integer("avgResponseTime").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

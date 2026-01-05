@@ -1,359 +1,247 @@
-# Railway Deployment Guide for AI Training Platform
+# Railway Deployment Guide (Supabase Database)
 
-This guide walks you through deploying the AI Training Platform to Railway with all required services.
+This guide will help you deploy the AI Training Platform to Railway using Supabase for both authentication and database.
+
+## Architecture Overview
+
+- **Railway**: Hosts the web application and Redis
+- **Supabase**: Provides authentication and PostgreSQL database
+- **No MySQL needed**: Everything uses Supabase PostgreSQL
 
 ## Prerequisites
 
-- Railway account (sign up at https://railway.app)
-- GitHub account with the ai-trainer repository
-- Credit card for Railway (they offer $5 free credit monthly)
-
----
+- Railway account (https://railway.app)
+- Supabase project set up (follow SUPABASE_SETUP.md first)
+- GitHub repository with your code
 
 ## Step 1: Create Railway Project
 
-1. Go to https://railway.app and sign in
+1. Go to https://railway.app
 2. Click **"New Project"**
 3. Select **"Deploy from GitHub repo"**
-4. Authorize Railway to access your GitHub account
-5. Select the **`Rogue1192/ai-trainer`** repository
-6. Railway will automatically detect the project and start building
+4. Choose `Rogue1192/ai_training_platform`
+5. Railway will automatically detect the configuration
 
----
+## Step 2: Add Redis Database
 
-## Step 2: Add MySQL Database
+1. In your Railway project, click **"+ New"**
+2. Select **"Database"** → **"Redis"**
+3. Redis will be automatically provisioned
 
-The platform requires a MySQL database for storing businesses, training sessions, and API keys.
+## Step 3: Configure Environment Variables
 
-1. In your Railway project dashboard, click **"New"**
-2. Select **"Database"** → **"Add MySQL"**
-3. Railway will provision a MySQL instance and automatically set these environment variables:
-   - `MYSQL_URL`
-   - `MYSQL_HOST`
-   - `MYSQL_PORT`
-   - `MYSQL_USER`
-   - `MYSQL_PASSWORD`
-   - `MYSQL_DATABASE`
+Click on your **ai-trainer** web service, go to **Variables** tab, and add:
 
-4. **Important**: The app expects `DATABASE_URL`, so we need to add it:
-   - Click on your **web service** (not the database)
-   - Go to **"Variables"** tab
-   - Click **"New Variable"**
-   - Add: `DATABASE_URL` = `${{MySQL.MYSQL_URL}}`
-   - This references the MySQL connection string
-
----
-
-## Step 3: Add Redis Database
-
-Redis is required for the job queue system that manages training sessions.
-
-1. In your Railway project dashboard, click **"New"**
-2. Select **"Database"** → **"Add Redis"**
-3. Railway will provision Redis and set these variables:
-   - `REDIS_URL`
-   - `REDIS_HOST`
-   - `REDIS_PORT`
-
-4. The app will automatically use these variables (already configured in `trainingQueue.ts`)
-
----
-
-## Step 4: Configure Environment Variables
-
-Add the required environment variables to your web service:
-
-1. Click on your **web service**
-2. Go to **"Variables"** tab
-3. Add these variables:
-
-### Required Variables:
+### Supabase Configuration
 
 ```
-DATABASE_URL=${{MySQL.MYSQL_URL}}
+SUPABASE_URL=https://dhmqeiqeemksoglvhjro.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<from Supabase Settings → API>
+VITE_SUPABASE_URL=https://dhmqeiqeemksoglvhjro.supabase.co
+VITE_SUPABASE_ANON_KEY=<from Supabase Settings → API>
+```
+
+### Database Configuration
+
+```
+DATABASE_URL=<from Supabase Settings → Database → Connection string>
+```
+
+Format: `postgresql://postgres:[PASSWORD]@db.dhmqeiqeemksoglvhjro.supabase.co:5432/postgres`
+
+### Redis Configuration
+
+```
 REDIS_HOST=${{Redis.REDIS_HOST}}
 REDIS_PORT=${{Redis.REDIS_PORT}}
-JWT_SECRET=<generate-a-random-string-here>
+```
+
+### Security Configuration
+
+```
+JWT_SECRET=<generate with: openssl rand -base64 32>
 NODE_ENV=production
 ```
 
-### Generate JWT_SECRET:
+## Step 4: Run Database Migrations
 
-You can generate a secure random string using:
-```bash
-# On Linux/Mac
-openssl rand -base64 32
+### Option A: Temporary Start Command (Recommended)
 
-# Or use an online generator
-# https://generate-secret.vercel.app/32
-```
+1. Go to **Settings** tab
+2. Find **"Start Command"**
+3. Change from `pnpm start` to:
+   ```
+   pnpm db:push && pnpm start
+   ```
+4. Click **"Deploy"** (top right)
+5. Watch the logs - you should see migration output
+6. After successful deployment, change Start Command back to:
+   ```
+   pnpm start
+   ```
 
-### Optional Variables (for OAuth):
+### Option B: Use Supabase SQL Editor
 
-If you're using Manus OAuth (already configured in the template):
-```
-OAUTH_SERVER_URL=<your-oauth-server>
-VITE_OAUTH_PORTAL_URL=<your-oauth-portal>
-VITE_APP_ID=<your-app-id>
-OWNER_OPEN_ID=<your-open-id>
-OWNER_NAME=<your-name>
-```
+1. Go to Supabase project → **SQL Editor**
+2. Copy contents of `drizzle/0000_smiling_sir_ram.sql`
+3. Paste and run in SQL Editor
+4. Deploy normally on Railway
 
----
+## Step 5: Verify Deployment
 
-## Step 5: Configure Build Settings
-
-Railway should auto-detect the build settings, but verify:
-
-1. Click on your **web service**
-2. Go to **"Settings"** tab
-3. Verify these settings:
-
-**Build Command:**
-```
-pnpm install && pnpm build
-```
-
-**Start Command:**
-```
-pnpm start
-```
-
-**Root Directory:** (leave empty or set to `/`)
-
----
-
-## Step 6: Run Database Migrations
-
-After the first deployment, you need to push the database schema:
-
-1. In Railway, click on your **web service**
+1. Click on your web service
 2. Go to **"Deployments"** tab
 3. Click on the latest deployment
-4. Click **"View Logs"**
-5. You should see the app starting
+4. Check logs for:
+   - ✅ "Server running on..."
+   - ✅ "[Supabase] Initialized successfully"
+   - ❌ No "supabaseUrl is required" errors
 
-To run migrations, you have two options:
+5. Click the deployment URL to open your app
+6. Try logging in at `/login`
 
-### Option A: Use Railway CLI (Recommended)
+## Estimated Costs
 
-```bash
-# Install Railway CLI
-npm i -g @railway/cli
+### Development (Free Tier)
+- Railway: $5/month credit (free)
+- Supabase: Free tier (500MB database, 50MB storage)
+- **Total**: $0/month
 
-# Login
-railway login
-
-# Link to your project
-railway link
-
-# Run migrations
-railway run pnpm db:push
-```
-
-### Option B: Add Migration to Start Script
-
-Modify `package.json` to run migrations on startup:
-
-```json
-{
-  "scripts": {
-    "start": "pnpm db:push && NODE_ENV=production node dist/index.js"
-  }
-}
-```
-
-Then redeploy.
-
----
-
-## Step 7: Verify Deployment
-
-1. Railway will provide a public URL (e.g., `https://your-app.up.railway.app`)
-2. Click on **"Settings"** → **"Networking"** to see your URL
-3. Visit the URL to verify the app is running
-4. You should see the login page
-
----
-
-## Step 8: Set Up Custom Domain (Optional)
-
-1. In Railway, click on your **web service**
-2. Go to **"Settings"** → **"Networking"**
-3. Click **"Add Custom Domain"**
-4. Enter your domain (e.g., `ai-trainer.yourdomain.com`)
-5. Railway will provide DNS records to add to your domain registrar:
-   - Add a CNAME record pointing to Railway's domain
-
----
-
-## Step 9: Monitor Your Deployment
-
-### View Logs:
-1. Click on your **web service**
-2. Go to **"Deployments"**
-3. Click on a deployment to view logs
-
-### Check Metrics:
-1. Go to **"Observability"** tab
-2. View CPU, Memory, and Network usage
-
-### Check Database:
-1. Click on your **MySQL** service
-2. Go to **"Data"** tab to view tables
-3. Or use **"Connect"** to get connection details for a SQL client
-
----
-
-## Step 10: Configure AI Provider API Keys
-
-Once deployed, you need to add your AI provider API keys:
-
-1. Visit your deployed app URL
-2. Log in (or create an account)
-3. Go to **Settings** page
-4. Add your API keys for:
-   - OpenAI
-   - Anthropic
-   - Google AI
-
-These will be encrypted and stored securely in the database.
-
----
+### Production
+- Railway Web Service: ~$5-10/month
+- Railway Redis: ~$5/month
+- Supabase Pro: $25/month (8GB database, 100GB storage)
+- **Total**: ~$35-40/month
 
 ## Troubleshooting
 
-### Build Fails
+### Deployment Fails with "supabaseUrl is required"
 
-**Error: "Cannot find module"**
-- Check that all dependencies are in `package.json`
-- Try: `railway run pnpm install`
+**Cause**: Missing Supabase environment variables
 
-**Error: "Build command failed"**
-- Check build logs for specific errors
-- Verify Node version (should be 22.x)
+**Fix**:
+1. Verify all 4 Supabase variables are set in Railway
+2. Check variable names match exactly (case-sensitive)
+3. Redeploy after adding variables
 
-### Database Connection Fails
+### Database Connection Errors
 
-**Error: "ECONNREFUSED" or "Database not available"**
-- Verify `DATABASE_URL` is set correctly
-- Check MySQL service is running
-- Try restarting the web service
+**Cause**: Incorrect DATABASE_URL or Supabase IP restrictions
 
-### Redis Connection Fails
+**Fix**:
+1. Verify DATABASE_URL format is correct
+2. Make sure password is correct (no brackets)
+3. In Supabase: Settings → Database → disable "Restrict connections to IPv4"
 
-**Error: "Redis connection refused"**
-- Verify Redis service is running
-- Check `REDIS_HOST` and `REDIS_PORT` are set
-- Redis should be on the same Railway project
+### Redis Connection Errors
 
-### App Crashes on Startup
+**Cause**: Redis service not linked or wrong variables
 
-**Check logs for:**
-- Missing environment variables
-- Database migration errors
-- Port binding issues
+**Fix**:
+1. Make sure Redis service is created in Railway
+2. Verify REDIS_HOST and REDIS_PORT use Railway references: `${{Redis.REDIS_HOST}}`
+3. Restart the web service
 
-**Common fixes:**
-- Ensure `PORT` is not hardcoded (Railway sets it automatically)
-- Check all required env vars are set
-- Verify database is accessible
+### Migrations Don't Run
 
----
+**Cause**: Start command doesn't include migration
 
-## Cost Estimates
+**Fix**:
+1. Use temporary start command: `pnpm db:push && pnpm start`
+2. Or run migrations manually in Supabase SQL Editor
+3. Check logs for migration errors
 
-Railway pricing (as of 2024):
+### App Loads But Can't Login
 
-- **Free Tier**: $5 credit/month
-  - Good for testing
-  - May need to upgrade for production
+**Cause**: Frontend Supabase variables missing
 
-- **Hobby Plan**: $5/month + usage
-  - MySQL: ~$5-10/month
-  - Redis: ~$5/month
-  - Web Service: ~$5-15/month (depending on usage)
-  - **Total**: ~$20-35/month
+**Fix**:
+1. Verify `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set
+2. These MUST start with `VITE_` to be available in frontend
+3. Redeploy after adding variables
 
-- **Pro Plan**: $20/month + usage
-  - Better for production workloads
+## Monitoring
 
----
+### View Logs
 
-## Production Checklist
+1. Click on your web service
+2. Go to **"Deployments"** tab
+3. Click on active deployment
+4. View real-time logs
 
-Before going live:
+### Check Database
 
-- [ ] All environment variables configured
-- [ ] Database migrations run successfully
-- [ ] Redis is connected and working
-- [ ] AI provider API keys added
-- [ ] Test creating a business
-- [ ] Test creating a training session
-- [ ] Test starting a training session
-- [ ] Monitor logs for errors
-- [ ] Set up custom domain (optional)
-- [ ] Configure backups for MySQL
-- [ ] Set up monitoring/alerts
+1. Go to Supabase dashboard
+2. Click **"Table Editor"**
+3. View your tables and data
+4. Check **"Logs"** → **"Postgres Logs"** for database errors
 
----
+### Monitor Redis
 
-## Scaling Considerations
+1. In Railway, click on Redis service
+2. Go to **"Metrics"** tab
+3. View memory usage and connection stats
 
-As your usage grows:
+## Security Best Practices
 
-1. **Vertical Scaling**: Upgrade Railway service resources
-2. **Database**: Consider upgrading MySQL instance size
-3. **Redis**: Monitor memory usage, upgrade if needed
-4. **Workers**: The queue system can handle multiple workers
-5. **Monitoring**: Set up error tracking (Sentry, LogRocket)
+1. **Rotate secrets regularly**
+   - JWT_SECRET
+   - Supabase service_role key
 
----
+2. **Enable Row Level Security (RLS)** in Supabase
+   - Go to Table Editor
+   - Enable RLS on all tables
+   - Create policies for user access
 
-## Backup Strategy
+3. **Use environment-specific keys**
+   - Different Supabase projects for dev/staging/prod
+   - Different JWT secrets per environment
 
-**Database Backups:**
-Railway provides automatic backups for MySQL, but you should also:
+4. **Monitor logs**
+   - Check for unauthorized access attempts
+   - Monitor API usage in Supabase dashboard
 
-1. Set up automated exports:
-```bash
-railway run mysqldump -u $MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE > backup.sql
-```
+5. **Backup database**
+   - Supabase Pro includes daily backups
+   - Export data regularly for extra safety
 
-2. Store backups in S3 or similar storage
+## CI/CD
 
-**Redis Backups:**
-Redis data is ephemeral (job queue), but you can enable persistence:
-- Railway Redis includes RDB snapshots
-- Configure in Redis settings if needed
+Railway automatically deploys when you push to GitHub:
 
----
+1. Push code to `main` branch
+2. Railway detects changes
+3. Builds and deploys automatically
+4. Check deployment logs for errors
+
+To disable auto-deploy:
+1. Go to **Settings** → **Source**
+2. Toggle off **"Auto Deploy"**
+
+## Custom Domain
+
+1. Go to **Settings** → **"Domains"**
+2. Click **"+ Custom Domain"**
+3. Enter your domain (e.g., `ai-trainer.yourdomain.com`)
+4. Add DNS records as shown
+5. Wait for DNS propagation (5-30 minutes)
 
 ## Support
 
-- **Railway Docs**: https://docs.railway.app
-- **Railway Discord**: https://discord.gg/railway
-- **Project Issues**: https://github.com/Rogue1192/ai-trainer/issues
+If you encounter issues:
 
----
+1. Check Railway logs for errors
+2. Check Supabase logs (Postgres + Auth)
+3. Verify all environment variables
+4. Test locally first with same variables
+5. Contact Railway support: https://railway.app/help
 
-## Quick Deploy Summary
+## Next Steps
 
-```bash
-# 1. Create Railway project from GitHub
-# 2. Add MySQL database
-# 3. Add Redis database
-# 4. Set environment variables:
-DATABASE_URL=${{MySQL.MYSQL_URL}}
-REDIS_HOST=${{Redis.REDIS_HOST}}
-REDIS_PORT=${{Redis.REDIS_PORT}}
-JWT_SECRET=<random-string>
-NODE_ENV=production
+After successful deployment:
 
-# 5. Run migrations
-railway run pnpm db:push
-
-# 6. Visit your app URL and configure API keys
-```
-
-That's it! Your AI Training Platform should now be live on Railway.
+1. Set up custom domain
+2. Configure email templates in Supabase
+3. Add your AI provider API keys in Settings
+4. Create your first training session
+5. Monitor usage and costs
