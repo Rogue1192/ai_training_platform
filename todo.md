@@ -100,3 +100,9 @@
 - [x] Update environment variables documentation
 - [ ] Test login/logout flow (requires Supabase project setup)
 - [x] Update deployment guides
+
+
+## Railway Deployment Fixes (In Progress)
+- [x] Remove remaining OAuth initialization code
+- [ ] Fix undefined path resolution error
+- [ ] Test deployment on Railway
