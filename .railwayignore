@@ -1,0 +1,51 @@
+# Railway Ignore File
+# Files and directories to exclude from Railway deployment
+
+# Development files
+*.md
+!README.md
+.git
+.gitignore
+.env.local
+.env.development
+
+# Test files
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+coverage/
+
+# Documentation
+docs/
+REDIS_SETUP.md
+RAILWAY_DEPLOYMENT.md
+code_review_report.md
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Build artifacts (will be rebuilt on Railway)
+node_modules/
+dist/
+.next/
+out/
+
+# Local development
+.env.example
