@@ -91,3 +91,12 @@
 - [x] Fix API key exposure by implementing just-in-time decryption
 - [x] Add rate limiting and retry logic for AI API calls (built into queue)
 - [ ] Add error notifications for failed training sessions
+
+
+## Supabase Auth Integration
+- [x] Install Supabase client libraries
+- [x] Replace Manus OAuth with Supabase Auth backend
+- [x] Update frontend authentication components
+- [x] Update environment variables documentation
+- [ ] Test login/logout flow (requires Supabase project setup)
+- [x] Update deployment guides

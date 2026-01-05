@@ -10,6 +10,7 @@ import Businesses from "./pages/Businesses";
 import TrainingSessions from "./pages/TrainingSessions";
 import ScheduledJobs from "./pages/ScheduledJobs";
 import Settings from "./pages/Settings";
+import Login from "./pages/Login";
 import { LayoutDashboard, Building2, Brain, Calendar, Settings as SettingsIcon } from "lucide-react";
 
 const navigationItems = [
@@ -23,6 +24,7 @@ const navigationItems = [
 function Router() {
   return (
     <Switch>
+      <Route path="/login" component={Login} />
       <Route path="/">
         <DashboardLayout navigationItems={navigationItems}>
           <Dashboard />
