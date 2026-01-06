@@ -158,7 +158,7 @@ export default function ScheduledJobs() {
                       <SelectValue placeholder="Select a training session" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {trainingSessions?.map((session) => (
                         <SelectItem key={session.id} value={session.id.toString()}>
                           {session.trainingName}
@@ -175,7 +175,7 @@ export default function ScheduledJobs() {
                       <SelectValue placeholder="Select a business" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {businesses?.map((business) => (
                         <SelectItem key={business.id} value={business.id.toString()}>
                           {business.name}

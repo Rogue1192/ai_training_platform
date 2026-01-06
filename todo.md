@@ -145,3 +145,4 @@
 - [x] Fix dashboard query error - fixed date parameter formatting for PostgreSQL
 - [x] Fix API key validation error on Settings page - updated model names to Claude 4.5
 - [x] Add Test API Key button to verify keys are valid and have necessary permissions
+- [x] Fix Select.Item empty value error on Training page

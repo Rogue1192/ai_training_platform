@@ -206,7 +206,7 @@ export default function TrainingSessions() {
                         <SelectValue placeholder="Select a business" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {businesses?.map((business) => (
                           <SelectItem key={business.id} value={business.id.toString()}>
                             {business.name}
