@@ -122,3 +122,10 @@
 - [x] Identify source of undefined path error at dist/index.js:1401
 - [x] Fix undefined environment variable causing path resolution error (replaced import.meta.dirname with __dirname for Node.js 18 compatibility)
 - [ ] Test deployment on Railway
+
+
+## Invalid URL Error Fix
+- [x] Identify source of Invalid URL error in Supabase client (was actually in getLoginUrl using old OAuth variables)
+- [x] Fix getLoginUrl to redirect to /login instead of old OAuth portal
+- [x] Add fallback handling for missing Supabase environment variables
+- [ ] Test fix on Railway deployment

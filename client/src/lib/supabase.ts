@@ -1,22 +1,46 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY");
-}
+// Check if Supabase is configured
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
+// Create a mock client for when Supabase is not configured
+const createMockClient = (): SupabaseClient => {
+  const mockError = new Error("Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables.");
+  
+  return {
+    auth: {
+      getSession: async () => ({ data: { session: null }, error: mockError }),
+      getUser: async () => ({ data: { user: null }, error: mockError }),
+      signOut: async () => ({ error: mockError }),
+      signInWithPassword: async () => ({ data: { user: null, session: null }, error: mockError }),
+      signUp: async () => ({ data: { user: null, session: null }, error: mockError }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+    },
+  } as unknown as SupabaseClient;
+};
+
+// Only create real client if configured, otherwise use mock
+export const supabase: SupabaseClient = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
+  : createMockClient();
+
+if (!isSupabaseConfigured) {
+  console.warn("[Supabase] Not configured. Authentication features will be disabled.");
+  console.warn("[Supabase] Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable authentication.");
+}
 
 // Helper to get current session
 export async function getSession() {
+  if (!isSupabaseConfigured) return null;
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -25,6 +49,7 @@ export async function getSession() {
 
 // Helper to get current user
 export async function getCurrentUser() {
+  if (!isSupabaseConfigured) return null;
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -33,6 +58,10 @@ export async function getCurrentUser() {
 
 // Helper to sign out
 export async function signOut() {
+  if (!isSupabaseConfigured) {
+    console.warn("[Supabase] Cannot sign out - Supabase not configured");
+    return;
+  }
   const { error } = await supabase.auth.signOut();
   if (error) {
     console.error("[Supabase] Sign out error:", error);

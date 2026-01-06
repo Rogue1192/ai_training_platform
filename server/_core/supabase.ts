@@ -1,30 +1,43 @@
-import { createClient } from "@supabase/supabase-js";
-import { ENV } from "./env";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Supabase client for server-side operations
-export const supabase = createClient(
-  process.env.SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || "",
-  {
+const supabaseUrl = process.env.SUPABASE_URL || "";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+// Check if Supabase is configured
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseServiceKey);
+
+// Create a mock client for when Supabase is not configured
+const createMockClient = (): SupabaseClient => {
+  const mockError = new Error("Supabase is not configured");
+  
+  return {
     auth: {
-      autoRefreshToken: false,
-      persistSession: false,
+      getUser: async () => ({ data: { user: null }, error: mockError }),
+      admin: {
+        getUserById: async () => ({ data: { user: null }, error: mockError }),
+      },
     },
-  }
-);
+  } as unknown as SupabaseClient;
+};
+
+// Only create real client if configured, otherwise use mock
+export const supabase: SupabaseClient = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+  : createMockClient();
 
 // Validate Supabase configuration
 export function validateSupabaseConfig(): boolean {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.error("[Supabase] ERROR: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured!");
-    return false;
-  }
-  return true;
+  return isSupabaseConfigured;
 }
 
 // Initialize Supabase
-if (validateSupabaseConfig()) {
+if (isSupabaseConfigured) {
   console.log("[Supabase] Initialized successfully");
 } else {
-  console.warn("[Supabase] Not configured - authentication will not work");
+  console.warn("[Supabase] Not configured - set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable authentication");
 }
