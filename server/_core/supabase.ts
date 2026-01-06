@@ -3,6 +3,10 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
+// Log configuration status (without exposing secrets)
+console.log("[Supabase Config] SUPABASE_URL:", supabaseUrl ? `Set (${supabaseUrl.substring(0, 30)}...)` : "NOT SET");
+console.log("[Supabase Config] SUPABASE_SERVICE_ROLE_KEY:", supabaseServiceKey ? `Set (length: ${supabaseServiceKey.length})` : "NOT SET");
+
 // Check if Supabase is configured
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseServiceKey);
 
@@ -37,7 +41,10 @@ export function validateSupabaseConfig(): boolean {
 
 // Initialize Supabase
 if (isSupabaseConfigured) {
-  console.log("[Supabase] Initialized successfully");
+  console.log("[Supabase] Initialized successfully with URL:", supabaseUrl);
 } else {
-  console.warn("[Supabase] Not configured - set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable authentication");
+  console.warn("[Supabase] NOT CONFIGURED - Authentication will NOT work!");
+  console.warn("[Supabase] Required environment variables:");
+  console.warn("[Supabase]   - SUPABASE_URL (currently:", supabaseUrl ? "set" : "missing", ")");
+  console.warn("[Supabase]   - SUPABASE_SERVICE_ROLE_KEY (currently:", supabaseServiceKey ? "set" : "missing", ")");
 }
