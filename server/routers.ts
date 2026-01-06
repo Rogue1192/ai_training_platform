@@ -137,9 +137,9 @@ export const appRouter = router({
         const { verifyApiKey } = await import("./aiProviders");
 
         // Verify the API key works
-        const isValid = await verifyApiKey(input.provider, input.apiKey);
-        if (!isValid) {
-          throw new Error("Invalid API key or unable to connect to provider");
+        const verification = await verifyApiKey(input.provider, input.apiKey);
+        if (!verification.valid) {
+          throw new Error(verification.error || "Invalid API key or unable to connect to provider");
         }
 
         // Check if key already exists
@@ -171,9 +171,9 @@ export const appRouter = router({
         const { verifyApiKey } = await import("./aiProviders");
 
         // Verify the API key works
-        const isValid = await verifyApiKey(input.provider, input.apiKey);
-        if (!isValid) {
-          throw new Error("Invalid API key or unable to connect to provider");
+        const verification = await verifyApiKey(input.provider, input.apiKey);
+        if (!verification.valid) {
+          throw new Error(verification.error || "Invalid API key or unable to connect to provider");
         }
 
         const encryptedKey = encrypt(input.apiKey);
@@ -212,9 +212,9 @@ export const appRouter = router({
         const { verifyApiKey } = await import("./aiProviders");
 
         // Verify the API key works
-        const isValid = await verifyApiKey(input.provider, input.apiKey);
-        if (!isValid) {
-          throw new Error("Invalid API key or unable to connect to provider");
+        const verification = await verifyApiKey(input.provider, input.apiKey);
+        if (!verification.valid) {
+          throw new Error(verification.error || "Invalid API key or unable to connect to provider");
         }
 
         const existing = await getApiKeyByUserAndProvider(ctx.user.id, input.provider);

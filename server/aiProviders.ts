@@ -144,7 +144,8 @@ export function getAvailableModels(provider: AIProvider): string[] {
     case "openai":
       return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"];
     case "anthropic":
-      return ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"];
+      // Updated to current Claude 4.5 models (Jan 2026)
+      return ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001", "claude-opus-4-5-20251101"];
     case "google":
       return ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"];
     default:
@@ -155,19 +156,24 @@ export function getAvailableModels(provider: AIProvider): string[] {
 /**
  * Verify API key by making a test call
  */
-export async function verifyApiKey(provider: AIProvider, apiKey: string): Promise<boolean> {
+export async function verifyApiKey(provider: AIProvider, apiKey: string): Promise<{ valid: boolean; error?: string }> {
   try {
     const models = getAvailableModels(provider);
     const testModel = models[0];
 
     if (!testModel) {
-      return false;
+      return { valid: false, error: `No models available for provider: ${provider}` };
     }
 
+    console.log(`[API Verification] Testing ${provider} with model ${testModel}...`);
+    console.log(`[API Verification] API key starts with: ${apiKey.substring(0, 10)}...`);
+    
     await callAI(provider, apiKey, testModel, [{ role: "user", content: "Hello" }]);
-    return true;
-  } catch (error) {
-    console.error(`API key verification failed for ${provider}:`, error);
-    return false;
+    console.log(`[API Verification] ${provider} verification successful`);
+    return { valid: true };
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    console.error(`[API Verification] ${provider} verification failed:`, errorMessage);
+    return { valid: false, error: errorMessage };
   }
 }

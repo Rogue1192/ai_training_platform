@@ -143,3 +143,4 @@
 ## UI/UX Fixes
 - [x] Fix modal/popup forms being cut off - add scrolling support
 - [x] Fix dashboard query error - fixed date parameter formatting for PostgreSQL
+- [x] Fix API key validation error on Settings page - updated model names to Claude 4.5
