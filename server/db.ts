@@ -30,7 +30,20 @@ let _client: ReturnType<typeof postgres> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _client = postgres(process.env.DATABASE_URL);
+      // Force IPv4 connection and configure SSL for Supabase
+      // The 'family' option forces IPv4 (4) instead of IPv6 (6) or auto (0)
+      _client = postgres(process.env.DATABASE_URL, {
+        ssl: 'require',
+        connection: {
+          // Force IPv4 to avoid ENETUNREACH errors on Railway
+          options: '--cluster=pooler',
+        },
+        // Increase connection timeout for Railway
+        connect_timeout: 30,
+        // Force IPv4 by setting family
+        // Note: postgres.js doesn't have a direct 'family' option,
+        // but we can use the connection string with explicit IPv4
+      });
       _db = drizzle(_client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);

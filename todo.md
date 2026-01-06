@@ -138,3 +138,7 @@
 - [ ] Fix authentication and session management
 - [ ] Verify user is properly authenticated after login
 - [ ] Test redirect to dashboard after successful login
+
+
+## UI/UX Fixes
+- [x] Fix modal/popup forms being cut off - add scrolling support

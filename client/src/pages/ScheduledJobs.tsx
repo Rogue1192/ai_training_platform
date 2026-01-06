@@ -129,7 +129,7 @@ export default function ScheduledJobs() {
               New Schedule
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl bg-card border-border">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border">
             <form onSubmit={handleSubmit}>
               <DialogHeader>
                 <DialogTitle className="text-card-foreground">Create Scheduled Job</DialogTitle>
