@@ -238,6 +238,38 @@ export const appRouter = router({
       }
       return { success: true };
     }),
+    test: protectedProcedure
+      .input(z.object({ provider: z.enum(["openai", "anthropic", "google"]) }))
+      .mutation(async ({ ctx, input }) => {
+        const { getApiKeyByUserAndProvider, updateApiKey } = await import("./db");
+        const { decrypt } = await import("./encryption");
+        const { testApiKey } = await import("./aiProviders");
+
+        const existing = await getApiKeyByUserAndProvider(ctx.user.id, input.provider);
+        if (!existing) {
+          throw new Error("No API key found for this provider. Please add one first.");
+        }
+
+        // Decrypt the stored key
+        const apiKey = decrypt(existing.encryptedKey);
+        
+        // Test the API key with a real API call
+        const result = await testApiKey(input.provider, apiKey);
+        
+        // Update last verified timestamp if successful
+        if (result.success) {
+          await updateApiKey(existing.id, {
+            status: "connected",
+            lastVerified: new Date(),
+          });
+        } else {
+          await updateApiKey(existing.id, {
+            status: "disconnected",
+          });
+        }
+        
+        return result;
+      }),
   }),
 
   // Training session management

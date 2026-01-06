@@ -177,3 +177,56 @@ export async function verifyApiKey(provider: AIProvider, apiKey: string): Promis
     return { valid: false, error: errorMessage };
   }
 }
+
+/**
+ * Test API key with a real API call and return detailed results
+ */
+export async function testApiKey(provider: AIProvider, apiKey: string): Promise<{
+  success: boolean;
+  message: string;
+  model?: string;
+  responseTime?: number;
+  response?: string;
+}> {
+  try {
+    const models = getAvailableModels(provider);
+    const testModel = models[0];
+
+    if (!testModel) {
+      return { success: false, message: `No models available for provider: ${provider}` };
+    }
+
+    console.log(`[API Test] Testing ${provider} with model ${testModel}...`);
+    
+    const result = await callAI(provider, apiKey, testModel, [
+      { role: "user", content: "Say 'API key is working!' in exactly those words." }
+    ]);
+    
+    console.log(`[API Test] ${provider} test successful - response time: ${result.responseTime}ms`);
+    
+    return {
+      success: true,
+      message: `API key is valid and working correctly`,
+      model: testModel,
+      responseTime: result.responseTime,
+      response: result.content.substring(0, 100), // Truncate for display
+    };
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    console.error(`[API Test] ${provider} test failed:`, errorMessage);
+    
+    // Parse common error types for user-friendly messages
+    let userMessage = errorMessage;
+    if (errorMessage.includes("401") || errorMessage.includes("invalid_api_key") || errorMessage.includes("Invalid API")) {
+      userMessage = "Invalid API key. Please check your key and try again.";
+    } else if (errorMessage.includes("429") || errorMessage.includes("rate_limit")) {
+      userMessage = "Rate limit exceeded. Please wait a moment and try again.";
+    } else if (errorMessage.includes("403") || errorMessage.includes("permission")) {
+      userMessage = "API key lacks required permissions. Please check your API key settings.";
+    } else if (errorMessage.includes("model")) {
+      userMessage = `Model access error: ${errorMessage}`;
+    }
+    
+    return { success: false, message: userMessage };
+  }
+}
