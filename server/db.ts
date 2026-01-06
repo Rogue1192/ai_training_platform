@@ -28,23 +28,26 @@ let _db: ReturnType<typeof drizzle> | null = null;
 let _client: ReturnType<typeof postgres> | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  // Prioritize SUPABASE_DATABASE_URL for Manus dev environment,
+  // fall back to DATABASE_URL for Railway/production
+  const databaseUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+  
+  if (!_db && databaseUrl) {
     try {
-      // Force IPv4 connection and configure SSL for Supabase
-      // The 'family' option forces IPv4 (4) instead of IPv6 (6) or auto (0)
-      _client = postgres(process.env.DATABASE_URL, {
+      console.log("[Database] Connecting to:", databaseUrl.includes('pooler.supabase.com') ? 'Supabase Pooler' : 'Default DB');
+      
+      // Configure SSL for Supabase connections
+      _client = postgres(databaseUrl, {
         ssl: 'require',
         connection: {
           // Force IPv4 to avoid ENETUNREACH errors on Railway
           options: '--cluster=pooler',
         },
-        // Increase connection timeout for Railway
+        // Increase connection timeout
         connect_timeout: 30,
-        // Force IPv4 by setting family
-        // Note: postgres.js doesn't have a direct 'family' option,
-        // but we can use the connection string with explicit IPv4
       });
       _db = drizzle(_client);
+      console.log("[Database] Connected successfully");
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
