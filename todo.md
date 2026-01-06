@@ -129,3 +129,12 @@
 - [x] Fix getLoginUrl to redirect to /login instead of old OAuth portal
 - [x] Add fallback handling for missing Supabase environment variables
 - [ ] Test fix on Railway deployment
+
+
+## Authentication Flow Issue (In Progress)
+- [ ] Test login flow on Railway deployment
+- [ ] Identify why login shows success toast but doesn't redirect
+- [ ] Review Supabase auth integration with backend
+- [ ] Fix authentication and session management
+- [ ] Verify user is properly authenticated after login
+- [ ] Test redirect to dashboard after successful login

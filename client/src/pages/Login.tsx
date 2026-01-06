@@ -5,14 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { useLocation } from "wouter";
+import { trpc } from "@/lib/trpc";
 
 export default function Login() {
-  const [, setLocation] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const utils = trpc.useUtils();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +28,10 @@ export default function Login() {
 
       if (data.session) {
         toast.success("Logged in successfully!");
-        setLocation("/");
+        // Invalidate the auth query to refetch user data with the new token
+        await utils.auth.me.invalidate();
+        // Use window.location for a full page reload to ensure the new session is picked up
+        window.location.href = "/";
       }
     } catch (error: any) {
       toast.error(error.message || "Login failed");
@@ -51,7 +54,10 @@ export default function Login() {
 
       if (data.session) {
         toast.success("Account created successfully!");
-        setLocation("/");
+        // Invalidate the auth query to refetch user data with the new token
+        await utils.auth.me.invalidate();
+        // Use window.location for a full page reload to ensure the new session is picked up
+        window.location.href = "/";
       } else {
         toast.success("Check your email to confirm your account!");
       }
