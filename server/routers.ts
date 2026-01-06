@@ -9,6 +9,53 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    // Debug endpoint to check Supabase configuration
+    debug: publicProcedure.query(async ({ ctx }) => {
+      const { isSupabaseConfigured } = await import("./_core/supabase");
+      const authHeader = ctx.req.headers.authorization;
+      
+      let tokenInfo = null;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const token = authHeader.substring(7);
+        tokenInfo = {
+          present: true,
+          length: token.length,
+          prefix: token.substring(0, 20) + "...",
+        };
+        
+        // Try to verify the token if Supabase is configured
+        if (isSupabaseConfigured) {
+          try {
+            const { supabase } = await import("./_core/supabase");
+            const { data, error } = await supabase.auth.getUser(token);
+            tokenInfo = {
+              ...tokenInfo,
+              verified: !error,
+              userId: data?.user?.id || null,
+              email: data?.user?.email || null,
+              error: error?.message || null,
+            };
+          } catch (e: any) {
+            tokenInfo = {
+              ...tokenInfo,
+              verified: false,
+              error: e.message,
+            };
+          }
+        }
+      } else {
+        tokenInfo = { present: false };
+      }
+      
+      return {
+        supabaseConfigured: isSupabaseConfigured,
+        supabaseUrl: process.env.SUPABASE_URL ? "set" : "missing",
+        supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ? "set" : "missing",
+        databaseUrl: process.env.DATABASE_URL ? "set" : "missing",
+        token: tokenInfo,
+        user: ctx.user,
+      };
+    }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
