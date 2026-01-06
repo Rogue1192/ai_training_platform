@@ -1,4 +1,4 @@
-import { eq, desc, sql, and } from "drizzle-orm";
+import { and, eq, sql, desc, isNull, ne, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -347,6 +347,8 @@ export async function getTodayMetrics(userId: number): Promise<{
   // Get today's conversations for API calls and avg response time
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  // Convert to ISO string for PostgreSQL compatibility
+  const todayIso = today.toISOString();
 
   const conversationsResult = await db
     .select({
@@ -355,7 +357,7 @@ export async function getTodayMetrics(userId: number): Promise<{
     })
     .from(trainingConversations)
     .innerJoin(trainingSessions, eq(trainingConversations.trainingSessionId, trainingSessions.id))
-    .where(and(eq(trainingSessions.userId, userId), sql`${trainingConversations.createdAt} >= ${today}`));
+    .where(and(eq(trainingSessions.userId, userId), gte(trainingConversations.createdAt, new Date(todayIso))));
 
   const apiCallsToday = Number(conversationsResult[0]?.count ?? 0);
   const avgResponseTime = Number(conversationsResult[0]?.avgTime ?? 0);

@@ -142,3 +142,4 @@
 
 ## UI/UX Fixes
 - [x] Fix modal/popup forms being cut off - add scrolling support
+- [x] Fix dashboard query error - fixed date parameter formatting for PostgreSQL
