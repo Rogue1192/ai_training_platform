@@ -149,3 +149,14 @@
 - [x] Set up Redis connection for training queue
 - [x] Initialize training worker on server startup
 - [x] Test training session execution with Redis queue
+
+
+## Conversation Viewer Feature
+- [x] Create tRPC endpoint to fetch conversation history for a training session
+- [x] Design conversation viewer UI component with chat-style layout
+- [x] Display iteration number, timestamp, and goal achieved status
+- [x] Show full conversation history (user prompts and AI responses)
+- [x] Add expand/collapse functionality for long conversations
+- [x] Integrate viewer into Training Sessions page (view button or modal)
+- [ ] Add syntax highlighting or markdown rendering for AI responses
+- [x] Write tests for conversation viewer endpoint

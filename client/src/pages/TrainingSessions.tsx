@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain } from "lucide-react";
+import { ConversationViewer } from "@/components/ConversationViewer";
 
 export default function TrainingSessions() {
   const { data: sessions, isLoading, refetch } = trpc.training.list.useQuery();
@@ -20,6 +21,7 @@ export default function TrainingSessions() {
   const deleteSession = trpc.training.delete.useMutation();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [viewingSession, setViewingSession] = useState<{ id: number; name: string } | null>(null);
   const [formData, setFormData] = useState({
     businessId: "",
     trainingName: "",
@@ -447,7 +449,7 @@ export default function TrainingSessions() {
                         Restart
                       </Button>
                     )}
-                    <Button size="sm" variant="outline" onClick={() => toast.info("Conversation viewer coming soon")}>
+                    <Button size="sm" variant="outline" onClick={() => setViewingSession({ id: session.id, name: session.trainingName })}>
                       <MessageSquare className="w-4 h-4" />
                     </Button>
                     <Button size="sm" variant="destructive" onClick={() => handleDelete(session.id)}>
@@ -492,6 +494,16 @@ export default function TrainingSessions() {
             </Card>
           ))}
         </div>
+      )}
+
+      {/* Conversation Viewer Modal */}
+      {viewingSession && (
+        <ConversationViewer
+          sessionId={viewingSession.id}
+          sessionName={viewingSession.name}
+          isOpen={!!viewingSession}
+          onClose={() => setViewingSession(null)}
+        />
       )}
     </div>
   );
