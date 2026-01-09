@@ -146,3 +146,6 @@
 - [x] Fix API key validation error on Settings page - updated model names to Claude 4.5
 - [x] Add Test API Key button to verify keys are valid and have necessary permissions
 - [x] Fix Select.Item empty value error on Training page
+- [x] Set up Redis connection for training queue
+- [x] Initialize training worker on server startup
+- [x] Test training session execution with Redis queue

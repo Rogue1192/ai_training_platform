@@ -7,6 +7,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { trainingWorker } from "../trainingQueue";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -59,6 +60,18 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    
+    // Start the training worker if Redis is configured
+    if (process.env.REDIS_HOST) {
+      console.log(`[Training Worker] Starting training queue worker...`);
+      console.log(`[Training Worker] Connected to Redis at ${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`);
+      // The worker is automatically started when imported
+      trainingWorker.on("ready", () => {
+        console.log(`[Training Worker] Worker is ready and listening for jobs`);
+      });
+    } else {
+      console.log(`[Training Worker] Redis not configured, training queue disabled`);
+    }
   });
 }
 
