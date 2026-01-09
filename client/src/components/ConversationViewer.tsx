@@ -2,7 +2,6 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, CheckCircle2, XCircle, Clock, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -52,8 +51,8 @@ export function ConversationViewer({ sessionId, sessionName, isOpen, onClose }: 
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col bg-card border-border">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl h-[85vh] flex flex-col bg-card border-border overflow-hidden">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2 text-card-foreground">
             <MessageSquare className="w-5 h-5" />
             Conversation History: {sessionName}
@@ -71,8 +70,8 @@ export function ConversationViewer({ sessionId, sessionName, isOpen, onClose }: 
             <p className="text-sm">Start the training session to see conversations here.</p>
           </div>
         ) : (
-          <ScrollArea className="flex-1 pr-4">
-            <div className="space-y-4">
+          <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
+            <div className="space-y-4 pb-4">
               {conversations.map((conversation) => {
                 const isExpanded = expandedIterations.has(conversation.iterationNumber);
                 const messages = conversation.conversationHistory as ConversationMessage[];
@@ -149,7 +148,7 @@ export function ConversationViewer({ sessionId, sessionName, isOpen, onClose }: 
                                     {message.role === "user" ? "User Prompt" : "AI Response"}
                                   </span>
                                 </div>
-                                <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                                <div className="text-sm whitespace-pre-wrap leading-relaxed max-h-[400px] overflow-y-auto">
                                   {message.content}
                                 </div>
                               </div>
@@ -162,7 +161,7 @@ export function ConversationViewer({ sessionId, sessionName, isOpen, onClose }: 
                 );
               })}
             </div>
-          </ScrollArea>
+          </div>
         )}
       </DialogContent>
     </Dialog>

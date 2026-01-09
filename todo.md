@@ -160,3 +160,6 @@
 - [x] Integrate viewer into Training Sessions page (view button or modal)
 - [ ] Add syntax highlighting or markdown rendering for AI responses
 - [x] Write tests for conversation viewer endpoint
+
+## Bug Fixes
+- [x] Fix Conversation Viewer modal scrolling - content gets cut off and no scrollbar visible
