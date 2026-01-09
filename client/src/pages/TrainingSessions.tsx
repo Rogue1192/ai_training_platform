@@ -449,6 +449,12 @@ export default function TrainingSessions() {
                         Restart
                       </Button>
                     )}
+                    {session.status === "error" && (
+                      <Button size="sm" variant="outline" onClick={() => handleStatusChange(session.id, "paused")}>
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        Retry
+                      </Button>
+                    )}
                     <Button size="sm" variant="outline" onClick={() => setViewingSession({ id: session.id, name: session.trainingName })}>
                       <MessageSquare className="w-4 h-4" />
                     </Button>
@@ -481,6 +487,11 @@ export default function TrainingSessions() {
                     <p className="font-medium text-foreground">{session.retryInterval} min</p>
                   </div>
                 </div>
+                {session.status === "error" && session.errorMessage && (
+                  <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3">
+                    <p className="text-sm text-destructive font-medium">Error: {session.errorMessage}</p>
+                  </div>
+                )}
                 <div>
                   <div className="flex items-center justify-between text-sm mb-2">
                     <span className="text-muted-foreground">Progress</span>

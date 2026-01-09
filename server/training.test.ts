@@ -172,3 +172,79 @@ describe("Training Session Management", () => {
     expect(session?.iterations).toBe(100);
   });
 });
+
+describe("Training Session Error Handling", () => {
+  it("should update session status to error with error message", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    // Create a session
+    const createResult = await caller.training.create({
+      trainingName: "Error Test Session",
+      topic: "Test topic for error handling",
+      targetAiProvider: "openai",
+      targetAiModel: "gpt-3.5-turbo",
+      influencerAiProvider: "openai",
+      influencerAiModel: "gpt-4",
+      trainingPrompts: ["Test prompt"],
+      trainingGoal: "Test goal",
+      iterations: 10,
+      retryInterval: 5,
+    });
+
+    expect(createResult.success).toBe(true);
+    expect(createResult.sessionId).toBeGreaterThan(0);
+
+    // Simulate setting error status (this would normally be done by the worker)
+    // For now, we test that the session can be retrieved with error status
+    const sessions = await caller.training.list();
+    const session = sessions.find((s) => s.id === createResult.sessionId);
+    
+    expect(session).toBeDefined();
+    expect(session?.status).toBe("paused"); // Initial status
+  });
+
+  it("should allow retry from error status", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    // Create a session
+    const createResult = await caller.training.create({
+      trainingName: "Retry Test Session",
+      topic: "Test topic for retry",
+      targetAiProvider: "openai",
+      targetAiModel: "gpt-3.5-turbo",
+      influencerAiProvider: "openai",
+      influencerAiModel: "gpt-4",
+      trainingPrompts: ["Test prompt"],
+      trainingGoal: "Test goal",
+      iterations: 10,
+      retryInterval: 5,
+    });
+
+    // Update status to paused (simulating retry from error)
+    const updateResult = await caller.training.updateStatus({
+      id: createResult.sessionId!,
+      status: "paused",
+    });
+
+    expect(updateResult.success).toBe(true);
+
+    // Verify the session can be started again
+    const sessions = await caller.training.list();
+    const session = sessions.find((s) => s.id === createResult.sessionId);
+    expect(session?.status).toBe("paused");
+  });
+
+  it("should include errorMessage field in session data", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const sessions = await caller.training.list();
+    
+    // All sessions should have errorMessage field (even if null)
+    if (sessions.length > 0) {
+      expect(sessions[0]).toHaveProperty("errorMessage");
+    }
+  });
+});

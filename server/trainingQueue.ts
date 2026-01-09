@@ -245,8 +245,25 @@ trainingWorker.on("completed", (job) => {
   console.log(`[Training Worker] Job ${job.id} completed successfully`);
 });
 
-trainingWorker.on("failed", (job, err) => {
+trainingWorker.on("failed", async (job, err) => {
   console.error(`[Training Worker] Job ${job?.id} failed:`, err);
+  
+  // Check if this was the final retry attempt
+  if (job && job.attemptsMade >= (job.opts.attempts || 3)) {
+    const { sessionId } = job.data as TrainingIterationJob;
+    console.log(`[Training Worker] Job ${job.id} exhausted all retries, marking session ${sessionId} as error`);
+    
+    try {
+      // Update session status to error with the failure reason
+      await updateTrainingSession(sessionId, {
+        status: "error",
+        errorMessage: err?.message || "Unknown error occurred during training",
+      });
+      console.log(`[Training Worker] Session ${sessionId} marked as error: ${err?.message}`);
+    } catch (updateErr) {
+      console.error(`[Training Worker] Failed to update session ${sessionId} status:`, updateErr);
+    }
+  }
 });
 
 trainingWorker.on("error", (err) => {

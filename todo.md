@@ -163,3 +163,8 @@
 
 ## Bug Fixes
 - [x] Fix Conversation Viewer modal scrolling - content gets cut off and no scrollbar visible
+- [x] Update session status to 'error' when job fails after all retries
+- [x] Store error message in session for display in UI
+- [x] Add Retry button for sessions in error state
+- [x] Display error message in session card UI
+- [x] Clean up stuck sessions (2 and 5) with proper error status
