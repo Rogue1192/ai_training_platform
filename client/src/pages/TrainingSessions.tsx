@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain } from "lucide-react";
+import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { ConversationViewer } from "@/components/ConversationViewer";
 
 export default function TrainingSessions() {
@@ -24,6 +27,12 @@ export default function TrainingSessions() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [viewingSession, setViewingSession] = useState<{ id: number; name: string } | null>(null);
   const [businessFilter, setBusinessFilter] = useState<string>("all");
+  const [businessSearchOpen, setBusinessSearchOpen] = useState(false);
+  const [businessSearchQuery, setBusinessSearchQuery] = useState("");
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [formData, setFormData] = useState({
     businessId: "",
     trainingName: "",
@@ -198,20 +207,69 @@ export default function TrainingSessions() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <Label className="text-sm text-muted-foreground whitespace-nowrap">Filter by Business:</Label>
-            <Select value={businessFilter} onValueChange={setBusinessFilter}>
-              <SelectTrigger className="w-[200px] bg-background border-input">
-                <SelectValue placeholder="All Businesses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Businesses</SelectItem>
-                <SelectItem value="unassigned">Unassigned</SelectItem>
-                {businesses?.map((business) => (
-                  <SelectItem key={business.id} value={business.id.toString()}>
-                    {business.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={businessSearchOpen} onOpenChange={setBusinessSearchOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={businessSearchOpen}
+                  className="w-[200px] justify-between bg-background border-input"
+                >
+                  {businessFilter === "all"
+                    ? "All Businesses"
+                    : businessFilter === "unassigned"
+                    ? "Unassigned"
+                    : businesses?.find((b) => b.id.toString() === businessFilter)?.name || "Select business..."}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[200px] p-0">
+                <Command>
+                  <CommandInput placeholder="Search businesses..." />
+                  <CommandList>
+                    <CommandEmpty>No business found.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem
+                        value="all"
+                        onSelect={() => {
+                          setBusinessFilter("all");
+                          setBusinessSearchOpen(false);
+                          setCurrentPage(1);
+                        }}
+                      >
+                        <Check className={cn("mr-2 h-4 w-4", businessFilter === "all" ? "opacity-100" : "opacity-0")} />
+                        All Businesses
+                      </CommandItem>
+                      <CommandItem
+                        value="unassigned"
+                        onSelect={() => {
+                          setBusinessFilter("unassigned");
+                          setBusinessSearchOpen(false);
+                          setCurrentPage(1);
+                        }}
+                      >
+                        <Check className={cn("mr-2 h-4 w-4", businessFilter === "unassigned" ? "opacity-100" : "opacity-0")} />
+                        Unassigned
+                      </CommandItem>
+                      {businesses?.map((business) => (
+                        <CommandItem
+                          key={business.id}
+                          value={business.name}
+                          onSelect={() => {
+                            setBusinessFilter(business.id.toString());
+                            setBusinessSearchOpen(false);
+                            setCurrentPage(1);
+                          }}
+                        >
+                          <Check className={cn("mr-2 h-4 w-4", businessFilter === business.id.toString() ? "opacity-100" : "opacity-0")} />
+                          {business.name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
         <Dialog
@@ -448,29 +506,89 @@ export default function TrainingSessions() {
         </Dialog>
       </div>
 
-      {sessions && sessions.length === 0 ? (
-        <Card className="bg-card border-border">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Brain className="w-12 h-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold text-foreground mb-2">No training sessions yet</h3>
-            <p className="text-sm text-muted-foreground mb-4 text-center max-w-md">
-              Create your first training session to start influencing AI recommendations for your clients.
-            </p>
-            <Button onClick={() => setIsDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Create Training Session
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4">
-          {sessions
-            ?.filter((session) => {
-              if (businessFilter === "all") return true;
-              if (businessFilter === "unassigned") return !session.businessId;
-              return session.businessId?.toString() === businessFilter;
-            })
-            .map((session) => (
+      {/* Pagination calculations */}
+      {(() => {
+        const filteredSessions = sessions?.filter((session) => {
+          if (businessFilter === "all") return true;
+          if (businessFilter === "unassigned") return !session.businessId;
+          return session.businessId?.toString() === businessFilter;
+        }) || [];
+        
+        const totalItems = filteredSessions.length;
+        const totalPages = Math.ceil(totalItems / pageSize);
+        const startIndex = (currentPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        const paginatedSessions = filteredSessions.slice(startIndex, endIndex);
+        
+        // Generate page numbers to display
+        const getPageNumbers = () => {
+          const pages: (number | string)[] = [];
+          if (totalPages <= 7) {
+            for (let i = 1; i <= totalPages; i++) pages.push(i);
+          } else {
+            pages.push(1);
+            if (currentPage > 3) pages.push("...");
+            for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+              pages.push(i);
+            }
+            if (currentPage < totalPages - 2) pages.push("...");
+            pages.push(totalPages);
+          }
+          return pages;
+        };
+
+        return (
+          <>
+            {sessions && sessions.length === 0 ? (
+              <Card className="bg-card border-border">
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Brain className="w-12 h-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">No training sessions yet</h3>
+                  <p className="text-sm text-muted-foreground mb-4 text-center max-w-md">
+                    Create your first training session to start influencing AI recommendations for your clients.
+                  </p>
+                  <Button onClick={() => setIsDialogOpen(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Training Session
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : filteredSessions.length === 0 ? (
+              <Card className="bg-card border-border">
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Brain className="w-12 h-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">No matching sessions</h3>
+                  <p className="text-sm text-muted-foreground mb-4 text-center max-w-md">
+                    No training sessions match the selected filter. Try selecting a different business.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                {/* Page size selector and info */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Show</span>
+                    <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(parseInt(v)); setCurrentPage(1); }}>
+                      <SelectTrigger className="w-[70px] h-8 bg-background border-input">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5</SelectItem>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="25">25</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-sm text-muted-foreground">per page</span>
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} sessions
+                  </span>
+                </div>
+
+                <div className="grid gap-4">
+                  {paginatedSessions.map((session) => (
             <Card key={session.id} className="bg-card border-border">
               <CardHeader>
                 <div className="flex items-start justify-between">
@@ -555,8 +673,71 @@ export default function TrainingSessions() {
               </CardContent>
             </Card>
           ))}
-        </div>
-      )}
+                </div>
+
+                {/* Pagination controls */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-6">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      className="h-8 w-8 p-0"
+                    >
+                      <ChevronsLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className="h-8 w-8 p-0"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    
+                    {getPageNumbers().map((page, index) => (
+                      typeof page === "number" ? (
+                        <Button
+                          key={index}
+                          variant={currentPage === page ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(page)}
+                          className="h-8 w-8 p-0"
+                        >
+                          {page}
+                        </Button>
+                      ) : (
+                        <span key={index} className="px-2 text-muted-foreground">...</span>
+                      )
+                    ))}
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className="h-8 w-8 p-0"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                      className="h-8 w-8 p-0"
+                    >
+                      <ChevronsRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        );
+      })()}
 
       {/* Conversation Viewer Modal */}
       {viewingSession && (

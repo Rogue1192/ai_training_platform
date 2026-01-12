@@ -201,3 +201,10 @@
 - [x] Show "All Businesses" option as default
 - [x] Filter sessions in real-time when business is selected
 - [x] Add "Unassigned" filter option for sessions without a business link
+
+## Search and Pagination Enhancements
+- [x] Add search bar inside business filter dropdown to search businesses
+- [x] Implement numbered pagination for training sessions
+- [x] Add page size selector dropdown (e.g., 5, 10, 25, 50 items per page)
+- [x] Show current page info (e.g., "Showing 1-10 of 17 sessions")
+- [x] Add first/prev/next/last navigation buttons
