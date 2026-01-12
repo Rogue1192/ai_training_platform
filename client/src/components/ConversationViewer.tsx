@@ -2,7 +2,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CheckCircle2, XCircle, Clock, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Clock, MessageSquare, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ConversationMessage {
@@ -120,9 +120,27 @@ export function ConversationViewer({ sessionId, sessionName, isOpen, onClose }: 
                     {isExpanded && (
                       <div className="border-t border-border p-4 space-y-4">
                         {/* Prompt Used */}
-                        <div className="text-sm">
-                          <span className="text-muted-foreground font-medium">Prompt: </span>
-                          <span className="text-foreground">{conversation.promptUsed}</span>
+                        <div className="text-sm space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground font-medium">Prompt: </span>
+                            {conversation.promptUsed.includes("I've heard") || 
+                             conversation.promptUsed.includes("recommended") ||
+                             conversation.promptUsed.includes("compare") ||
+                             conversation.promptUsed.includes("reviews") ||
+                             conversation.promptUsed.includes("suggested") ||
+                             conversation.promptUsed.includes("hearing good things") ||
+                             conversation.promptUsed.includes("known for") ? (
+                              <Badge variant="outline" className="text-xs border-purple-500 text-purple-400">
+                                <Sparkles className="w-3 h-3 mr-1" />
+                                Suggestive
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                Neutral
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-foreground bg-muted/50 p-2 rounded">{conversation.promptUsed}</p>
                         </div>
 
                         {/* Messages */}

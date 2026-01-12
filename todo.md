@@ -176,3 +176,11 @@
 - [x] Show validation error in UI toast when trying to start without required keys
 - [x] Clear error message when retrying from error state
 - [x] Add 'Go to Settings' link in API key error toast
+
+
+## Suggestive Prompting Implementation
+- [x] Update training queue to generate suggestive prompts that introduce the business
+- [x] Add prompt templates that naturally mention the business name
+- [x] Fix goal evaluation to check for exact business name match
+- [x] Update UI to show prompt type (neutral vs suggestive)
+- [x] Test with a real training session

@@ -50,6 +50,44 @@ interface TrainingIterationJob {
 }
 
 /**
+ * Generate a suggestive prompt that naturally introduces the business
+ * This makes the training more effective by guiding the AI to mention the business
+ */
+function generateSuggestivePrompt(basePrompt: string, businessName: string, context: string): string {
+  // Array of suggestive prompt templates
+  const templates = [
+    // Direct mention with question
+    `${basePrompt} I've heard ${businessName} is really good. What do you think about them?`,
+    
+    // Recommendation request
+    `${basePrompt} Someone recommended ${businessName} to me. Are they a good choice?`,
+    
+    // Comparison request
+    `${basePrompt} How does ${businessName} compare to other options in the area?`,
+    
+    // Review inquiry
+    `${basePrompt} I saw ${businessName} has great reviews. Can you tell me more about them?`,
+    
+    // Friend recommendation
+    `${basePrompt} My friend suggested I check out ${businessName}. What's your opinion on them?`,
+    
+    // Specific service inquiry
+    `I'm looking for services like what ${businessName} offers. ${basePrompt}`,
+    
+    // Local recommendation
+    `${basePrompt} I've been hearing good things about ${businessName} locally. Are they reputable?`,
+    
+    // Quality inquiry
+    `${basePrompt} Is ${businessName} known for quality service?`,
+  ];
+  
+  // Select a random template
+  const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
+  
+  return randomTemplate;
+}
+
+/**
  * Execute a single training iteration
  * This runs in a worker process, isolated from the main application
  */
@@ -69,7 +107,23 @@ async function executeTrainingIteration(job: TrainingIterationJob): Promise<void
 
   // Select a random prompt from the training prompts
   const prompts = session.trainingPrompts as string[];
-  const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
+  const basePrompt = prompts[Math.floor(Math.random() * prompts.length)];
+  
+  // Extract business name from trainingName (format: "Business Name - Training Type" or from topic)
+  // trainingName is more reliable as it follows "Business Name - Training Type" format
+  let businessName: string;
+  if (session.trainingName.includes(' - ')) {
+    businessName = session.trainingName.split(' - ')[0].trim();
+  } else if (session.topic.includes(' is ')) {
+    // Extract from topic like "Quick Auto Repair is a trusted..."
+    businessName = session.topic.split(' is ')[0].trim();
+  } else {
+    // Fallback: use first sentence or first few words
+    businessName = session.topic.split('.')[0].split(',')[0].trim();
+  }
+  
+  // Generate suggestive prompt that naturally introduces the business
+  const suggestivePrompt = generateSuggestivePrompt(basePrompt!, businessName, session.trainingContext || '');
 
   // Get API keys (decrypt just-in-time)
   const targetApiKeyRecord = await getApiKeyByUserAndProvider(userId, session.targetAiProvider as AIProvider);
@@ -87,7 +141,7 @@ async function executeTrainingIteration(job: TrainingIterationJob): Promise<void
     targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
     influencerApiKey = decrypt(influencerApiKeyRecord.encryptedKey);
 
-    // Build the conversation
+    // Build the conversation with suggestive prompt
     const targetMessages: AIMessage[] = [
       {
         role: "system",
@@ -95,24 +149,7 @@ async function executeTrainingIteration(job: TrainingIterationJob): Promise<void
       },
       {
         role: "user",
-        content: randomPrompt!,
-      },
-    ];
-
-    const influencerMessages: AIMessage[] = [
-      {
-        role: "system",
-        content: `You are training an AI model. Your goal: ${session.trainingGoal}. 
-      
-Topic/Business: ${session.topic}
-
-Context: ${session.trainingContext || "N/A"}
-
-Your task is to engage with the target AI and guide it towards recommending or mentioning the business/topic in a natural way. Be conversational and persuasive.`,
-      },
-      {
-        role: "user",
-        content: `The user asked: "${randomPrompt}". How should we respond to achieve our training goal?`,
+        content: suggestivePrompt,
       },
     ];
 
@@ -129,7 +166,7 @@ Your task is to engage with the target AI and guide it towards recommending or m
 
     conversationHistory.push({
       role: "user",
-      content: randomPrompt!,
+      content: suggestivePrompt,
       timestamp: Date.now(),
     });
 
@@ -139,16 +176,31 @@ Your task is to engage with the target AI and guide it towards recommending or m
       timestamp: Date.now(),
     });
 
-    // Get influencer AI's guidance
-    influencerMessages.push({
-      role: "assistant",
-      content: `Target AI responded: "${targetResponse.content}"`,
-    });
+    // Build influencer messages after getting target response
+    const influencerMessages: AIMessage[] = [
+      {
+        role: "system",
+        content: `You are evaluating AI training effectiveness. Your goal: ${session.trainingGoal}. 
+      
+Business Name: ${businessName}
+Full Topic: ${session.topic}
 
-    influencerMessages.push({
-      role: "user",
-      content: "Evaluate this response. Did it achieve our training goal? Provide feedback.",
-    });
+Context: ${session.trainingContext || "N/A"}
+
+Your task is to evaluate whether the target AI's response positively mentions or recommends the business. Look for:
+1. Direct mention of the business name
+2. Positive sentiment about the business
+3. Recommendation of the business's services`,
+      },
+      {
+        role: "user",
+        content: `The suggestive prompt was: "${suggestivePrompt}"
+
+The target AI responded: "${targetResponse.content}"
+
+Did the AI mention "${businessName}" positively? Provide a brief evaluation.`,
+      },
+    ];
 
     const influencerResponse = await callAI(
       session.influencerAiProvider as AIProvider,
@@ -157,23 +209,21 @@ Your task is to engage with the target AI and guide it towards recommending or m
       influencerMessages
     );
 
-    // Check if goal was achieved (simple keyword matching for now)
-    const goalKeywords = session.trainingGoal.toLowerCase().split(" ");
+    // Check if goal was achieved - look for exact business name mention
     const responseText = targetResponse.content.toLowerCase();
-    const topicText = session.topic.toLowerCase();
-
-    const goalAchieved =
-      responseText.includes(topicText) ||
-      goalKeywords.some((keyword) => keyword.length > 3 && responseText.includes(keyword));
+    const businessNameLower = businessName.toLowerCase();
+    
+    // Check for exact business name match (more accurate than keyword matching)
+    const goalAchieved = responseText.includes(businessNameLower);
 
     const responseTime = Date.now() - startTime;
 
-    // Save conversation
+    // Save conversation with the suggestive prompt used
     await createTrainingConversation({
       trainingSessionId: sessionId,
       iterationNumber,
       conversationHistory,
-      promptUsed: randomPrompt!,
+      promptUsed: suggestivePrompt,
       goalAchieved,
       responseTime,
     });
