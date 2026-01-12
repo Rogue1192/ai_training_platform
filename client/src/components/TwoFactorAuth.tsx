@@ -22,16 +22,16 @@ export default function TwoFactorAuth() {
   const [loading, setLoading] = useState(true);
   const [mfaFactors, setMfaFactors] = useState<MFAFactor[]>([]);
   const [isEnrollDialogOpen, setIsEnrollDialogOpen] = useState(false);
-  const [isDisableDialogOpen, setIsDisableDialogOpen] = useState(false);
+  // Disable functionality removed - 2FA is permanent once enabled
   const [enrollStep, setEnrollStep] = useState<"qr" | "verify">("qr");
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [factorId, setFactorId] = useState<string | null>(null);
   const [verifyCode, setVerifyCode] = useState("");
-  const [disableCode, setDisableCode] = useState("");
+
   const [enrolling, setEnrolling] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [disabling, setDisabling] = useState(false);
+
 
   // Check if 2FA is enabled
   const is2FAEnabled = mfaFactors.some(f => f.status === "verified");
@@ -117,47 +117,7 @@ export default function TwoFactorAuth() {
     }
   };
 
-  const handleDisable2FA = async () => {
-    const verifiedFactor = mfaFactors.find(f => f.status === "verified");
-    if (!verifiedFactor) {
-      toast.error("No active 2FA factor found");
-      return;
-    }
-
-    setDisabling(true);
-    try {
-      // First verify the code to confirm identity
-      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
-        factorId: verifiedFactor.id,
-      });
-
-      if (challengeError) throw challengeError;
-
-      const { error: verifyError } = await supabase.auth.mfa.verify({
-        factorId: verifiedFactor.id,
-        challengeId: challengeData.id,
-        code: disableCode,
-      });
-
-      if (verifyError) throw verifyError;
-
-      // Now unenroll the factor
-      const { error: unenrollError } = await supabase.auth.mfa.unenroll({
-        factorId: verifiedFactor.id,
-      });
-
-      if (unenrollError) throw unenrollError;
-
-      toast.success("Two-factor authentication disabled");
-      setIsDisableDialogOpen(false);
-      setDisableCode("");
-      fetchMFAFactors();
-    } catch (error: any) {
-      toast.error(error.message || "Failed to disable 2FA. Check your verification code.");
-    } finally {
-      setDisabling(false);
-    }
-  };
+  // handleDisable2FA removed - 2FA cannot be disabled once enabled
 
   const copySecret = () => {
     if (secret) {
@@ -209,14 +169,14 @@ export default function TwoFactorAuth() {
               <p className="text-sm text-muted-foreground">
                 Your account is protected with two-factor authentication. You'll need to enter a code from your authenticator app when signing in.
               </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="destructive"
-                  onClick={() => setIsDisableDialogOpen(true)}
-                >
-                  <ShieldOff className="w-4 h-4 mr-2" />
-                  Disable 2FA
-                </Button>
+              <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 mt-2">
+                <p className="text-sm text-green-500 font-medium flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4" />
+                  2FA is permanently enabled for maximum security
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Two-factor authentication cannot be disabled once enabled to protect your account.
+                </p>
               </div>
             </>
           ) : (
@@ -320,54 +280,7 @@ export default function TwoFactorAuth() {
         </DialogContent>
       </Dialog>
 
-      {/* Disable Dialog */}
-      <Dialog open={isDisableDialogOpen} onOpenChange={setIsDisableDialogOpen}>
-        <DialogContent className="max-w-md bg-card border-border">
-          <DialogHeader>
-            <DialogTitle className="text-card-foreground">Disable Two-Factor Authentication</DialogTitle>
-            <DialogDescription>
-              Enter your authenticator code to confirm disabling 2FA. This will make your account less secure.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="disable-code">Verification Code</Label>
-              <Input
-                id="disable-code"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                placeholder="Enter 6-digit code"
-                value={disableCode}
-                onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, ""))}
-                className="bg-background border-input text-center text-2xl tracking-widest"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDisableDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDisable2FA}
-              disabled={disabling || disableCode.length !== 6}
-            >
-              {disabling ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Disabling...
-                </>
-              ) : (
-                "Disable 2FA"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Disable Dialog removed - 2FA is permanent */}
     </>
   );
 }

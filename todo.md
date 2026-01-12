@@ -254,3 +254,7 @@
 - [x] Create 2FA management section (view status, disable)
 - [ ] Add recovery codes generation and display (future enhancement)
 - [x] Test full 2FA enrollment and login flow
+
+## 2FA Permanent (No Disable)
+- [x] Remove disable 2FA button once 2FA is enabled
+- [x] Update UI to show 2FA is permanently enabled
