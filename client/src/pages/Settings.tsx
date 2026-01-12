@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, Check, X, Key, PlayCircle, AlertCircle } from "lucide-react";
+import TwoFactorAuth from "@/components/TwoFactorAuth";
 
 export default function Settings() {
   const { data: apiKeys, isLoading, refetch } = trpc.apiKey.list.useQuery();
@@ -360,6 +361,9 @@ export default function Settings() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Two-Factor Authentication */}
+      <TwoFactorAuth />
 
       <Card className="bg-card border-border">
         <CardHeader>

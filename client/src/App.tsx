@@ -11,6 +11,7 @@ import TrainingSessions from "./pages/TrainingSessions";
 import ScheduledJobs from "./pages/ScheduledJobs";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
+import TwoFactorVerify from "./pages/TwoFactorVerify";
 import { LayoutDashboard, Building2, Brain, Calendar, Settings as SettingsIcon } from "lucide-react";
 
 const navigationItems = [
@@ -25,6 +26,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/2fa-verify" component={TwoFactorVerify} />
       <Route path="/">
         <DashboardLayout navigationItems={navigationItems}>
           <Dashboard />

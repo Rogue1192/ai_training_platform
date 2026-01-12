@@ -244,3 +244,13 @@
 - [x] Show next run time in job cards
 - [x] Add "Run Now" button for manual triggering
 - [x] Display total run count and last run time prominently
+
+## Two-Factor Authentication (2FA/MFA)
+- [x] Review current Supabase Auth implementation
+- [x] Create 2FA enrollment UI in Settings page
+- [x] Generate QR code for authenticator app setup
+- [x] Implement TOTP verification during enrollment
+- [x] Add 2FA challenge during login flow
+- [x] Create 2FA management section (view status, disable)
+- [ ] Add recovery codes generation and display (future enhancement)
+- [x] Test full 2FA enrollment and login flow

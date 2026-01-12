@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useLocation } from "wouter";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -13,6 +14,24 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const utils = trpc.useUtils();
+  const [, setLocation] = useLocation();
+
+  // Check if user needs MFA verification
+  const checkMFARequirement = async () => {
+    const { data: factors } = await supabase.auth.mfa.listFactors();
+    const hasVerifiedFactor = factors?.totp?.some(f => f.status === "verified");
+    
+    if (hasVerifiedFactor) {
+      // Check current assurance level
+      const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aalData?.currentLevel === "aal1" && aalData?.nextLevel === "aal2") {
+        // User has MFA enabled but hasn't completed 2FA yet
+        setLocation("/2fa-verify");
+        return true;
+      }
+    }
+    return false;
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,6 +46,12 @@ export default function Login() {
       if (error) throw error;
 
       if (data.session) {
+        // Check if MFA is required
+        const needsMFA = await checkMFARequirement();
+        if (needsMFA) {
+          return; // Already redirected to 2FA page
+        }
+        
         toast.success("Logged in successfully!");
         // Invalidate the auth query to refetch user data with the new token
         await utils.auth.me.invalidate();
