@@ -202,6 +202,37 @@ export async function getApiKeyByUserAndProvider(userId: number, provider: "open
   return result[0];
 }
 
+/**
+ * Validate that all required API keys exist for a training session
+ * Returns an object with validation result and missing providers
+ */
+export async function validateApiKeysForTraining(
+  userId: number,
+  targetProvider: "openai" | "anthropic" | "google",
+  influencerProvider: "openai" | "anthropic" | "google"
+): Promise<{ valid: boolean; missingProviders: string[] }> {
+  const missingProviders: string[] = [];
+
+  // Check target AI provider key
+  const targetKey = await getApiKeyByUserAndProvider(userId, targetProvider);
+  if (!targetKey) {
+    missingProviders.push(targetProvider);
+  }
+
+  // Check influencer AI provider key (only if different from target)
+  if (influencerProvider !== targetProvider) {
+    const influencerKey = await getApiKeyByUserAndProvider(userId, influencerProvider);
+    if (!influencerKey) {
+      missingProviders.push(influencerProvider);
+    }
+  }
+
+  return {
+    valid: missingProviders.length === 0,
+    missingProviders,
+  };
+}
+
 export async function updateApiKey(id: number, updates: Partial<InsertApiKey>): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

@@ -108,10 +108,20 @@ export default function TrainingSessions() {
   const handleStatusChange = async (id: number, status: "paused" | "in_progress" | "completed" | "error") => {
     try {
       await updateStatus.mutateAsync({ id, status });
-      toast.success(`Training ${status === "in_progress" ? "started" : "paused"}`);
+      if (status === "in_progress") {
+        toast.success("Training started successfully");
+      } else if (status === "paused") {
+        toast.success("Training paused");
+      }
       refetch();
     } catch (error: any) {
-      toast.error(error.message || "Failed to update status");
+      // Show a more descriptive error for API key issues
+      const errorMessage = error.message || "Failed to update status";
+      if (errorMessage.includes("Missing API key")) {
+        toast.error(errorMessage, { duration: 6000 });
+      } else {
+        toast.error(errorMessage);
+      }
     }
   };
 

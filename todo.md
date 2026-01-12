@@ -168,3 +168,10 @@
 - [x] Add Retry button for sessions in error state
 - [x] Display error message in session card UI
 - [x] Clean up stuck sessions (2 and 5) with proper error status
+
+## API Key Validation Before Training
+- [x] Add validation function to check if required API keys exist for a training session
+- [x] Return clear error message indicating which provider's API key is missing
+- [x] Update the updateStatus tRPC endpoint to validate before starting
+- [x] Show validation error in UI toast when trying to start without required keys
+- [x] Clear error message when retrying from error state

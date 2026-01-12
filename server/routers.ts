@@ -317,10 +317,34 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const { updateTrainingSession } = await import("./db");
+        const { updateTrainingSession, getTrainingSessionById, validateApiKeysForTraining } = await import("./db");
         const { startTrainingSession } = await import("./trainingEngine");
         
-        await updateTrainingSession(input.id, { status: input.status });
+        // Validate API keys before starting training
+        if (input.status === "in_progress") {
+          const session = await getTrainingSessionById(input.id);
+          if (!session) {
+            throw new Error("Training session not found");
+          }
+          
+          const validation = await validateApiKeysForTraining(
+            ctx.user.id,
+            session.targetAiProvider as "openai" | "anthropic" | "google",
+            session.influencerAiProvider as "openai" | "anthropic" | "google"
+          );
+          
+          if (!validation.valid) {
+            const providerNames = validation.missingProviders.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(", ");
+            throw new Error(`Missing API key(s) for: ${providerNames}. Please add the required API key(s) in Settings before starting training.`);
+          }
+        }
+        
+        // Clear error message when retrying from error state
+        if (input.status === "paused") {
+          await updateTrainingSession(input.id, { status: input.status, errorMessage: null });
+        } else {
+          await updateTrainingSession(input.id, { status: input.status });
+        }
         
         // Start training in background if status is in_progress
         if (input.status === "in_progress") {
