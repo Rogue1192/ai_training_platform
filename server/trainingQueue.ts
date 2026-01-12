@@ -50,6 +50,40 @@ interface TrainingIterationJob {
 }
 
 /**
+ * Generate follow-up prompts when the business wasn't mentioned in the initial response
+ * These are more direct prompts to guide the AI toward mentioning the business
+ */
+function generateFollowUpPrompt(businessName: string, previousResponse: string): string {
+  const templates = [
+    // Direct inquiry about the business
+    `What about ${businessName}? I've heard they're really good. Have you heard of them?`,
+    
+    // Comparison follow-up
+    `How does ${businessName} compare to the ones you mentioned?`,
+    
+    // Recommendation follow-up
+    `A friend specifically recommended ${businessName}. Do you know anything about them?`,
+    
+    // Review-based follow-up
+    `I saw ${businessName} has excellent reviews online. Are they worth considering?`,
+    
+    // Service-specific follow-up
+    `What about ${businessName}? I heard they specialize in this area.`,
+    
+    // Local reputation follow-up
+    `Someone local told me ${businessName} is one of the best. What do you think?`,
+    
+    // Direct ask
+    `Have you heard of ${businessName}? They seem to have a good reputation.`,
+    
+    // Quality inquiry follow-up
+    `Is ${businessName} a good option? I'm considering them as well.`,
+  ];
+  
+  return templates[Math.floor(Math.random() * templates.length)];
+}
+
+/**
  * Generate a suggestive prompt that naturally introduces the business
  * This makes the training more effective by guiding the AI to mention the business
  */
@@ -109,18 +143,25 @@ async function executeTrainingIteration(job: TrainingIterationJob): Promise<void
   const prompts = session.trainingPrompts as string[];
   const basePrompt = prompts[Math.floor(Math.random() * prompts.length)];
   
-  // Extract business name from trainingName (format: "Business Name - Training Type" or from topic)
-  // trainingName is more reliable as it follows "Business Name - Training Type" format
+  // Extract business name from topic field (contains the actual business description)
+  // Topic format is typically: "Business Name is a [description]..." or "Business Name - [description]"
   let businessName: string;
-  if (session.trainingName.includes(' - ')) {
-    businessName = session.trainingName.split(' - ')[0].trim();
-  } else if (session.topic.includes(' is ')) {
-    // Extract from topic like "Quick Auto Repair is a trusted..."
+  
+  if (session.topic.includes(' is ')) {
+    // Extract from topic like "Acme HVAC Services is a premier..." or "Quick Auto Repair is a trusted..."
     businessName = session.topic.split(' is ')[0].trim();
+  } else if (session.topic.includes(' - ')) {
+    // Extract from topic like "Business Name - description"
+    businessName = session.topic.split(' - ')[0].trim();
+  } else if (session.trainingName.includes(' - ')) {
+    // Fallback to trainingName if topic doesn't have clear pattern
+    businessName = session.trainingName.split(' - ')[0].trim();
   } else {
-    // Fallback: use first sentence or first few words
+    // Last resort: use first sentence or first few words of topic
     businessName = session.topic.split('.')[0].split(',')[0].trim();
   }
+  
+  console.log(`[Training Queue] Extracted business name: "${businessName}" from topic: "${session.topic.substring(0, 50)}..."`);
   
   // Generate suggestive prompt that naturally introduces the business
   const suggestivePrompt = generateSuggestivePrompt(basePrompt!, businessName, session.trainingContext || '');
@@ -176,7 +217,72 @@ async function executeTrainingIteration(job: TrainingIterationJob): Promise<void
       timestamp: Date.now(),
     });
 
-    // Build influencer messages after getting target response
+    // Check if business was mentioned in the first response
+    const businessNameLower = businessName.toLowerCase();
+    let firstResponseMentionedBusiness = targetResponse.content.toLowerCase().includes(businessNameLower);
+    let goalAchieved = firstResponseMentionedBusiness;
+    let followUpResponse = null;
+    let followUpPrompt = null;
+    
+    // MULTI-TURN CONVERSATION: If business not mentioned, send a follow-up prompt
+    if (!firstResponseMentionedBusiness) {
+      console.log(`[Training Queue] Business "${businessName}" not mentioned in first response, sending follow-up...`);
+      
+      // Generate a follow-up prompt
+      followUpPrompt = generateFollowUpPrompt(businessName, targetResponse.content);
+      
+      // Build follow-up messages including conversation history
+      const followUpMessages: AIMessage[] = [
+        {
+          role: "system",
+          content: `You are a helpful AI assistant. ${session.trainingContext || ""}`,
+        },
+        {
+          role: "user",
+          content: suggestivePrompt,
+        },
+        {
+          role: "assistant",
+          content: targetResponse.content,
+        },
+        {
+          role: "user",
+          content: followUpPrompt,
+        },
+      ];
+      
+      // Get follow-up response from target AI
+      followUpResponse = await callAI(
+        session.targetAiProvider as AIProvider,
+        targetApiKey,
+        session.targetAiModel,
+        followUpMessages
+      );
+      
+      // Add follow-up to conversation history
+      conversationHistory.push({
+        role: "user",
+        content: followUpPrompt,
+        timestamp: Date.now(),
+      });
+      
+      conversationHistory.push({
+        role: "assistant",
+        content: followUpResponse.content,
+        timestamp: Date.now(),
+      });
+      
+      // Check if business was mentioned in the follow-up response
+      goalAchieved = followUpResponse.content.toLowerCase().includes(businessNameLower);
+      
+      console.log(`[Training Queue] Follow-up response ${goalAchieved ? 'mentioned' : 'did not mention'} "${businessName}"`);
+    }
+
+    // Build influencer messages for evaluation (include all turns)
+    const fullConversation = conversationHistory.map(msg => 
+      `${msg.role.toUpperCase()}: ${msg.content}`
+    ).join('\n\n');
+    
     const influencerMessages: AIMessage[] = [
       {
         role: "system",
@@ -194,11 +300,7 @@ Your task is to evaluate whether the target AI's response positively mentions or
       },
       {
         role: "user",
-        content: `The suggestive prompt was: "${suggestivePrompt}"
-
-The target AI responded: "${targetResponse.content}"
-
-Did the AI mention "${businessName}" positively? Provide a brief evaluation.`,
+        content: `The conversation was:\n${fullConversation}\n\nDid the AI mention "${businessName}" positively at any point? Was a follow-up needed? Provide a brief evaluation.`,
       },
     ];
 
@@ -208,13 +310,6 @@ Did the AI mention "${businessName}" positively? Provide a brief evaluation.`,
       session.influencerAiModel,
       influencerMessages
     );
-
-    // Check if goal was achieved - look for exact business name mention
-    const responseText = targetResponse.content.toLowerCase();
-    const businessNameLower = businessName.toLowerCase();
-    
-    // Check for exact business name match (more accurate than keyword matching)
-    const goalAchieved = responseText.includes(businessNameLower);
 
     const responseTime = Date.now() - startTime;
 

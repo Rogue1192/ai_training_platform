@@ -184,3 +184,12 @@
 - [x] Fix goal evaluation to check for exact business name match
 - [x] Update UI to show prompt type (neutral vs suggestive)
 - [x] Test with a real training session
+
+## Multi-Turn Conversations
+- [x] Add follow-up prompt templates for when business is not mentioned
+- [x] Implement logic to check if business was mentioned after first response
+- [x] Send follow-up prompt to Target AI if business not mentioned
+- [x] Store multi-turn conversation history (multiple user/assistant pairs)
+- [x] Update UI to display multi-turn conversations with clear turn indicators
+- [x] Fix business name extraction to use topic field instead of trainingName
+- [ ] Test with real training session (pending - need AI to not mention business in first response)
