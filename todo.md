@@ -175,3 +175,4 @@
 - [x] Update the updateStatus tRPC endpoint to validate before starting
 - [x] Show validation error in UI toast when trying to start without required keys
 - [x] Clear error message when retrying from error state
+- [x] Add 'Go to Settings' link in API key error toast

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,7 +119,21 @@ export default function TrainingSessions() {
       // Show a more descriptive error for API key issues
       const errorMessage = error.message || "Failed to update status";
       if (errorMessage.includes("Missing API key")) {
-        toast.error(errorMessage, { duration: 6000 });
+        toast.error(
+          <div className="flex flex-col gap-2">
+            <span>{errorMessage}</span>
+            <button
+              onClick={() => {
+                toast.dismiss();
+                window.location.href = "/settings";
+              }}
+              className="text-sm underline text-primary hover:text-primary/80 text-left"
+            >
+              Go to Settings →
+            </button>
+          </div>,
+          { duration: 8000 }
+        );
       } else {
         toast.error(errorMessage);
       }
