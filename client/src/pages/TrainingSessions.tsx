@@ -29,6 +29,7 @@ export default function TrainingSessions() {
   const [businessFilter, setBusinessFilter] = useState<string>("all");
   const [businessSearchOpen, setBusinessSearchOpen] = useState(false);
   const [businessSearchQuery, setBusinessSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -271,6 +272,21 @@ export default function TrainingSessions() {
               </PopoverContent>
             </Popover>
           </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground whitespace-nowrap">Status:</Label>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}>
+              <SelectTrigger className="w-[140px] bg-background border-input">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="paused">Paused</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="error">Error</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <Dialog
           open={isDialogOpen}
@@ -509,9 +525,18 @@ export default function TrainingSessions() {
       {/* Pagination calculations */}
       {(() => {
         const filteredSessions = sessions?.filter((session) => {
-          if (businessFilter === "all") return true;
-          if (businessFilter === "unassigned") return !session.businessId;
-          return session.businessId?.toString() === businessFilter;
+          // Business filter
+          const matchesBusiness = 
+            businessFilter === "all" ? true :
+            businessFilter === "unassigned" ? !session.businessId :
+            session.businessId?.toString() === businessFilter;
+          
+          // Status filter
+          const matchesStatus = 
+            statusFilter === "all" ? true :
+            session.status === statusFilter;
+          
+          return matchesBusiness && matchesStatus;
         }) || [];
         
         const totalItems = filteredSessions.length;
@@ -559,7 +584,7 @@ export default function TrainingSessions() {
                   <Brain className="w-12 h-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold text-foreground mb-2">No matching sessions</h3>
                   <p className="text-sm text-muted-foreground mb-4 text-center max-w-md">
-                    No training sessions match the selected filter. Try selecting a different business.
+                    No training sessions match the selected filter. Try selecting a different business or status.
                   </p>
                 </CardContent>
               </Card>
