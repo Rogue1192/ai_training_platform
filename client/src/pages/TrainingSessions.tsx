@@ -82,6 +82,11 @@ export default function TrainingSessions() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!formData.businessId) {
+      toast.error("Please select a business for this training session");
+      return;
+    }
+
     if (!formData.trainingName.trim() || !formData.topic.trim() || !formData.trainingGoal.trim()) {
       toast.error("Please fill in all required fields");
       return;
@@ -94,7 +99,7 @@ export default function TrainingSessions() {
 
     try {
       await createSession.mutateAsync({
-        businessId: formData.businessId ? parseInt(formData.businessId) : undefined,
+        businessId: parseInt(formData.businessId),
         trainingName: formData.trainingName,
         topic: formData.topic,
         targetAiProvider: formData.targetAiProvider,
@@ -321,13 +326,12 @@ export default function TrainingSessions() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="businessId">Business (Optional)</Label>
+                    <Label htmlFor="businessId">Business *</Label>
                     <Select value={formData.businessId} onValueChange={(value) => setFormData({ ...formData, businessId: value })}>
                       <SelectTrigger className="bg-background border-input">
                         <SelectValue placeholder="Select a business" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
                         {businesses?.map((business) => (
                           <SelectItem key={business.id} value={business.id.toString()}>
                             {business.name}
@@ -335,6 +339,9 @@ export default function TrainingSessions() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {businesses?.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No businesses found. Please add a business first.</p>
+                    )}
                   </div>
                 </div>
 

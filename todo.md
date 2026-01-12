@@ -216,3 +216,9 @@
 - [x] Filter sessions in real-time when status is selected
 - [x] Combine with business filter for multi-criteria filtering
 - [x] Reset pagination to page 1 when status filter changes
+
+## Business Required for Training Sessions
+- [x] Make business selection required in training session creation form
+- [x] Add frontend validation to prevent submission without business
+- [x] Update backend validation to require businessId
+- [x] Show clear error message when business is not selected

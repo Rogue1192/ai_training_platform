@@ -285,7 +285,7 @@ export const appRouter = router({
     create: protectedProcedure
       .input(
         z.object({
-          businessId: z.number().optional(),
+          businessId: z.number(),
           trainingName: z.string().min(1),
           topic: z.string().min(1),
           targetAiProvider: z.enum(["openai", "anthropic", "google"]),
