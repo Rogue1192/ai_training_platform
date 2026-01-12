@@ -13,7 +13,8 @@ import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Check, ChevronsUpDown } from "lucide-react";
+import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Check, ChevronsUpDown, Square, CheckSquare, MinusSquare } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { ConversationViewer } from "@/components/ConversationViewer";
 
@@ -30,6 +31,10 @@ export default function TrainingSessions() {
   const [businessSearchOpen, setBusinessSearchOpen] = useState(false);
   const [businessSearchQuery, setBusinessSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  
+  // Bulk selection state
+  const [selectedSessions, setSelectedSessions] = useState<Set<number>>(new Set());
+  const [showBulkActions, setShowBulkActions] = useState(false);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -165,6 +170,79 @@ export default function TrainingSessions() {
       refetch();
     } catch (error: any) {
       toast.error(error.message || "Failed to delete session");
+    }
+  };
+
+  // Bulk selection handlers
+  const toggleSessionSelection = (sessionId: number) => {
+    setSelectedSessions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sessionId)) {
+        newSet.delete(sessionId);
+      } else {
+        newSet.add(sessionId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllSessions = (sessionIds: number[]) => {
+    setSelectedSessions(new Set(sessionIds));
+  };
+
+  const clearSelection = () => {
+    setSelectedSessions(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedSessions.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedSessions.size} training session(s)?`)) return;
+
+    try {
+      const promises = Array.from(selectedSessions).map(id => 
+        deleteSession.mutateAsync({ id })
+      );
+      await Promise.all(promises);
+      toast.success(`${selectedSessions.size} training session(s) deleted`);
+      clearSelection();
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete some sessions");
+      refetch();
+    }
+  };
+
+  const handleBulkStart = async () => {
+    if (selectedSessions.size === 0) return;
+
+    try {
+      const promises = Array.from(selectedSessions).map(id => 
+        updateStatus.mutateAsync({ id, status: "in_progress" })
+      );
+      await Promise.all(promises);
+      toast.success(`${selectedSessions.size} training session(s) started`);
+      clearSelection();
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to start some sessions");
+      refetch();
+    }
+  };
+
+  const handleBulkRestart = async () => {
+    if (selectedSessions.size === 0) return;
+
+    try {
+      const promises = Array.from(selectedSessions).map(id => 
+        updateStatus.mutateAsync({ id, status: "paused" })
+      );
+      await Promise.all(promises);
+      toast.success(`${selectedSessions.size} training session(s) reset to paused`);
+      clearSelection();
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to restart some sessions");
+      refetch();
     }
   };
 
@@ -597,22 +675,69 @@ export default function TrainingSessions() {
               </Card>
             ) : (
               <>
+                {/* Bulk action bar */}
+                {selectedSessions.size > 0 && (
+                  <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-lg p-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-medium text-foreground">
+                        {selectedSessions.size} session{selectedSessions.size !== 1 ? 's' : ''} selected
+                      </span>
+                      <Button variant="ghost" size="sm" onClick={clearSelection}>
+                        Clear selection
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={handleBulkStart}>
+                        <Play className="w-4 h-4 mr-2" />
+                        Start Selected
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={handleBulkRestart}>
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        Reset Selected
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={handleBulkDelete}>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete Selected
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Page size selector and info */}
                 <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Show</span>
-                    <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(parseInt(v)); setCurrentPage(1); }}>
-                      <SelectTrigger className="w-[70px] h-8 bg-background border-input">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="5">5</SelectItem>
-                        <SelectItem value="10">10</SelectItem>
-                        <SelectItem value="25">25</SelectItem>
-                        <SelectItem value="50">50</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <span className="text-sm text-muted-foreground">per page</span>
+                  <div className="flex items-center gap-4">
+                    {/* Select all checkbox */}
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="select-all"
+                        checked={paginatedSessions.length > 0 && paginatedSessions.every(s => selectedSessions.has(s.id))}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            selectAllSessions(paginatedSessions.map(s => s.id));
+                          } else {
+                            clearSelection();
+                          }
+                        }}
+                      />
+                      <Label htmlFor="select-all" className="text-sm text-muted-foreground cursor-pointer">
+                        Select all on page
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Show</span>
+                      <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(parseInt(v)); setCurrentPage(1); }}>
+                        <SelectTrigger className="w-[70px] h-8 bg-background border-input">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="5">5</SelectItem>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <span className="text-sm text-muted-foreground">per page</span>
+                    </div>
                   </div>
                   <span className="text-sm text-muted-foreground">
                     Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} sessions
@@ -621,15 +746,22 @@ export default function TrainingSessions() {
 
                 <div className="grid gap-4">
                   {paginatedSessions.map((session) => (
-            <Card key={session.id} className="bg-card border-border">
+            <Card key={session.id} className={cn("bg-card border-border", selectedSessions.has(session.id) && "ring-2 ring-primary")}>
               <CardHeader>
                 <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <CardTitle className="text-card-foreground">{session.trainingName}</CardTitle>
-                      {getStatusBadge(session.status)}
-                    </div>
+                  <div className="flex items-start gap-3 flex-1">
+                    <Checkbox
+                      checked={selectedSessions.has(session.id)}
+                      onCheckedChange={() => toggleSessionSelection(session.id)}
+                      className="mt-1"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <CardTitle className="text-card-foreground">{session.trainingName}</CardTitle>
+                        {getStatusBadge(session.status)}
+                      </div>
                     <CardDescription className="line-clamp-2">{session.topic}</CardDescription>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     {session.status === "paused" && (

@@ -222,3 +222,13 @@
 - [x] Add frontend validation to prevent submission without business
 - [x] Update backend validation to require businessId
 - [x] Show clear error message when business is not selected
+
+## Bulk Operations for Training Sessions
+- [x] Add checkbox column for selecting individual sessions
+- [x] Add "Select All" checkbox in header
+- [x] Show bulk action bar when items are selected
+- [x] Implement bulk delete with confirmation dialog
+- [x] Implement bulk start for paused sessions
+- [x] Implement bulk restart for completed/error sessions
+- [x] Add backend procedures for bulk operations (uses existing single-item procedures with Promise.all)
+- [x] Clear selection after bulk operation completes
