@@ -232,3 +232,15 @@
 - [x] Implement bulk restart for completed/error sessions
 - [x] Add backend procedures for bulk operations (uses existing single-item procedures with Promise.all)
 - [x] Clear selection after bulk operation completes
+
+## Full Scheduler Implementation
+- [x] Make training session required for scheduled jobs (remove business-only option)
+- [x] Create scheduler service that runs on a timer (every minute)
+- [x] Implement next run calculation for daily/weekly/monthly/custom schedules
+- [x] Query for active jobs where nextRun <= now and trigger training sessions
+- [x] Update lastRun, nextRun, and runCount after each execution
+- [x] Add run history tracking to show how many times training was run over time
+- [x] Update Schedule UI to display linked training session name
+- [x] Show next run time in job cards
+- [x] Add "Run Now" button for manual triggering
+- [x] Display total run count and last run time prominently

@@ -381,20 +381,32 @@ export const appRouter = router({
     create: protectedProcedure
       .input(
         z.object({
-          trainingSessionId: z.number().optional(),
-          businessId: z.number().optional(),
+          trainingSessionId: z.number(), // Required - must link to a training session
           jobName: z.string().min(1),
           scheduleType: z.enum(["daily", "weekly", "monthly", "custom"]),
           cronExpression: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const { createScheduledJob } = await import("./db");
+        const { createScheduledJob, getTrainingSessionById } = await import("./db");
+        const { calculateNextRun } = await import("./scheduler");
+        
+        // Verify training session exists and belongs to user
+        const session = await getTrainingSessionById(input.trainingSessionId);
+        if (!session || session.userId !== ctx.user.id) {
+          throw new Error("Training session not found or access denied");
+        }
+        
+        // Calculate next run time
+        const nextRun = calculateNextRun(input.scheduleType, input.cronExpression);
+        
         return createScheduledJob({
           ...input,
+          businessId: session.businessId ?? undefined,
           userId: ctx.user.id,
           isActive: true,
           runCount: 0,
+          nextRun,
         });
       }),
     update: protectedProcedure
@@ -416,6 +428,10 @@ export const appRouter = router({
       const { deleteScheduledJob } = await import("./db");
       await deleteScheduledJob(input.id);
       return { success: true };
+    }),
+    runNow: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      const { runJobNow } = await import("./scheduler");
+      return runJobNow(input.id);
     }),
   }),
 

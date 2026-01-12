@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,21 +9,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Loader2, Plus, Calendar, Trash2, Clock } from "lucide-react";
+import { Loader2, Plus, Calendar, Trash2, Clock, Play, RefreshCw } from "lucide-react";
 
 export default function ScheduledJobs() {
   const { data: jobs, isLoading, refetch } = trpc.schedule.list.useQuery();
   const { data: trainingSessions } = trpc.training.list.useQuery();
-  const { data: businesses } = trpc.business.list.useQuery();
   const createJob = trpc.schedule.create.useMutation();
   const updateJob = trpc.schedule.update.useMutation();
   const deleteJob = trpc.schedule.delete.useMutation();
+  const runNow = trpc.schedule.runNow.useMutation();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [runningJobId, setRunningJobId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     jobName: "",
     trainingSessionId: "",
-    businessId: "",
     scheduleType: "daily" as "daily" | "weekly" | "monthly" | "custom",
     cronExpression: "",
   });
@@ -32,7 +32,6 @@ export default function ScheduledJobs() {
     setFormData({
       jobName: "",
       trainingSessionId: "",
-      businessId: "",
       scheduleType: "daily",
       cronExpression: "",
     });
@@ -46,16 +45,15 @@ export default function ScheduledJobs() {
       return;
     }
 
-    if (!formData.trainingSessionId && !formData.businessId) {
-      toast.error("Please select a training session or business");
+    if (!formData.trainingSessionId) {
+      toast.error("Please select a training session");
       return;
     }
 
     try {
       await createJob.mutateAsync({
         jobName: formData.jobName,
-        trainingSessionId: formData.trainingSessionId ? parseInt(formData.trainingSessionId) : undefined,
-        businessId: formData.businessId ? parseInt(formData.businessId) : undefined,
+        trainingSessionId: parseInt(formData.trainingSessionId),
         scheduleType: formData.scheduleType,
         cronExpression: formData.scheduleType === "custom" ? formData.cronExpression : undefined,
       });
@@ -91,6 +89,23 @@ export default function ScheduledJobs() {
     }
   };
 
+  const handleRunNow = async (id: number) => {
+    setRunningJobId(id);
+    try {
+      const result = await runNow.mutateAsync({ id });
+      if (result.success) {
+        toast.success("Training session started successfully");
+        refetch();
+      } else {
+        toast.error(result.error || "Failed to run job");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to run job");
+    } finally {
+      setRunningJobId(null);
+    }
+  };
+
   const getScheduleLabel = (scheduleType: string) => {
     const labels: Record<string, string> = {
       daily: "Daily",
@@ -99,6 +114,34 @@ export default function ScheduledJobs() {
       custom: "Custom",
     };
     return labels[scheduleType] || scheduleType;
+  };
+
+  const getTrainingSessionName = (sessionId: number | null) => {
+    if (!sessionId || !trainingSessions) return "No session linked";
+    const session = trainingSessions.find(s => s.id === sessionId);
+    return session?.trainingName || "Unknown session";
+  };
+
+  const getNextRunDescription = (nextRun: Date | null) => {
+    if (!nextRun) return "Not scheduled";
+    
+    const now = new Date();
+    const next = new Date(nextRun);
+    const diff = next.getTime() - now.getTime();
+    
+    if (diff < 0) return "Overdue";
+    if (diff < 60 * 1000) return "In less than a minute";
+    if (diff < 60 * 60 * 1000) {
+      const minutes = Math.floor(diff / (60 * 1000));
+      return `In ${minutes} minute${minutes > 1 ? "s" : ""}`;
+    }
+    if (diff < 24 * 60 * 60 * 1000) {
+      const hours = Math.floor(diff / (60 * 60 * 1000));
+      return `In ${hours} hour${hours > 1 ? "s" : ""}`;
+    }
+    
+    const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+    return `In ${days} day${days > 1 ? "s" : ""}`;
   };
 
   if (isLoading) {
@@ -149,7 +192,7 @@ export default function ScheduledJobs() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="trainingSessionId">Training Session</Label>
+                  <Label htmlFor="trainingSessionId">Training Session *</Label>
                   <Select
                     value={formData.trainingSessionId}
                     onValueChange={(value) => setFormData({ ...formData, trainingSessionId: value })}
@@ -158,31 +201,22 @@ export default function ScheduledJobs() {
                       <SelectValue placeholder="Select a training session" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {trainingSessions?.map((session) => (
-                        <SelectItem key={session.id} value={session.id.toString()}>
-                          {session.trainingName}
-                        </SelectItem>
-                      ))}
+                      {trainingSessions && trainingSessions.length > 0 ? (
+                        trainingSessions.map((session) => (
+                          <SelectItem key={session.id} value={session.id.toString()}>
+                            {session.trainingName}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                          No training sessions available. Create one first.
+                        </div>
+                      )}
                     </SelectContent>
                   </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="businessId">Business (Optional)</Label>
-                  <Select value={formData.businessId} onValueChange={(value) => setFormData({ ...formData, businessId: value })}>
-                    <SelectTrigger className="bg-background border-input">
-                      <SelectValue placeholder="Select a business" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {businesses?.map((business) => (
-                        <SelectItem key={business.id} value={business.id.toString()}>
-                          {business.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    The training session that will be run on schedule
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -210,11 +244,11 @@ export default function ScheduledJobs() {
                       id="cronExpression"
                       value={formData.cronExpression}
                       onChange={(e) => setFormData({ ...formData, cronExpression: e.target.value })}
-                      placeholder="e.g., 0 0 * * * (every day at midnight)"
+                      placeholder="e.g., 0 9 * * * (every day at 9 AM)"
                       className="bg-background border-input"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Format: second minute hour day month weekday
+                      Format: minute hour day month weekday (e.g., "0 9 * * *" for 9 AM daily)
                     </p>
                   </div>
                 )}
@@ -256,21 +290,39 @@ export default function ScheduledJobs() {
       ) : (
         <div className="grid gap-4">
           {jobs?.map((job) => (
-            <Card key={job.id} className="bg-card border-border">
-              <CardHeader>
+            <Card key={job.id} className={`bg-card border-border ${!job.isActive ? 'opacity-60' : ''}`}>
+              <CardHeader className="pb-2">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <CardTitle className="text-card-foreground">{job.jobName}</CardTitle>
+                    <div className="flex items-center gap-3 mb-1">
+                      <CardTitle className="text-card-foreground text-lg">{job.jobName}</CardTitle>
                       <Badge variant={job.isActive ? "default" : "secondary"}>
                         {job.isActive ? "Active" : "Inactive"}
                       </Badge>
                       <Badge variant="outline">{getScheduleLabel(job.scheduleType)}</Badge>
                     </div>
+                    <p className="text-sm text-muted-foreground">
+                      Training: <span className="text-foreground font-medium">{getTrainingSessionName(job.trainingSessionId)}</span>
+                    </p>
                   </div>
                   <div className="flex gap-2 items-center">
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => handleRunNow(job.id)}
+                      disabled={runningJobId === job.id}
+                    >
+                      {runningJobId === job.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 mr-1" />
+                          Run Now
+                        </>
+                      )}
+                    </Button>
                     <div className="flex items-center gap-2">
-                      <Label htmlFor={`active-${job.id}`} className="text-sm text-muted-foreground">
+                      <Label htmlFor={`active-${job.id}`} className="text-sm text-muted-foreground sr-only">
                         {job.isActive ? "Active" : "Inactive"}
                       </Label>
                       <Switch
@@ -285,32 +337,50 @@ export default function ScheduledJobs() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Schedule:</span>
-                    <p className="font-medium text-foreground">{getScheduleLabel(job.scheduleType)}</p>
+              <CardContent className="pt-2">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div className="bg-muted/50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                      <RefreshCw className="w-4 h-4" />
+                      <span>Total Runs</span>
+                    </div>
+                    <p className="font-bold text-2xl text-foreground">{job.runCount}</p>
                   </div>
+                  
+                  <div className="bg-muted/50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                      <Clock className="w-4 h-4" />
+                      <span>Next Run</span>
+                    </div>
+                    <p className="font-medium text-foreground">
+                      {job.isActive ? getNextRunDescription(job.nextRun) : "Paused"}
+                    </p>
+                    {job.nextRun && job.isActive && (
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(job.nextRun).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="bg-muted/50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                      <Calendar className="w-4 h-4" />
+                      <span>Last Run</span>
+                    </div>
+                    <p className="font-medium text-foreground">
+                      {job.lastRun ? new Date(job.lastRun).toLocaleDateString() : "Never"}
+                    </p>
+                    {job.lastRun && (
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(job.lastRun).toLocaleTimeString()}
+                      </p>
+                    )}
+                  </div>
+                  
                   {job.cronExpression && (
-                    <div>
-                      <span className="text-muted-foreground">Cron:</span>
-                      <p className="font-mono text-xs text-foreground">{job.cronExpression}</p>
-                    </div>
-                  )}
-                  <div>
-                    <span className="text-muted-foreground">Run Count:</span>
-                    <p className="font-medium text-foreground">{job.runCount}</p>
-                  </div>
-                  {job.lastRun && (
-                    <div>
-                      <span className="text-muted-foreground">Last Run:</span>
-                      <p className="font-medium text-foreground">{new Date(job.lastRun).toLocaleString()}</p>
-                    </div>
-                  )}
-                  {job.nextRun && (
-                    <div>
-                      <span className="text-muted-foreground">Next Run:</span>
-                      <p className="font-medium text-foreground">{new Date(job.nextRun).toLocaleString()}</p>
+                    <div className="bg-muted/50 rounded-lg p-3">
+                      <div className="text-muted-foreground mb-1">Cron</div>
+                      <p className="font-mono text-sm text-foreground">{job.cronExpression}</p>
                     </div>
                   )}
                 </div>
