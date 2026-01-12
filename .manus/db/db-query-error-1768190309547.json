@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, session_id, iteration_number, goal_achieved, response_time, prompt_type FROM trainingConversations WHERE session_id = 21 ORDER BY created_at DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT id, session_id, iteration_number, goal_achieved, response_time, prompt_type FROM trainingConversations WHERE session_id = 21 ORDER BY created_at DESC LIMIT 5;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'created_at' in 'order clause'"
+  ]
+}

@@ -193,3 +193,11 @@
 - [x] Update UI to display multi-turn conversations with clear turn indicators
 - [x] Fix business name extraction to use topic field instead of trainingName
 - [ ] Test with real training session (pending - need AI to not mention business in first response)
+
+
+## Training Page Filters
+- [x] Add filter dropdown to filter training sessions by business
+- [x] Extract unique businesses from training sessions
+- [x] Show "All Businesses" option as default
+- [x] Filter sessions in real-time when business is selected
+- [x] Add "Unassigned" filter option for sessions without a business link

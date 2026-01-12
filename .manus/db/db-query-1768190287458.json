@@ -1,0 +1,17 @@
+{
+  "query": "SELECT id, `trainingName`, status, `currentProgress`, iterations FROM `trainingSessions` WHERE id = 21;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT id, `trainingName`, status, `currentProgress`, iterations FROM `trainingSessions` WHERE id = 21;",
+  "rows": [
+    {
+      "id": "21",
+      "trainingName": "Test HVAC Training",
+      "status": "paused",
+      "currentProgress": "0",
+      "iterations": "50"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttrainingName\tstatus\tcurrentProgress\titerations\n21\tTest HVAC Training\tpaused\t0\t50\n",
+  "stderr": "",
+  "execution_time_ms": 1662
+}

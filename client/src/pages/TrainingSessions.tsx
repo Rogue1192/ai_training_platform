@@ -23,6 +23,7 @@ export default function TrainingSessions() {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [viewingSession, setViewingSession] = useState<{ id: number; name: string } | null>(null);
+  const [businessFilter, setBusinessFilter] = useState<string>("all");
   const [formData, setFormData] = useState({
     businessId: "",
     trainingName: "",
@@ -193,6 +194,25 @@ export default function TrainingSessions() {
         <div>
           <h1 className="text-3xl font-bold text-foreground">Training Sessions</h1>
           <p className="text-muted-foreground mt-2">Create and manage AI training sessions</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground whitespace-nowrap">Filter by Business:</Label>
+            <Select value={businessFilter} onValueChange={setBusinessFilter}>
+              <SelectTrigger className="w-[200px] bg-background border-input">
+                <SelectValue placeholder="All Businesses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Businesses</SelectItem>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {businesses?.map((business) => (
+                  <SelectItem key={business.id} value={business.id.toString()}>
+                    {business.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <Dialog
           open={isDialogOpen}
@@ -444,7 +464,13 @@ export default function TrainingSessions() {
         </Card>
       ) : (
         <div className="grid gap-4">
-          {sessions?.map((session) => (
+          {sessions
+            ?.filter((session) => {
+              if (businessFilter === "all") return true;
+              if (businessFilter === "unassigned") return !session.businessId;
+              return session.businessId?.toString() === businessFilter;
+            })
+            .map((session) => (
             <Card key={session.id} className="bg-card border-border">
               <CardHeader>
                 <div className="flex items-start justify-between">

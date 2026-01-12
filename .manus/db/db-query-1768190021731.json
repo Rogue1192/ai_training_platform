@@ -1,0 +1,16 @@
+{
+  "query": "SELECT id, `trainingName`, `userId`, status FROM `trainingSessions` WHERE `trainingName` LIKE '%Kitsap%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT id, `trainingName`, `userId`, status FROM `trainingSessions` WHERE `trainingName` LIKE '%Kitsap%';",
+  "rows": [
+    {
+      "id": "60001",
+      "trainingName": "Kitsap Roof Pros - Local SEO Training",
+      "userId": "1",
+      "status": "paused"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttrainingName\tuserId\tstatus\n60001\tKitsap Roof Pros - Local SEO Training\t1\tpaused\n",
+  "stderr": "",
+  "execution_time_ms": 1555
+}

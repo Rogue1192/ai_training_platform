@@ -1,0 +1,60 @@
+{
+  "query": "SELECT id, userId, trainingName FROM trainingSessions ORDER BY createdAt DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT id, userId, trainingName FROM trainingSessions ORDER BY createdAt DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "60001",
+      "userId": "1",
+      "trainingName": "Kitsap Roof Pros - Local SEO Training"
+    },
+    {
+      "id": "30004",
+      "userId": "1",
+      "trainingName": "Progress Test"
+    },
+    {
+      "id": "30001",
+      "userId": "1",
+      "trainingName": "Test HVAC Training"
+    },
+    {
+      "id": "30002",
+      "userId": "1",
+      "trainingName": "Status Test Session"
+    },
+    {
+      "id": "24",
+      "userId": "1",
+      "trainingName": "Progress Test"
+    },
+    {
+      "id": "21",
+      "userId": "1",
+      "trainingName": "Test HVAC Training"
+    },
+    {
+      "id": "22",
+      "userId": "1",
+      "trainingName": "Status Test Session"
+    },
+    {
+      "id": "20",
+      "userId": "1",
+      "trainingName": "Progress Test"
+    },
+    {
+      "id": "17",
+      "userId": "1",
+      "trainingName": "Test HVAC Training"
+    },
+    {
+      "id": "18",
+      "userId": "1",
+      "trainingName": "Status Test Session"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\ttrainingName\n60001\t1\tKitsap Roof Pros - Local SEO Training\n30004\t1\tProgress Test\n30001\t1\tTest HVAC Training\n30002\t1\tStatus Test Session\n24\t1\tProgress Test\n21\t1\tTest HVAC Training\n22\t1\tStatus Test Session\n20\t1\tProgress Test\n17\t1\tTest HVAC Training\n18\t1\tStatus Test Session\n",
+  "stderr": "",
+  "execution_time_ms": 1479
+}
