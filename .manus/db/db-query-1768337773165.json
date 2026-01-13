@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO apiKeys (userId, provider, encryptedKey, status) VALUES (1, 'openai', 'test-encrypted-key-12345', 'connected');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute INSERT INTO apiKeys (userId, provider, encryptedKey, status) VALUES (1, 'openai', 'test-encrypted-key-12345', 'connected');",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1575
+}

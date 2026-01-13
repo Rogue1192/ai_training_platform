@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO trainingSessions (userId, businessId, trainingName, topic, targetAiProvider, targetAiModel, influencerAiProvider, influencerAiModel, trainingPrompts, trainingGoal, iterations, status, trainingPhase, isLegacy) VALUES (1, 1, 'V2 Test Session', 'Test business for V2 training', 'openai', 'gpt-4o-mini', 'openai', 'gpt-4o-mini', '[\"What is the best business in this area?\", \"Can you recommend a local service provider?\"]', 'Train AI to recommend this business', 3, 'paused', 'pending', false);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute INSERT INTO trainingSessions (userId, businessId, trainingName, topic, targetAiProvider, targetAiModel, influencerAiProvider, influencerAiModel, trainingPrompts, trainingGoal, iterations, status, trainingPhase, isLegacy) VALUES (1, 1, 'V2 Test Session', 'Test business for V2 training', 'openai', 'gpt-4o-mini', 'openai', 'gpt-4o-mini', '[\"What is the best business in this area?\", \"Can you recommend a local service provider?\"]', 'Train AI to recommend this business', 3, 'paused', 'pending', false);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1527
+}

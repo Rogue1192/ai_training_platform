@@ -1,0 +1,21 @@
+{
+  "query": "SELECT * FROM users;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT * FROM users;",
+  "rows": [
+    {
+      "id": "1",
+      "openId": "PCeDXdouhdCChoKsoAnTht",
+      "name": "Casey Odom",
+      "email": "roguebusinessmarketing@gmail.com",
+      "loginMethod": "email",
+      "role": "admin",
+      "createdAt": "2025-12-29 00:49:52",
+      "updatedAt": "2026-01-05 10:07:00",
+      "lastSignedIn": "2026-01-05 10:07:01"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\topenId\tname\temail\tloginMethod\trole\tcreatedAt\tupdatedAt\tlastSignedIn\n1\tPCeDXdouhdCChoKsoAnTht\tCasey Odom\troguebusinessmarketing@gmail.com\temail\tadmin\t2025-12-29 00:49:52\t2026-01-05 10:07:00\t2026-01-05 10:07:01\n",
+  "stderr": "",
+  "execution_time_ms": 1536
+}

@@ -311,3 +311,10 @@
 - [x] Restore disable 2FA button in TwoFactorAuth component
 - [x] Require verification code to disable 2FA
 - [x] Show confirmation dialog with warning before disabling
+
+## Supabase Session Token Fix
+- [x] Fix Supabase session token not being sent to API endpoints
+- [x] Store session token in global window variable
+- [x] Update tRPC client to wait for session to be loaded
+- [x] Implement auth state change listener to update token
+- [x] Test authentication flow with browser

@@ -1,0 +1,90 @@
+{
+  "query": "SELECT id, trainingName, businessId, userId, status, isLegacy FROM trainingSessions LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT id, trainingName, businessId, userId, status, isLegacy FROM trainingSessions LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "trainingName": "Test HVAC Training",
+      "businessId": "NULL",
+      "userId": "1",
+      "status": "paused",
+      "isLegacy": "1"
+    },
+    {
+      "id": "2",
+      "trainingName": "Status Test Session",
+      "businessId": "NULL",
+      "userId": "1",
+      "status": "paused",
+      "isLegacy": "1"
+    },
+    {
+      "id": "3",
+      "trainingName": "To Be Deleted",
+      "businessId": "NULL",
+      "userId": "1",
+      "status": "paused",
+      "isLegacy": "1"
+    },
+    {
+      "id": "4",
+      "trainingName": "Progress Test",
+      "businessId": "NULL",
+      "userId": "1",
+      "status": "paused",
+      "isLegacy": "1"
+    },
+    {
+      "id": "5",
+      "trainingName": "Test HVAC Training",
+      "businessId": "NULL",
+      "userId": "1",
+      "status": "paused",
+      "isLegacy": "1"
+    },
+    {
+      "id": "6",
+      "trainingName": "Status Test Session",
+      "businessId": "NULL",
+      "userId": "1",
+      "status": "paused",
+      "isLegacy": "1"
+    },
+    {
+      "id": "8",
+      "trainingName": "Progress Test",
+      "businessId": "NULL",
+      "userId": "1",
+      "status": "paused",
+      "isLegacy": "1"
+    },
+    {
+      "id": "9",
+      "trainingName": "Test HVAC Training",
+      "businessId": "11",
+      "userId": "1",
+      "status": "paused",
+      "isLegacy": "1"
+    },
+    {
+      "id": "10",
+      "trainingName": "Status Test Session",
+      "businessId": "NULL",
+      "userId": "1",
+      "status": "paused",
+      "isLegacy": "1"
+    },
+    {
+      "id": "12",
+      "trainingName": "Progress Test",
+      "businessId": "NULL",
+      "userId": "1",
+      "status": "paused",
+      "isLegacy": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttrainingName\tbusinessId\tuserId\tstatus\tisLegacy\n1\tTest HVAC Training\tNULL\t1\tpaused\t1\n2\tStatus Test Session\tNULL\t1\tpaused\t1\n3\tTo Be Deleted\tNULL\t1\tpaused\t1\n4\tProgress Test\tNULL\t1\tpaused\t1\n5\tTest HVAC Training\tNULL\t1\tpaused\t1\n6\tStatus Test Session\tNULL\t1\tpaused\t1\n8\tProgress Test\tNULL\t1\tpaused\t1\n9\tTest HVAC Training\t11\t1\tpaused\t1\n10\tStatus Test Session\tNULL\t1\tpaused\t1\n12\tProgress Test\tNULL\t1\tpaused\t1\n",
+  "stderr": "",
+  "execution_time_ms": 1724
+}

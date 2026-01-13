@@ -9,6 +9,13 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    // Get session token for the client
+    getSessionToken: publicProcedure.query(async ({ ctx }) => {
+      return {
+        user: ctx.user,
+        hasSession: !!ctx.user,
+      };
+    }),
     // Debug endpoint to check Supabase configuration
     debug: publicProcedure.query(async ({ ctx }) => {
       const { isSupabaseConfigured } = await import("./_core/supabase");

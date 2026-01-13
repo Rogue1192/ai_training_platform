@@ -1,0 +1,20 @@
+{
+  "query": "SELECT * FROM apiKeys;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT * FROM apiKeys;",
+  "rows": [
+    {
+      "id": "1",
+      "userId": "1",
+      "provider": "openai",
+      "encryptedKey": "test-encrypted-key-12345",
+      "status": "connected",
+      "lastVerified": "NULL",
+      "createdAt": "2026-01-13 20:56:13",
+      "updatedAt": "2026-01-13 20:56:13"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tprovider\tencryptedKey\tstatus\tlastVerified\tcreatedAt\tupdatedAt\n1\t1\topenai\ttest-encrypted-key-12345\tconnected\tNULL\t2026-01-13 20:56:13\t2026-01-13 20:56:13\n",
+  "stderr": "",
+  "execution_time_ms": 1496
+}

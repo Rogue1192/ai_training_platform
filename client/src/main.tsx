@@ -44,11 +44,20 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       async headers() {
-        // Get the current Supabase session and include the access token
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
+        // Wait for the session to be loaded if it's not already available
+        if (!(window as any).__supabaseToken && (window as any).__supabaseSessionPromise) {
+          try {
+            await (window as any).__supabaseSessionPromise;
+          } catch (error) {
+            console.error('[tRPC] Error waiting for session:', error);
+          }
+        }
+        
+        // Use the global token if available
+        const token = (window as any).__supabaseToken;
+        if (token) {
           return {
-            Authorization: `Bearer ${session.access_token}`,
+            Authorization: `Bearer ${token}`,
           };
         }
         return {};
