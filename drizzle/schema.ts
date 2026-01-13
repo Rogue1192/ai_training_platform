@@ -11,6 +11,10 @@ export const roleEnum = pgEnum("role", ["user", "admin"]);
 export const aiProviderEnum = pgEnum("ai_provider", ["openai", "anthropic", "google"]);
 export const apiKeyStatusEnum = pgEnum("api_key_status", ["connected", "disconnected"]);
 export const trainingStatusEnum = pgEnum("training_status", ["paused", "in_progress", "completed", "error"]);
+// Note: trainingPhase, conversationType, and promptType use varchar instead of enum for TiDB compatibility
+// Valid values: trainingPhase: 'pending' | 'baseline' | 'training' | 'evaluation' | 'completed'
+// Valid values: conversationType: 'baseline' | 'training' | 'evaluation'
+// Valid values: promptType: 'clean' | 'suggestive' | 'follow_up'
 export const scheduleTypeEnum = pgEnum("schedule_type", ["daily", "weekly", "monthly", "custom"]);
 
 // Users table
@@ -93,6 +97,14 @@ export const trainingSessions = pgTable("trainingSessions", {
   currentProgress: integer("currentProgress").default(0).notNull(),
   status: trainingStatusEnum("status").default("paused").notNull(),
   errorMessage: text("errorMessage"),
+  // New fields for phase-based training
+  trainingPhase: varchar("trainingPhase", { length: 20 }).default("pending").notNull(),
+  baselineMentioned: boolean("baselineMentioned"),
+  evaluationMentioned: boolean("evaluationMentioned"),
+  influenceScore: integer("influenceScore"),
+  trainingIterationsCompleted: integer("trainingIterationsCompleted").default(0).notNull(),
+  // Legacy flag for sessions created before phase-based training
+  isLegacy: boolean("isLegacy").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   completedAt: timestamp("completedAt"),
@@ -112,6 +124,11 @@ export const trainingConversations = pgTable("trainingConversations", {
   promptUsed: text("promptUsed").notNull(),
   goalAchieved: boolean("goalAchieved").default(false).notNull(),
   responseTime: integer("responseTime"),
+  // New fields for phase-based training
+  conversationType: varchar("conversationType", { length: 20 }).default("training").notNull(),
+  promptType: varchar("promptType", { length: 20 }).default("suggestive").notNull(),
+  businessMentionedUnprompted: boolean("businessMentionedUnprompted"),
+  mentionConfidence: integer("mentionConfidence"), // 0-100 confidence score
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

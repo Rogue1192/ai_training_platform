@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `trainingSessions` ADD COLUMN `trainingPhase` varchar(20) DEFAULT 'pending' NOT NULL;\nALTER TABLE `trainingSessions` ADD COLUMN `baselineMentioned` boolean;\nALTER TABLE `trainingSessions` ADD COLUMN `evaluationMentioned` boolean;\nALTER TABLE `trainingSessions` ADD COLUMN `influenceScore` integer;\nALTER TABLE `trainingSessions` ADD COLUMN `trainingIterationsCompleted` integer DEFAULT 0 NOT NULL;\nALTER TABLE `trainingSessions` ADD COLUMN `isLegacy` boolean DEFAULT false NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute ALTER TABLE `trainingSessions` ADD COLUMN `trainingPhase` varchar(20) DEFAULT 'pending' NOT NULL;\nALTER TABLE `trainingSessions` ADD COLUMN `baselineMentioned` boolean;\nALTER TABLE `trainingSessions` ADD COLUMN `evaluationMentioned` boolean;\nALTER TABLE `trainingSessions` ADD COLUMN `influenceScore` integer;\nALTER TABLE `trainingSessions` ADD COLUMN `trainingIterationsCompleted` integer DEFAULT 0 NOT NULL;\nALTER TABLE `trainingSessions` ADD COLUMN `isLegacy` boolean DEFAULT false NOT NULL;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 4923
+}

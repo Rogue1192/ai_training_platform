@@ -258,3 +258,51 @@
 ## 2FA Permanent (No Disable)
 - [x] Remove disable 2FA button once 2FA is enabled
 - [x] Update UI to show 2FA is permanently enabled
+
+## AI Training Logic Fix (Major Refactor)
+**Problem:** Current implementation creates false positives by mentioning business name in prompts then checking if AI echoes it back.
+**Solution:** Separate training phase (suggestive prompts) from evaluation phase (clean prompts).
+
+### Phase 1: Database Schema Updates
+- [x] Add `trainingPhase` varchar field to trainingSessions (pending/baseline/training/evaluation/completed)
+- [x] Add `baselineMentioned` boolean field to trainingSessions
+- [x] Add `evaluationMentioned` boolean field to trainingSessions
+- [x] Add `influenceScore` integer field to trainingSessions
+- [x] Add `conversationType` field to trainingConversations (baseline/training/evaluation)
+- [x] Add `promptType` field to trainingConversations (clean/suggestive/follow_up)
+- [x] Create and run database migration
+- [x] Mark existing sessions as legacy
+
+### Phase 2: Prompt Generation Refactor
+- [x] Create `generateCleanPrompt()` function (no business name)
+- [x] Refactor `generateSuggestivePrompt()` for training phase only
+- [x] Create `generateFollowUpPrompt()` function
+- [x] Add prompt type validation and business name detection
+- [ ] Write unit tests for prompt generation
+
+### Phase 3: Training Queue Refactor
+- [x] Implement `executeBaselineTest()` function
+- [x] Refactor `executeTrainingIteration()` to skip goal scoring
+- [x] Implement `executeEvaluationTest()` function
+- [x] Add phase state machine transitions
+- [x] Update job scheduling for phase transitions
+- [x] Create trainingQueueV2.ts with new phase-based system
+
+### Phase 4: Goal Achievement Logic
+- [x] Create `checkBusinessMention()` function with confidence scoring
+- [x] Remove goal checking from training iterations (goalAchieved always false in training)
+- [x] Implement influence score calculation (evaluation - baseline)
+- [x] Add confidence scoring (0-100%)
+
+### Phase 5: UI Updates
+- [x] Update Training Session card with phase indicator badge
+- [x] Display baseline vs evaluation comparison in results section
+- [x] Add influence score visualization with color coding
+- [x] Add Legacy badge for old sessions
+- [x] Integrate V2 worker with server startup
+- [ ] Add tooltips explaining new metrics
+
+### Phase 6: Testing & Migration
+- [x] Mark legacy sessions appropriately (existing sessions marked as isLegacy=true)
+- [ ] Write integration tests for full training cycle
+- [ ] Test with real AI providers

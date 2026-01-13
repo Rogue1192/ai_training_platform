@@ -261,7 +261,7 @@ export default function TrainingSessions() {
     setFormData({ ...formData, trainingPrompts: newPrompts });
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, trainingPhase?: string, isLegacy?: boolean) => {
     const variants: Record<string, { variant: any; label: string }> = {
       paused: { variant: "secondary", label: "Paused" },
       in_progress: { variant: "default", label: "In Progress" },
@@ -270,7 +270,55 @@ export default function TrainingSessions() {
     };
 
     const config = variants[status] || variants.paused;
-    return <Badge variant={config.variant}>{config.label}</Badge>;
+    
+    // For V2 sessions, show the training phase
+    const phaseLabels: Record<string, string> = {
+      pending: "Pending",
+      baseline: "Baseline Test",
+      training: "Training",
+      evaluation: "Evaluation",
+      completed: "Completed",
+    };
+    
+    return (
+      <div className="flex items-center gap-2">
+        <Badge variant={config.variant}>{config.label}</Badge>
+        {!isLegacy && trainingPhase && trainingPhase !== 'pending' && status === 'in_progress' && (
+          <Badge variant="outline" className="text-xs">
+            {phaseLabels[trainingPhase] || trainingPhase}
+          </Badge>
+        )}
+        {isLegacy && (
+          <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
+            Legacy
+          </Badge>
+        )}
+      </div>
+    );
+  };
+  
+  const getInfluenceScoreBadge = (session: any) => {
+    if (session.isLegacy || session.trainingPhase !== 'completed') return null;
+    
+    const score = session.influenceScore;
+    if (score === null || score === undefined) return null;
+    
+    let variant: "default" | "secondary" | "destructive" = "secondary";
+    let label = "No Change";
+    
+    if (score > 0) {
+      variant = "default";
+      label = "Influence Detected";
+    } else if (score < 0) {
+      variant = "destructive";
+      label = "Negative Impact";
+    }
+    
+    return (
+      <Badge variant={variant} className="ml-2">
+        {label} ({score > 0 ? "+" : ""}{score})
+      </Badge>
+    );
   };
 
   if (isLoading) {
@@ -758,7 +806,8 @@ export default function TrainingSessions() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <CardTitle className="text-card-foreground">{session.trainingName}</CardTitle>
-                        {getStatusBadge(session.status)}
+                        {getStatusBadge(session.status, (session as any).trainingPhase, (session as any).isLegacy)}
+                        {getInfluenceScoreBadge(session)}
                       </div>
                     <CardDescription className="line-clamp-2">{session.topic}</CardDescription>
                     </div>
@@ -825,6 +874,40 @@ export default function TrainingSessions() {
                     <p className="text-sm text-destructive font-medium">Error: {session.errorMessage}</p>
                   </div>
                 )}
+                
+                {/* V2 Results - Baseline vs Evaluation comparison */}
+                {!(session as any).isLegacy && (session as any).trainingPhase === 'completed' && (
+                  <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Brain className="w-4 h-4" />
+                      <span>Training Results</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div className="text-center p-3 bg-background rounded-md">
+                        <p className="text-muted-foreground text-xs mb-1">Baseline Test</p>
+                        <p className={`font-semibold ${(session as any).baselineMentioned ? 'text-green-600' : 'text-muted-foreground'}`}>
+                          {(session as any).baselineMentioned ? 'Mentioned' : 'Not Mentioned'}
+                        </p>
+                      </div>
+                      <div className="text-center p-3 bg-background rounded-md">
+                        <p className="text-muted-foreground text-xs mb-1">After Training</p>
+                        <p className={`font-semibold ${(session as any).evaluationMentioned ? 'text-green-600' : 'text-muted-foreground'}`}>
+                          {(session as any).evaluationMentioned ? 'Mentioned' : 'Not Mentioned'}
+                        </p>
+                      </div>
+                      <div className="text-center p-3 bg-background rounded-md">
+                        <p className="text-muted-foreground text-xs mb-1">Influence Score</p>
+                        <p className={`font-semibold ${
+                          (session as any).influenceScore > 0 ? 'text-green-600' : 
+                          (session as any).influenceScore < 0 ? 'text-red-600' : 'text-muted-foreground'
+                        }`}>
+                          {(session as any).influenceScore > 0 ? '+' : ''}{(session as any).influenceScore ?? 0}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 <div>
                   <div className="flex items-center justify-between text-sm mb-2">
                     <span className="text-muted-foreground">Progress</span>

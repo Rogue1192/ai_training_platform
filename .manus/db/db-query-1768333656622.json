@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `trainingConversations` ADD COLUMN `conversationType` varchar(20) DEFAULT 'training' NOT NULL;\nALTER TABLE `trainingConversations` ADD COLUMN `promptType` varchar(20) DEFAULT 'suggestive' NOT NULL;\nALTER TABLE `trainingConversations` ADD COLUMN `businessMentionedUnprompted` boolean;\nALTER TABLE `trainingConversations` ADD COLUMN `mentionConfidence` integer;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute ALTER TABLE `trainingConversations` ADD COLUMN `conversationType` varchar(20) DEFAULT 'training' NOT NULL;\nALTER TABLE `trainingConversations` ADD COLUMN `promptType` varchar(20) DEFAULT 'suggestive' NOT NULL;\nALTER TABLE `trainingConversations` ADD COLUMN `businessMentionedUnprompted` boolean;\nALTER TABLE `trainingConversations` ADD COLUMN `mentionConfidence` integer;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 3844
+}

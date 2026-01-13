@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { trainingWorker } from "../trainingQueue";
+import { startTrainingWorkerV2 } from "../trainingQueueV2";
 import { startScheduler } from "../scheduler";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -62,13 +63,20 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
     
-    // Start the training worker if Redis is configured
+    // Start the training workers if Redis is configured
     if (process.env.REDIS_HOST) {
-      console.log(`[Training Worker] Starting training queue worker...`);
+      console.log(`[Training Worker] Starting training queue workers...`);
       console.log(`[Training Worker] Connected to Redis at ${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`);
-      // The worker is automatically started when imported
+      
+      // V1 worker (legacy sessions)
       trainingWorker.on("ready", () => {
-        console.log(`[Training Worker] Worker is ready and listening for jobs`);
+        console.log(`[Training Worker V1] Worker is ready and listening for jobs`);
+      });
+      
+      // V2 worker (phase-based sessions)
+      const v2Worker = startTrainingWorkerV2();
+      v2Worker.on("ready", () => {
+        console.log(`[Training Worker V2] Worker is ready and listening for jobs`);
       });
     } else {
       console.log(`[Training Worker] Redis not configured, training queue disabled`);
