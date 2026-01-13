@@ -1,0 +1,34 @@
+{
+  "query": "SHOW TABLES;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SHOW TABLES;",
+  "rows": [
+    {
+      "Tables_in_LN7NmKZ9FL6HUojA3D23Z5": "__drizzle_migrations"
+    },
+    {
+      "Tables_in_LN7NmKZ9FL6HUojA3D23Z5": "apiKeys"
+    },
+    {
+      "Tables_in_LN7NmKZ9FL6HUojA3D23Z5": "businesses"
+    },
+    {
+      "Tables_in_LN7NmKZ9FL6HUojA3D23Z5": "platformMetrics"
+    },
+    {
+      "Tables_in_LN7NmKZ9FL6HUojA3D23Z5": "scheduledJobs"
+    },
+    {
+      "Tables_in_LN7NmKZ9FL6HUojA3D23Z5": "trainingConversations"
+    },
+    {
+      "Tables_in_LN7NmKZ9FL6HUojA3D23Z5": "trainingSessions"
+    },
+    {
+      "Tables_in_LN7NmKZ9FL6HUojA3D23Z5": "users"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_LN7NmKZ9FL6HUojA3D23Z5\n__drizzle_migrations\napiKeys\nbusinesses\nplatformMetrics\nscheduledJobs\ntrainingConversations\ntrainingSessions\nusers\n",
+  "stderr": "",
+  "execution_time_ms": 1600
+}

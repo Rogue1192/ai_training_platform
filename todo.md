@@ -306,3 +306,8 @@
 - [x] Mark legacy sessions appropriately (existing sessions marked as isLegacy=true)
 - [ ] Write integration tests for full training cycle
 - [ ] Test with real AI providers
+
+## Allow Disabling 2FA
+- [x] Restore disable 2FA button in TwoFactorAuth component
+- [x] Require verification code to disable 2FA
+- [x] Show confirmation dialog with warning before disabling
