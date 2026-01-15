@@ -282,8 +282,11 @@ export const appRouter = router({
   // Training session management
   training: router({
     list: protectedProcedure.query(async ({ ctx }) => {
+      console.log('[training.list] Called for user:', ctx.user.id);
       const { getTrainingSessionsByUserId } = await import("./db");
-      return getTrainingSessionsByUserId(ctx.user.id);
+      const sessions = await getTrainingSessionsByUserId(ctx.user.id);
+      console.log('[training.list] Found', sessions.length, 'sessions');
+      return sessions;
     }),
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       const { getTrainingSessionById } = await import("./db");

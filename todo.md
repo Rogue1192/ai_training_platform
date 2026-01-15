@@ -318,3 +318,12 @@
 - [x] Update tRPC client to wait for session to be loaded
 - [x] Implement auth state change listener to update token
 - [x] Test authentication flow with browser
+
+
+## User-Reported Issues (Jan 15, 2026)
+- [x] Fix training content being marked as 'optional' - should be required
+- [x] Diagnose and fix Training tab slow loading issue (fixed database schema mismatch - missing columns)
+- [x] Fix infinite loading after switching tabs (fixed by adding missing database columns and session management)
+- [ ] Review Businesses tab functionality and purpose
+- [ ] Review Schedule tab functionality and purpose
+- [ ] Optimize Training tab performance for faster loading

@@ -259,10 +259,21 @@ export async function createTrainingSession(session: InsertTrainingSession): Pro
 }
 
 export async function getTrainingSessionsByUserId(userId: number): Promise<TrainingSession[]> {
+  console.log('[DB] getTrainingSessionsByUserId called for userId:', userId);
   const db = await getDb();
-  if (!db) return [];
-
-  return db.select().from(trainingSessions).where(eq(trainingSessions.userId, userId)).orderBy(desc(trainingSessions.createdAt));
+  if (!db) {
+    console.log('[DB] Database not available');
+    return [];
+  }
+  console.log('[DB] Executing query...');
+  try {
+    const result = await db.select().from(trainingSessions).where(eq(trainingSessions.userId, userId)).orderBy(desc(trainingSessions.createdAt));
+    console.log('[DB] Query completed, found', result.length, 'sessions');
+    return result;
+  } catch (error: any) {
+    console.error('[DB] Query error:', error.message);
+    throw error;
+  }
 }
 
 export async function getTrainingSessionById(id: number): Promise<TrainingSession | undefined> {

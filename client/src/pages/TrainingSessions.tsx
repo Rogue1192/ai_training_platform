@@ -92,7 +92,7 @@ export default function TrainingSessions() {
       return;
     }
 
-    if (!formData.trainingName.trim() || !formData.topic.trim() || !formData.trainingGoal.trim()) {
+    if (!formData.trainingName.trim() || !formData.topic.trim() || !formData.trainingGoal.trim() || !formData.trainingContext.trim()) {
       toast.error("Please fill in all required fields");
       return;
     }
@@ -579,7 +579,7 @@ export default function TrainingSessions() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="trainingContext">Training Context (Optional)</Label>
+                  <Label htmlFor="trainingContext">Training Context *</Label>
                   <Textarea
                     id="trainingContext"
                     value={formData.trainingContext}
