@@ -363,6 +363,45 @@ export const appRouter = router({
         
         return { success: true };
       }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          businessId: z.number().optional(),
+          trainingName: z.string().min(1).optional(),
+          topic: z.string().min(1).optional(),
+          targetAiProvider: z.enum(["openai", "anthropic", "google"]).optional(),
+          targetAiModel: z.string().min(1).optional(),
+          influencerAiProvider: z.enum(["openai", "anthropic", "google"]).optional(),
+          influencerAiModel: z.string().min(1).optional(),
+          trainingPrompts: z.array(z.string()).min(1).optional(),
+          trainingContext: z.string().optional(),
+          trainingGoal: z.string().min(1).optional(),
+          iterations: z.number().min(1).optional(),
+          retryInterval: z.number().min(5).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const { updateTrainingSession, getTrainingSessionById } = await import("./db");
+        
+        // Verify session exists and belongs to user
+        const session = await getTrainingSessionById(input.id);
+        if (!session) {
+          throw new Error("Training session not found");
+        }
+        if (session.userId !== ctx.user.id) {
+          throw new Error("Access denied: You don't own this training session");
+        }
+        
+        // Only allow editing paused or error sessions
+        if (session.status !== "paused" && session.status !== "error") {
+          throw new Error("Can only edit paused or error sessions. Please pause the session first.");
+        }
+        
+        const { id, ...updates } = input;
+        await updateTrainingSession(id, updates);
+        return { success: true };
+      }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       const { deleteTrainingSession } = await import("./db");
       await deleteTrainingSession(input.id);

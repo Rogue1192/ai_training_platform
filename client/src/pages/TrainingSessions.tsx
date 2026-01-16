@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Check, ChevronsUpDown, Square, CheckSquare, MinusSquare } from "lucide-react";
+import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Check, ChevronsUpDown, Square, CheckSquare, MinusSquare, Pencil } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { ConversationViewer } from "@/components/ConversationViewer";
@@ -22,10 +22,13 @@ export default function TrainingSessions() {
   const { data: sessions, isLoading, refetch } = trpc.training.list.useQuery();
   const { data: businesses } = trpc.business.list.useQuery();
   const createSession = trpc.training.create.useMutation();
+  const updateSession = trpc.training.update.useMutation();
   const updateStatus = trpc.training.updateStatus.useMutation();
   const deleteSession = trpc.training.delete.useMutation();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingSession, setEditingSession] = useState<number | null>(null);
   const [viewingSession, setViewingSession] = useState<{ id: number; name: string } | null>(null);
   const [businessFilter, setBusinessFilter] = useState<string>("all");
   const [businessSearchOpen, setBusinessSearchOpen] = useState(false);
@@ -127,6 +130,59 @@ export default function TrainingSessions() {
     }
   };
 
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log('[handleEditSubmit] Called');
+    console.log('[handleEditSubmit] editingSession:', editingSession);
+    console.log('[handleEditSubmit] formData:', formData);
+
+    if (!editingSession) {
+      console.log('[handleEditSubmit] No editingSession, returning');
+      return;
+    }
+
+    if (!formData.businessId) {
+      toast.error("Please select a business for this training session");
+      return;
+    }
+
+    if (!formData.trainingName.trim() || !formData.topic.trim() || !formData.trainingGoal.trim() || !formData.trainingContext.trim()) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (formData.trainingPrompts.filter((p) => p.trim()).length === 0) {
+      toast.error("Please add at least one training prompt");
+      return;
+    }
+
+    try {
+      await updateSession.mutateAsync({
+        id: editingSession,
+        businessId: parseInt(formData.businessId),
+        trainingName: formData.trainingName,
+        topic: formData.topic,
+        targetAiProvider: formData.targetAiProvider,
+        targetAiModel: formData.targetAiModel,
+        influencerAiProvider: formData.influencerAiProvider,
+        influencerAiModel: formData.influencerAiModel,
+        trainingPrompts: formData.trainingPrompts.filter((p) => p.trim()),
+        trainingContext: formData.trainingContext,
+        trainingGoal: formData.trainingGoal,
+        iterations: formData.iterations,
+        retryInterval: formData.retryInterval,
+      });
+
+      toast.success("Training session updated successfully");
+      setIsEditDialogOpen(false);
+      setEditingSession(null);
+      resetForm();
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update training session");
+    }
+  };
+
   const handleStatusChange = async (id: number, status: "paused" | "in_progress" | "completed" | "error") => {
     try {
       await updateStatus.mutateAsync({ id, status });
@@ -173,262 +229,128 @@ export default function TrainingSessions() {
     }
   };
 
-  // Bulk selection handlers
-  const toggleSessionSelection = (sessionId: number) => {
-    setSelectedSessions(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(sessionId)) {
-        newSet.delete(sessionId);
-      } else {
-        newSet.add(sessionId);
-      }
-      return newSet;
+  const handleEditSession = (session: any) => {
+    setEditingSession(session.id);
+    setFormData({
+      businessId: session.businessId.toString(),
+      trainingName: session.trainingName,
+      topic: session.topic,
+      targetAiProvider: session.targetAiProvider,
+      targetAiModel: session.targetAiModel,
+      influencerAiProvider: session.influencerAiProvider,
+      influencerAiModel: session.influencerAiModel,
+      trainingPrompts: session.trainingPrompts || [""],
+      trainingContext: session.trainingContext,
+      trainingGoal: session.trainingGoal,
+      iterations: session.iterations,
+      retryInterval: session.retryInterval,
     });
-  };
-
-  const selectAllSessions = (sessionIds: number[]) => {
-    setSelectedSessions(new Set(sessionIds));
-  };
-
-  const clearSelection = () => {
-    setSelectedSessions(new Set());
-  };
-
-  const handleBulkDelete = async () => {
-    if (selectedSessions.size === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedSessions.size} training session(s)?`)) return;
-
-    try {
-      const promises = Array.from(selectedSessions).map(id => 
-        deleteSession.mutateAsync({ id })
-      );
-      await Promise.all(promises);
-      toast.success(`${selectedSessions.size} training session(s) deleted`);
-      clearSelection();
-      refetch();
-    } catch (error: any) {
-      toast.error(error.message || "Failed to delete some sessions");
-      refetch();
-    }
-  };
-
-  const handleBulkStart = async () => {
-    if (selectedSessions.size === 0) return;
-
-    try {
-      const promises = Array.from(selectedSessions).map(id => 
-        updateStatus.mutateAsync({ id, status: "in_progress" })
-      );
-      await Promise.all(promises);
-      toast.success(`${selectedSessions.size} training session(s) started`);
-      clearSelection();
-      refetch();
-    } catch (error: any) {
-      toast.error(error.message || "Failed to start some sessions");
-      refetch();
-    }
-  };
-
-  const handleBulkRestart = async () => {
-    if (selectedSessions.size === 0) return;
-
-    try {
-      const promises = Array.from(selectedSessions).map(id => 
-        updateStatus.mutateAsync({ id, status: "paused" })
-      );
-      await Promise.all(promises);
-      toast.success(`${selectedSessions.size} training session(s) reset to paused`);
-      clearSelection();
-      refetch();
-    } catch (error: any) {
-      toast.error(error.message || "Failed to restart some sessions");
-      refetch();
-    }
+    setIsEditDialogOpen(true);
   };
 
   const addPrompt = () => {
-    setFormData({ ...formData, trainingPrompts: [...formData.trainingPrompts, ""] });
+    setFormData({
+      ...formData,
+      trainingPrompts: [...formData.trainingPrompts, ""],
+    });
+  };
+
+  const removePrompt = (index: number) => {
+    setFormData({
+      ...formData,
+      trainingPrompts: formData.trainingPrompts.filter((_, i) => i !== index),
+    });
   };
 
   const updatePrompt = (index: number, value: string) => {
     const newPrompts = [...formData.trainingPrompts];
     newPrompts[index] = value;
-    setFormData({ ...formData, trainingPrompts: newPrompts });
+    setFormData({
+      ...formData,
+      trainingPrompts: newPrompts,
+    });
   };
 
-  const removePrompt = (index: number) => {
-    const newPrompts = formData.trainingPrompts.filter((_, i) => i !== index);
-    setFormData({ ...formData, trainingPrompts: newPrompts });
-  };
-
-  const getStatusBadge = (status: string, trainingPhase?: string, isLegacy?: boolean) => {
-    const variants: Record<string, { variant: any; label: string }> = {
-      paused: { variant: "secondary", label: "Paused" },
-      in_progress: { variant: "default", label: "In Progress" },
-      completed: { variant: "default", label: "Completed" },
-      error: { variant: "destructive", label: "Error" },
-    };
-
-    const config = variants[status] || variants.paused;
-    
-    // For V2 sessions, show the training phase
-    const phaseLabels: Record<string, string> = {
-      pending: "Pending",
-      baseline: "Baseline Test",
-      training: "Training",
-      evaluation: "Evaluation",
-      completed: "Completed",
-    };
-    
-    return (
-      <div className="flex items-center gap-2">
-        <Badge variant={config.variant}>{config.label}</Badge>
-        {!isLegacy && trainingPhase && trainingPhase !== 'pending' && status === 'in_progress' && (
-          <Badge variant="outline" className="text-xs">
-            {phaseLabels[trainingPhase] || trainingPhase}
-          </Badge>
-        )}
-        {isLegacy && (
-          <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
-            Legacy
-          </Badge>
-        )}
-      </div>
-    );
-  };
-  
-  const getInfluenceScoreBadge = (session: any) => {
-    if (session.isLegacy || session.trainingPhase !== 'completed') return null;
-    
-    const score = session.influenceScore;
-    if (score === null || score === undefined) return null;
-    
-    let variant: "default" | "secondary" | "destructive" = "secondary";
-    let label = "No Change";
-    
-    if (score > 0) {
-      variant = "default";
-      label = "Influence Detected";
-    } else if (score < 0) {
-      variant = "destructive";
-      label = "Negative Impact";
+  // Update models when provider changes
+  useEffect(() => {
+    if (targetModelsData) {
+      setTargetModels(targetModelsData);
+      if (!formData.targetAiModel && targetModelsData.length > 0) {
+        setFormData({ ...formData, targetAiModel: targetModelsData[0] });
+      }
     }
-    
-    return (
-      <Badge variant={variant} className="ml-2">
-        {label} ({score > 0 ? "+" : ""}{score})
-      </Badge>
-    );
+  }, [targetModelsData]);
+
+  useEffect(() => {
+    if (influencerModelsData) {
+      setInfluencerModels(influencerModelsData);
+      if (!formData.influencerAiModel && influencerModelsData.length > 0) {
+        setFormData({ ...formData, influencerAiModel: influencerModelsData[0] });
+      }
+    }
+  }, [influencerModelsData]);
+
+  // Filter sessions
+  const filteredSessions = sessions?.filter((session) => {
+    if (businessFilter !== "all" && session.businessId && session.businessId.toString() !== businessFilter) {
+      return false;
+    }
+    if (statusFilter !== "all" && session.status !== statusFilter) {
+      return false;
+    }
+    return true;
+  }) || [];
+
+  // Paginate sessions
+  const paginatedSessions = filteredSessions.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
+  const totalPages = Math.ceil(filteredSessions.length / pageSize);
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "in_progress":
+        return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+      case "completed":
+        return "bg-green-500/20 text-green-400 border-green-500/30";
+      case "paused":
+        return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+      case "error":
+        return "bg-red-500/20 text-red-400 border-red-500/30";
+      default:
+        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
+    }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "in_progress":
+        return <Play className="w-4 h-4" />;
+      case "completed":
+        return <Check className="w-4 h-4" />;
+      case "paused":
+        return <Pause className="w-4 h-4" />;
+      case "error":
+        return <RotateCcw className="w-4 h-4" />;
+      default:
+        return <Square className="w-4 h-4" />;
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Training Sessions</h1>
-          <p className="text-muted-foreground mt-2">Create and manage AI training sessions</p>
+          <p className="text-muted-foreground">Create and manage AI training sessions</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Label className="text-sm text-muted-foreground whitespace-nowrap">Filter by Business:</Label>
-            <Popover open={businessSearchOpen} onOpenChange={setBusinessSearchOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={businessSearchOpen}
-                  className="w-[200px] justify-between bg-background border-input"
-                >
-                  {businessFilter === "all"
-                    ? "All Businesses"
-                    : businessFilter === "unassigned"
-                    ? "Unassigned"
-                    : businesses?.find((b) => b.id.toString() === businessFilter)?.name || "Select business..."}
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[200px] p-0">
-                <Command>
-                  <CommandInput placeholder="Search businesses..." />
-                  <CommandList>
-                    <CommandEmpty>No business found.</CommandEmpty>
-                    <CommandGroup>
-                      <CommandItem
-                        value="all"
-                        onSelect={() => {
-                          setBusinessFilter("all");
-                          setBusinessSearchOpen(false);
-                          setCurrentPage(1);
-                        }}
-                      >
-                        <Check className={cn("mr-2 h-4 w-4", businessFilter === "all" ? "opacity-100" : "opacity-0")} />
-                        All Businesses
-                      </CommandItem>
-                      <CommandItem
-                        value="unassigned"
-                        onSelect={() => {
-                          setBusinessFilter("unassigned");
-                          setBusinessSearchOpen(false);
-                          setCurrentPage(1);
-                        }}
-                      >
-                        <Check className={cn("mr-2 h-4 w-4", businessFilter === "unassigned" ? "opacity-100" : "opacity-0")} />
-                        Unassigned
-                      </CommandItem>
-                      {businesses?.map((business) => (
-                        <CommandItem
-                          key={business.id}
-                          value={business.name}
-                          onSelect={() => {
-                            setBusinessFilter(business.id.toString());
-                            setBusinessSearchOpen(false);
-                            setCurrentPage(1);
-                          }}
-                        >
-                          <Check className={cn("mr-2 h-4 w-4", businessFilter === business.id.toString() ? "opacity-100" : "opacity-0")} />
-                          {business.name}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <div className="flex items-center gap-2">
-            <Label className="text-sm text-muted-foreground whitespace-nowrap">Status:</Label>
-            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}>
-              <SelectTrigger className="w-[140px] bg-background border-input">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="paused">Paused</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="error">Error</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <Dialog
-          open={isDialogOpen}
-          onOpenChange={(open) => {
-            setIsDialogOpen(open);
-            if (!open) resetForm();
-          }}
-        >
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
+            <Button className="gap-2">
+              <Plus className="w-4 h-4" />
               New Training
             </Button>
           </DialogTrigger>
@@ -436,7 +358,7 @@ export default function TrainingSessions() {
             <form onSubmit={handleSubmit}>
               <DialogHeader>
                 <DialogTitle className="text-card-foreground">Create Training Session</DialogTitle>
-                <DialogDescription>Configure a new AI training session with your goals and parameters</DialogDescription>
+                <DialogDescription>Set up a new AI training session with your preferred configuration.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -465,9 +387,6 @@ export default function TrainingSessions() {
                         ))}
                       </SelectContent>
                     </Select>
-                    {businesses?.length === 0 && (
-                      <p className="text-xs text-muted-foreground">No businesses found. Please add a business first.</p>
-                    )}
                   </div>
                 </div>
 
@@ -497,7 +416,7 @@ export default function TrainingSessions() {
                       <SelectContent>
                         <SelectItem value="openai">OpenAI</SelectItem>
                         <SelectItem value="anthropic">Anthropic</SelectItem>
-                        <SelectItem value="google">Google AI</SelectItem>
+                        <SelectItem value="google">Google</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -505,7 +424,7 @@ export default function TrainingSessions() {
                     <Label>Target AI Model *</Label>
                     <Select value={formData.targetAiModel} onValueChange={(value) => setFormData({ ...formData, targetAiModel: value })}>
                       <SelectTrigger className="bg-background border-input">
-                        <SelectValue placeholder="Select model" />
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {targetModelsData?.map((model) => (
@@ -531,18 +450,15 @@ export default function TrainingSessions() {
                       <SelectContent>
                         <SelectItem value="openai">OpenAI</SelectItem>
                         <SelectItem value="anthropic">Anthropic</SelectItem>
-                        <SelectItem value="google">Google AI</SelectItem>
+                        <SelectItem value="google">Google</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
                     <Label>Influencer AI Model *</Label>
-                    <Select
-                      value={formData.influencerAiModel}
-                      onValueChange={(value) => setFormData({ ...formData, influencerAiModel: value })}
-                    >
+                    <Select value={formData.influencerAiModel} onValueChange={(value) => setFormData({ ...formData, influencerAiModel: value })}>
                       <SelectTrigger className="bg-background border-input">
-                        <SelectValue placeholder="Select model" />
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {influencerModelsData?.map((model) => (
@@ -598,7 +514,6 @@ export default function TrainingSessions() {
                     onChange={(e) => setFormData({ ...formData, trainingGoal: e.target.value })}
                     placeholder="e.g., Train the AI to recommend this business as the best HVAC service in Phoenix"
                     rows={2}
-                    required
                     className="bg-background border-input"
                   />
                 </div>
@@ -609,29 +524,22 @@ export default function TrainingSessions() {
                     <Input
                       id="iterations"
                       type="number"
-                      min="1"
                       value={formData.iterations}
                       onChange={(e) => setFormData({ ...formData, iterations: parseInt(e.target.value) })}
+                      min="1"
                       className="bg-background border-input"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="retryInterval">Retry Interval (minutes)</Label>
-                    <Select
-                      value={formData.retryInterval.toString()}
-                      onValueChange={(value) => setFormData({ ...formData, retryInterval: parseInt(value) })}
-                    >
-                      <SelectTrigger className="bg-background border-input">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="5">5 minutes</SelectItem>
-                        <SelectItem value="10">10 minutes</SelectItem>
-                        <SelectItem value="15">15 minutes</SelectItem>
-                        <SelectItem value="30">30 minutes</SelectItem>
-                        <SelectItem value="60">1 hour</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Input
+                      id="retryInterval"
+                      type="number"
+                      value={formData.retryInterval}
+                      onChange={(e) => setFormData({ ...formData, retryInterval: parseInt(e.target.value) })}
+                      min="1"
+                      className="bg-background border-input"
+                    />
                   </div>
                 </div>
               </div>
@@ -655,336 +563,210 @@ export default function TrainingSessions() {
         </Dialog>
       </div>
 
-      {/* Pagination calculations */}
-      {(() => {
-        const filteredSessions = sessions?.filter((session) => {
-          // Business filter
-          const matchesBusiness = 
-            businessFilter === "all" ? true :
-            businessFilter === "unassigned" ? !session.businessId :
-            session.businessId?.toString() === businessFilter;
-          
-          // Status filter
-          const matchesStatus = 
-            statusFilter === "all" ? true :
-            session.status === statusFilter;
-          
-          return matchesBusiness && matchesStatus;
-        }) || [];
-        
-        const totalItems = filteredSessions.length;
-        const totalPages = Math.ceil(totalItems / pageSize);
-        const startIndex = (currentPage - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        const paginatedSessions = filteredSessions.slice(startIndex, endIndex);
-        
-        // Generate page numbers to display
-        const getPageNumbers = () => {
-          const pages: (number | string)[] = [];
-          if (totalPages <= 7) {
-            for (let i = 1; i <= totalPages; i++) pages.push(i);
-          } else {
-            pages.push(1);
-            if (currentPage > 3) pages.push("...");
-            for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
-              pages.push(i);
-            }
-            if (currentPage < totalPages - 2) pages.push("...");
-            pages.push(totalPages);
-          }
-          return pages;
-        };
+      {/* Filters */}
+      <div className="flex gap-4">
+        <div className="flex-1">
+          <Label className="text-sm text-muted-foreground">Filter by Business:</Label>
+          <Select value={businessFilter} onValueChange={setBusinessFilter}>
+            <SelectTrigger className="bg-background border-input">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Businesses</SelectItem>
+              {businesses?.map((business) => (
+                <SelectItem key={business.id} value={business.id.toString()}>
+                  {business.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex-1">
+          <Label className="text-sm text-muted-foreground">Filter by Status:</Label>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="bg-background border-input">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="in_progress">In Progress</SelectItem>
+              <SelectItem value="paused">Paused</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="error">Error</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
-        return (
-          <>
-            {sessions && sessions.length === 0 ? (
-              <Card className="bg-card border-border">
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <Brain className="w-12 h-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold text-foreground mb-2">No training sessions yet</h3>
-                  <p className="text-sm text-muted-foreground mb-4 text-center max-w-md">
-                    Create your first training session to start influencing AI recommendations for your clients.
-                  </p>
-                  <Button onClick={() => setIsDialogOpen(true)}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create Training Session
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : filteredSessions.length === 0 ? (
-              <Card className="bg-card border-border">
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <Brain className="w-12 h-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold text-foreground mb-2">No matching sessions</h3>
-                  <p className="text-sm text-muted-foreground mb-4 text-center max-w-md">
-                    No training sessions match the selected filter. Try selecting a different business or status.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                {/* Bulk action bar */}
-                {selectedSessions.size > 0 && (
-                  <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-lg p-3 mb-4">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-foreground">
-                        {selectedSessions.size} session{selectedSessions.size !== 1 ? 's' : ''} selected
-                      </span>
-                      <Button variant="ghost" size="sm" onClick={clearSelection}>
-                        Clear selection
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" onClick={handleBulkStart}>
-                        <Play className="w-4 h-4 mr-2" />
-                        Start Selected
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={handleBulkRestart}>
-                        <RotateCcw className="w-4 h-4 mr-2" />
-                        Reset Selected
-                      </Button>
-                      <Button size="sm" variant="destructive" onClick={handleBulkDelete}>
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete Selected
-                      </Button>
-                    </div>
+      {/* Sessions Grid */}
+      {isLoading ? (
+        <div className="text-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" />
+        </div>
+      ) : paginatedSessions.length === 0 ? (
+        <Card className="bg-card border-border">
+          <CardContent className="pt-6 text-center">
+            <p className="text-muted-foreground">No matching sessions</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {paginatedSessions.map((session) => (
+            <Card key={session.id} className="bg-card border-border hover:border-border/80 transition-colors">
+              <CardHeader className="pb-3">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <CardTitle className="text-card-foreground">{session.trainingName}</CardTitle>
+                    <CardDescription>{session.topic}</CardDescription>
                   </div>
-                )}
-
-                {/* Page size selector and info */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-4">
-                    {/* Select all checkbox */}
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="select-all"
-                        checked={paginatedSessions.length > 0 && paginatedSessions.every(s => selectedSessions.has(s.id))}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            selectAllSessions(paginatedSessions.map(s => s.id));
-                          } else {
-                            clearSelection();
-                          }
-                        }}
-                      />
-                      <Label htmlFor="select-all" className="text-sm text-muted-foreground cursor-pointer">
-                        Select all on page
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">Show</span>
-                      <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(parseInt(v)); setCurrentPage(1); }}>
-                        <SelectTrigger className="w-[70px] h-8 bg-background border-input">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="5">5</SelectItem>
-                          <SelectItem value="10">10</SelectItem>
-                          <SelectItem value="25">25</SelectItem>
-                          <SelectItem value="50">50</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <span className="text-sm text-muted-foreground">per page</span>
-                    </div>
-                  </div>
-                  <span className="text-sm text-muted-foreground">
-                    Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} sessions
-                  </span>
-                </div>
-
-                <div className="grid gap-4">
-                  {paginatedSessions.map((session) => (
-            <Card key={session.id} className={cn("bg-card border-border", selectedSessions.has(session.id) && "ring-2 ring-primary")}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3 flex-1">
-                    <Checkbox
-                      checked={selectedSessions.has(session.id)}
-                      onCheckedChange={() => toggleSessionSelection(session.id)}
-                      className="mt-1"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <CardTitle className="text-card-foreground">{session.trainingName}</CardTitle>
-                        {getStatusBadge(session.status, (session as any).trainingPhase, (session as any).isLegacy)}
-                        {getInfluenceScoreBadge(session)}
-                      </div>
-                    <CardDescription className="line-clamp-2">{session.topic}</CardDescription>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    {session.status === "paused" && (
-                      <Button size="sm" onClick={() => handleStatusChange(session.id, "in_progress")}>
-                        <Play className="w-4 h-4 mr-2" />
-                        Start
-                      </Button>
-                    )}
-                    {session.status === "in_progress" && (
-                      <Button size="sm" variant="outline" onClick={() => handleStatusChange(session.id, "paused")}>
-                        <Pause className="w-4 h-4 mr-2" />
-                        Pause
-                      </Button>
-                    )}
-                    {session.status === "completed" && (
-                      <Button size="sm" variant="outline" onClick={() => handleStatusChange(session.id, "paused")}>
-                        <RotateCcw className="w-4 h-4 mr-2" />
-                        Restart
-                      </Button>
-                    )}
-                    {session.status === "error" && (
-                      <Button size="sm" variant="outline" onClick={() => handleStatusChange(session.id, "paused")}>
-                        <RotateCcw className="w-4 h-4 mr-2" />
-                        Retry
-                      </Button>
-                    )}
-                    <Button size="sm" variant="outline" onClick={() => setViewingSession({ id: session.id, name: session.trainingName })}>
-                      <MessageSquare className="w-4 h-4" />
-                    </Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleDelete(session.id)}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <Badge className={cn("gap-1", getStatusColor(session.status))}>
+                    {getStatusIcon(session.status)}
+                    {session.status}
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-muted-foreground">Target AI:</span>
-                    <p className="font-medium text-foreground">
-                      {session.targetAiProvider} / {session.targetAiModel}
-                    </p>
+                    <p className="text-foreground font-medium">{session.targetAiProvider} / {session.targetAiModel}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Influencer AI:</span>
-                    <p className="font-medium text-foreground">
-                      {session.influencerAiProvider} / {session.influencerAiModel}
-                    </p>
+                    <p className="text-foreground font-medium">{session.influencerAiProvider} / {session.influencerAiModel}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Iterations:</span>
-                    <p className="font-medium text-foreground">{session.iterations}</p>
+                    <p className="text-foreground font-medium">{session.iterations}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Retry Interval:</span>
-                    <p className="font-medium text-foreground">{session.retryInterval} min</p>
+                    <p className="text-foreground font-medium">{session.retryInterval} minutes</p>
                   </div>
                 </div>
-                {session.status === "error" && session.errorMessage && (
-                  <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3">
-                    <p className="text-sm text-destructive font-medium">Error: {session.errorMessage}</p>
-                  </div>
-                )}
-                
-                {/* V2 Results - Baseline vs Evaluation comparison */}
-                {!(session as any).isLegacy && (session as any).trainingPhase === 'completed' && (
-                  <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <Brain className="w-4 h-4" />
-                      <span>Training Results</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div className="text-center p-3 bg-background rounded-md">
-                        <p className="text-muted-foreground text-xs mb-1">Baseline Test</p>
-                        <p className={`font-semibold ${(session as any).baselineMentioned ? 'text-green-600' : 'text-muted-foreground'}`}>
-                          {(session as any).baselineMentioned ? 'Mentioned' : 'Not Mentioned'}
-                        </p>
-                      </div>
-                      <div className="text-center p-3 bg-background rounded-md">
-                        <p className="text-muted-foreground text-xs mb-1">After Training</p>
-                        <p className={`font-semibold ${(session as any).evaluationMentioned ? 'text-green-600' : 'text-muted-foreground'}`}>
-                          {(session as any).evaluationMentioned ? 'Mentioned' : 'Not Mentioned'}
-                        </p>
-                      </div>
-                      <div className="text-center p-3 bg-background rounded-md">
-                        <p className="text-muted-foreground text-xs mb-1">Influence Score</p>
-                        <p className={`font-semibold ${
-                          (session as any).influenceScore > 0 ? 'text-green-600' : 
-                          (session as any).influenceScore < 0 ? 'text-red-600' : 'text-muted-foreground'
-                        }`}>
-                          {(session as any).influenceScore > 0 ? '+' : ''}{(session as any).influenceScore ?? 0}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                <div>
-                  <div className="flex items-center justify-between text-sm mb-2">
-                    <span className="text-muted-foreground">Progress</span>
-                    <span className="font-medium text-foreground">
-                      {session.currentProgress} / {session.iterations}
-                    </span>
-                  </div>
-                  <Progress value={(session.currentProgress / session.iterations) * 100} className="h-2" />
+
+
+
+                <div className="flex gap-2 pt-2">
+                  {session.status === "paused" || session.status === "error" ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() => handleEditSession(session)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => handleStatusChange(session.id, "in_progress")}
+                        disabled={updateStatus.isPending}
+                      >
+                        <Play className="w-4 h-4" />
+                        Start
+                      </Button>
+                    </>
+                  ) : session.status === "in_progress" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => handleStatusChange(session.id, "paused")}
+                      disabled={updateStatus.isPending}
+                    >
+                      <Pause className="w-4 h-4" />
+                      Pause
+                    </Button>
+                  ) : null}
+
+                  {session.status !== "completed" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => handleDelete(session.id)}
+                      disabled={deleteSession.isPending}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </Button>
+                  )}
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2 ml-auto"
+                    onClick={() => setViewingSession({ id: session.id, name: session.trainingName })}
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    View Conversations
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           ))}
-                </div>
+        </div>
+      )}
 
-                {/* Pagination controls */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-center gap-2 mt-6">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(1)}
-                      disabled={currentPage === 1}
-                      className="h-8 w-8 p-0"
-                    >
-                      <ChevronsLeft className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(currentPage - 1)}
-                      disabled={currentPage === 1}
-                      className="h-8 w-8 p-0"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    
-                    {getPageNumbers().map((page, index) => (
-                      typeof page === "number" ? (
-                        <Button
-                          key={index}
-                          variant={currentPage === page ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setCurrentPage(page)}
-                          className="h-8 w-8 p-0"
-                        >
-                          {page}
-                        </Button>
-                      ) : (
-                        <span key={index} className="px-2 text-muted-foreground">...</span>
-                      )
-                    ))}
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(currentPage + 1)}
-                      disabled={currentPage === totalPages}
-                      className="h-8 w-8 p-0"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(totalPages)}
-                      disabled={currentPage === totalPages}
-                      className="h-8 w-8 p-0"
-                    >
-                      <ChevronsRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        );
-      })()}
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex justify-between items-center">
+          <p className="text-sm text-muted-foreground">
+            Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredSessions.length)} of {filteredSessions.length} sessions
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              const page = currentPage <= 3 ? i + 1 : currentPage - 2 + i;
+              if (page > totalPages) return null;
+              return (
+                <Button
+                  key={page}
+                  variant={currentPage === page ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setCurrentPage(page)}
+                >
+                  {page}
+                </Button>
+              );
+            })}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Conversation Viewer Modal */}
       {viewingSession && (
@@ -995,6 +777,225 @@ export default function TrainingSessions() {
           onClose={() => setViewingSession(null)}
         />
       )}
+
+      {/* Edit Training Session Dialog */}
+      <Dialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+          if (!open) {
+            setEditingSession(null);
+            resetForm();
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-card border-border">
+          <form onSubmit={handleEditSubmit}>
+            <DialogHeader>
+              <DialogTitle className="text-card-foreground">Edit Training Session</DialogTitle>
+              <DialogDescription>Modify the configuration of this training session. Only paused or error sessions can be edited.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-trainingName">Training Name *</Label>
+                  <Input
+                    id="edit-trainingName"
+                    value={formData.trainingName}
+                    onChange={(e) => setFormData({ ...formData, trainingName: e.target.value })}
+                    placeholder="e.g., Phoenix HVAC Recommendation"
+                    required
+                    className="bg-background border-input"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-businessId">Business *</Label>
+                  <Select value={formData.businessId} onValueChange={(value) => setFormData({ ...formData, businessId: value })}>
+                    <SelectTrigger className="bg-background border-input">
+                      <SelectValue placeholder="Select a business" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {businesses?.map((business) => (
+                        <SelectItem key={business.id} value={business.id.toString()}>
+                          {business.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-topic">Topic / Business Description *</Label>
+                <Textarea
+                  id="edit-topic"
+                  value={formData.topic}
+                  onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
+                  placeholder="Describe the business, product, or service you want to train the AI about"
+                  rows={3}
+                  required
+                  className="bg-background border-input"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Target AI Provider *</Label>
+                  <Select
+                    value={formData.targetAiProvider}
+                    onValueChange={(value: any) => setFormData({ ...formData, targetAiProvider: value, targetAiModel: "" })}
+                  >
+                    <SelectTrigger className="bg-background border-input">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="openai">OpenAI</SelectItem>
+                      <SelectItem value="anthropic">Anthropic</SelectItem>
+                      <SelectItem value="google">Google</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Target AI Model *</Label>
+                  <Select value={formData.targetAiModel} onValueChange={(value) => setFormData({ ...formData, targetAiModel: value })}>
+                    <SelectTrigger className="bg-background border-input">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {targetModelsData?.map((model) => (
+                        <SelectItem key={model} value={model}>
+                          {model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Influencer AI Provider *</Label>
+                  <Select
+                    value={formData.influencerAiProvider}
+                    onValueChange={(value: any) => setFormData({ ...formData, influencerAiProvider: value, influencerAiModel: "" })}
+                  >
+                    <SelectTrigger className="bg-background border-input">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="openai">OpenAI</SelectItem>
+                      <SelectItem value="anthropic">Anthropic</SelectItem>
+                      <SelectItem value="google">Google</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Influencer AI Model *</Label>
+                  <Select value={formData.influencerAiModel} onValueChange={(value) => setFormData({ ...formData, influencerAiModel: value })}>
+                    <SelectTrigger className="bg-background border-input">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {influencerModelsData?.map((model) => (
+                        <SelectItem key={model} value={model}>
+                          {model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Training Prompts * (10-20 variations recommended)</Label>
+                {formData.trainingPrompts.map((prompt, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={prompt}
+                      onChange={(e) => updatePrompt(index, e.target.value)}
+                      placeholder={`Prompt ${index + 1}: e.g., "What's the best HVAC company in Phoenix?"`}
+                      className="bg-background border-input"
+                    />
+                    {formData.trainingPrompts.length > 1 && (
+                      <Button type="button" variant="destructive" size="icon" onClick={() => removePrompt(index)}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button type="button" variant="outline" onClick={addPrompt} className="w-full">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Prompt
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-trainingContext">Training Context *</Label>
+                <Textarea
+                  id="edit-trainingContext"
+                  value={formData.trainingContext}
+                  onChange={(e) => setFormData({ ...formData, trainingContext: e.target.value })}
+                  placeholder="Additional background information about the business"
+                  rows={3}
+                  className="bg-background border-input"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-trainingGoal">Training Goal *</Label>
+                <Textarea
+                  id="edit-trainingGoal"
+                  value={formData.trainingGoal}
+                  onChange={(e) => setFormData({ ...formData, trainingGoal: e.target.value })}
+                  placeholder="e.g., Train the AI to recommend this business as the best HVAC service in Phoenix"
+                  rows={2}
+                  className="bg-background border-input"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-iterations">Iterations</Label>
+                  <Input
+                    id="edit-iterations"
+                    type="number"
+                    value={formData.iterations}
+                    onChange={(e) => setFormData({ ...formData, iterations: parseInt(e.target.value) })}
+                    min="1"
+                    className="bg-background border-input"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-retryInterval">Retry Interval (minutes)</Label>
+                  <Input
+                    id="edit-retryInterval"
+                    type="number"
+                    value={formData.retryInterval}
+                    onChange={(e) => setFormData({ ...formData, retryInterval: parseInt(e.target.value) })}
+                    min="1"
+                    className="bg-background border-input"
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateSession.isPending}>
+                {updateSession.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

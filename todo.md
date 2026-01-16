@@ -327,3 +327,12 @@
 - [ ] Review Businesses tab functionality and purpose
 - [ ] Review Schedule tab functionality and purpose
 - [ ] Optimize Training tab performance for faster loading
+
+
+## Edit Paused Training Sessions Feature
+- [ ] Analyze current training session structure and identify editable fields
+- [ ] Create backend API endpoint for updating training sessions (training.update)
+- [ ] Build edit dialog UI component with pre-populated form fields
+- [ ] Add edit button to paused session cards
+- [ ] Wire up edit functionality to open dialog and save changes
+- [ ] Test edit feature end-to-end
