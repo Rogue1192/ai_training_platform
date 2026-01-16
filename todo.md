@@ -336,3 +336,16 @@
 - [ ] Add edit button to paused session cards
 - [ ] Wire up edit functionality to open dialog and save changes
 - [ ] Test edit feature end-to-end
+
+
+## Edit Paused Sessions Feature
+- [x] Create Edit button on paused and error training sessions
+- [x] Implement edit dialog with all session configuration fields
+- [x] Allow editing of Target AI, Influencer AI, iterations, retry interval, and training context
+- [x] Implement Save Changes button to update session configuration
+- [x] Add form validation for required fields
+- [x] Show success/error toasts for edit operations
+- [x] Write comprehensive unit tests for edit functionality
+- [x] Test editing paused sessions
+- [x] Test editing error status sessions
+- [x] Verify session status is preserved during edit
