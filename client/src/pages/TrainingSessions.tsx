@@ -659,7 +659,7 @@ export default function TrainingSessions() {
 
 
                 <div className="flex gap-2 pt-2">
-                  {session.status === "paused" || session.status === "error" ? (
+                  {session.status === "paused" || session.status === "error" || session.status === "completed" ? (
                     <>
                       <Button
                         size="sm"

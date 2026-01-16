@@ -358,3 +358,10 @@
 - [x] Allow customizing iterations when restarting
 - [x] Write comprehensive unit tests for restart functionality
 - [x] Test restart feature end-to-end
+
+
+## Edit Button for Completed Sessions
+- [x] Modify Edit button condition to show on both paused and completed sessions
+- [x] Ensure in-progress sessions do not have Edit button
+- [x] Test edit functionality on completed sessions
+- [x] Verify session status is preserved when editing completed sessions
