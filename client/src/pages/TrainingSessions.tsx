@@ -25,6 +25,7 @@ export default function TrainingSessions() {
   const updateSession = trpc.training.update.useMutation();
   const updateStatus = trpc.training.updateStatus.useMutation();
   const deleteSession = trpc.training.delete.useMutation();
+  const restartConversation = trpc.training.restartConversation.useMutation();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -226,6 +227,16 @@ export default function TrainingSessions() {
       refetch();
     } catch (error: any) {
       toast.error(error.message || "Failed to delete session");
+    }
+  };
+
+  const handleRestartConversation = async (sessionId: number) => {
+    try {
+      const result = await restartConversation.mutateAsync({ sessionId });
+      toast.success("Conversation restarted successfully! New session created.");
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to restart conversation");
     }
   };
 
@@ -692,6 +703,19 @@ export default function TrainingSessions() {
                     >
                       <Trash2 className="w-4 h-4" />
                       Delete
+                    </Button>
+                  )}
+
+                  {session.status === "completed" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => handleRestartConversation(session.id)}
+                      disabled={restartConversation.isPending}
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      Restart Conversation
                     </Button>
                   )}
 

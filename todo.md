@@ -349,3 +349,12 @@
 - [x] Test editing paused sessions
 - [x] Test editing error status sessions
 - [x] Verify session status is preserved during edit
+
+
+## Restart Conversation Feature
+- [x] Add "Restart Conversation" button to completed training session cards
+- [x] Create restart conversation backend procedure
+- [x] Implement restart logic to create new session with same configuration
+- [x] Allow customizing iterations when restarting
+- [x] Write comprehensive unit tests for restart functionality
+- [x] Test restart feature end-to-end

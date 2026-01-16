@@ -1,0 +1,43 @@
+    restartConversation: protectedProcedure
+      .input(
+        z.object({
+          sessionId: z.number(),
+          newIterations: z.number().min(1).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const { getTrainingSessionById, createTrainingSession } = await import("./db");
+        
+        const originalSession = await getTrainingSessionById(input.sessionId);
+        if (!originalSession) {
+          throw new Error("Training session not found");
+        }
+        
+        if (originalSession.userId !== ctx.user.id) {
+          throw new Error("Access denied");
+        }
+        
+        if (originalSession.status !== "completed" && originalSession.status !== "error") {
+          throw new Error("Can only restart completed or error sessions");
+        }
+        
+        const newSession = await createTrainingSession({
+          userId: ctx.user.id,
+          businessId: originalSession.businessId,
+          trainingName: originalSession.trainingName + " (Restarted)",
+          topic: originalSession.topic,
+          targetAiProvider: originalSession.targetAiProvider,
+          targetAiModel: originalSession.targetAiModel,
+          influencerAiProvider: originalSession.influencerAiProvider,
+          influencerAiModel: originalSession.influencerAiModel,
+          trainingPrompts: originalSession.trainingPrompts,
+          trainingContext: originalSession.trainingContext,
+          trainingGoal: originalSession.trainingGoal,
+          iterations: input.newIterations || originalSession.iterations,
+          retryInterval: originalSession.retryInterval,
+          currentProgress: 0,
+          status: "paused",
+        });
+        
+        return { success: true, newSessionId: newSession.id };
+      }),
