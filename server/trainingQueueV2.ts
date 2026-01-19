@@ -553,8 +553,31 @@ export function startTrainingWorkerV2(): Worker {
   const worker = new Worker(
     "training-iterations-v2",
     async (job) => {
-      console.log(`[Training V2 Worker] Processing job ${job.id}: ${JSON.stringify(job.data)}`);
-      await processPhaseJob(job.data as PhaseBasedJob);
+      const jobData = job.data as PhaseBasedJob;
+      console.log(`[Training V2 Worker] Processing job ${job.id}: sessionId=${jobData.sessionId}, phase=${jobData.phase}, iteration=${jobData.iterationNumber || 'N/A'}`);
+      
+      try {
+        await processPhaseJob(jobData);
+        console.log(`[Training V2 Worker] Job ${job.id} processed successfully`);
+      } catch (error: any) {
+        console.error(`[Training V2 Worker] Job ${job.id} error:`, error.message);
+        console.error(`[Training V2 Worker] Job ${job.id} stack:`, error.stack);
+        
+        // Update session with error status if this is the final attempt
+        if (job.attemptsMade >= (job.opts?.attempts || 3) - 1) {
+          console.error(`[Training V2 Worker] Job ${job.id} exhausted all retries, marking session as error`);
+          try {
+            await updateTrainingSession(jobData.sessionId, {
+              status: 'error',
+              errorMessage: `Training failed after ${job.attemptsMade + 1} attempts: ${error.message}`,
+            });
+          } catch (updateError: any) {
+            console.error(`[Training V2 Worker] Failed to update session error status:`, updateError.message);
+          }
+        }
+        
+        throw error; // Re-throw to trigger BullMQ retry
+      }
     },
     {
       connection: redisConnection,
@@ -563,11 +586,23 @@ export function startTrainingWorkerV2(): Worker {
   );
   
   worker.on("completed", (job) => {
-    console.log(`[Training V2 Worker] Job ${job.id} completed`);
+    console.log(`[Training V2 Worker] Job ${job.id} completed successfully`);
   });
   
   worker.on("failed", (job, err) => {
-    console.error(`[Training V2 Worker] Job ${job?.id} failed:`, err.message);
+    const jobData = job?.data as PhaseBasedJob | undefined;
+    console.error(`[Training V2 Worker] Job ${job?.id} FAILED permanently`);
+    console.error(`[Training V2 Worker] Session: ${jobData?.sessionId}, Phase: ${jobData?.phase}`);
+    console.error(`[Training V2 Worker] Error: ${err.message}`);
+    console.error(`[Training V2 Worker] Attempts: ${job?.attemptsMade}/${job?.opts?.attempts || 3}`);
+  });
+  
+  worker.on("error", (err) => {
+    console.error(`[Training V2 Worker] Worker error:`, err.message);
+  });
+  
+  worker.on("stalled", (jobId) => {
+    console.warn(`[Training V2 Worker] Job ${jobId} stalled - will be retried`);
   });
   
   console.log("[Training V2 Worker] Started and listening for jobs");

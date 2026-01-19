@@ -8,7 +8,7 @@
 import { getDb } from "./db";
 import { scheduledJobs, trainingSessions } from "../drizzle/schema";
 import { eq, and, lte, sql } from "drizzle-orm";
-import { startTrainingSession } from "./trainingQueue";
+import { startTrainingSession } from "./trainingEngine";
 
 // Scheduler interval in milliseconds (1 minute)
 const SCHEDULER_INTERVAL = 60 * 1000;

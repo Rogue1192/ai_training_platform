@@ -316,6 +316,8 @@ export const appRouter = router({
           userId: ctx.user.id,
           currentProgress: 0,
           status: "paused",
+          isLegacy: false, // Explicitly set to use V2 phase-based training
+          trainingPhase: "pending", // Initialize training phase
         });
         return { success: true, sessionId: session.id };
       }),

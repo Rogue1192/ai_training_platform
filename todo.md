@@ -365,3 +365,9 @@
 - [x] Ensure in-progress sessions do not have Edit button
 - [x] Test edit functionality on completed sessions
 - [x] Verify session status is preserved when editing completed sessions
+
+
+## Training Session Completion Fixes (Bug Fixes)
+- [x] Fix Issue #1: Add explicit isLegacy flag to new sessions
+- [x] Fix Issue #2: Add comprehensive error logging to V2 worker
+- [x] Fix Issue #4: Update scheduler to use trainingEngine
