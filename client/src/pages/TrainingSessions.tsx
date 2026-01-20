@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,6 +27,8 @@ export default function TrainingSessions() {
   const updateStatus = trpc.training.updateStatus.useMutation();
   const deleteSession = trpc.training.delete.useMutation();
   const restartConversation = trpc.training.restartConversation.useMutation();
+  const resetStuckSessions = trpc.training.resetStuckSessions.useMutation();
+  const { data: stuckCount, refetch: refetchStuckCount } = trpc.training.getStuckSessionsCount.useQuery();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -416,13 +419,62 @@ export default function TrainingSessions() {
           <h1 className="text-3xl font-bold text-foreground">Training Sessions</h1>
           <p className="text-muted-foreground">Create and manage AI training sessions</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="w-4 h-4" />
-              New Training
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          {(stuckCount?.count ?? 0) > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="destructive"
+                  className="gap-2"
+                  disabled={resetStuckSessions.isPending}
+                >
+                  {resetStuckSessions.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4" />
+                  )}
+                  Reset {stuckCount?.count} Stuck Session{(stuckCount?.count ?? 0) !== 1 ? 's' : ''}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="bg-card border-border">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-card-foreground">Reset Stuck Sessions?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will mark {stuckCount?.count} stuck session{(stuckCount?.count ?? 0) !== 1 ? 's' : ''} as failed with a timeout error message. 
+                    The error will show how long each session was stuck and at which phase it stopped.
+                    You can then review and restart these sessions individually.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => {
+                      resetStuckSessions.mutate(undefined, {
+                        onSuccess: (data) => {
+                          toast.success(data.message);
+                          refetch();
+                          refetchStuckCount();
+                        },
+                        onError: (error) => {
+                          toast.error(`Failed to reset stuck sessions: ${error.message}`);
+                        },
+                      });
+                    }}
+                  >
+                    Reset Sessions
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="w-4 h-4" />
+                New Training
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-card border-border">
             <form onSubmit={handleSubmit}>
               <DialogHeader>
@@ -630,6 +682,7 @@ export default function TrainingSessions() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Filters */}

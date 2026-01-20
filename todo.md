@@ -381,3 +381,16 @@
 - [x] Add visual warning for sessions that may have errors
 - [x] Display training phase (baseline/training/evaluation) for V2 sessions
 - [x] Show progress (current iteration / total iterations) for in-progress sessions
+
+
+## Reset Stuck Sessions Feature
+- [x] Create backend procedure to identify and reset stuck sessions
+- [x] Define "stuck" criteria: in_progress status with no update for >1 hour
+- [x] When resetting, change status to "error" with descriptive error message
+- [x] Store error message with timeout duration, last phase, and progress
+- [x] Add "Reset Stuck Sessions" button to Training Sessions page header
+- [x] Show AlertDialog confirmation with count of sessions to be reset
+- [x] Display success toast with number of sessions reset
+- [x] Show error reason in session card for reset sessions
+- [x] Auto-hide button when no stuck sessions exist
+- [x] Test bulk reset functionality

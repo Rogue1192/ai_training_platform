@@ -456,6 +456,82 @@ export const appRouter = router({
         
         return { success: true, newSessionId: newSession.id };
       }),
+    resetStuckSessions: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        const { getDb } = await import("./db");
+        const { trainingSessions } = await import("../drizzle/schema");
+        const { eq, and, lt } = await import("drizzle-orm");
+        const db = await getDb();
+        if (!db) throw new Error("Database not initialized");
+        
+        // Define "stuck" as in_progress for more than 1 hour without update
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        
+        // Find all stuck sessions for this user
+        const stuckSessions = await db
+          .select()
+          .from(trainingSessions)
+          .where(
+            and(
+              eq(trainingSessions.userId, ctx.user.id),
+              eq(trainingSessions.status, "in_progress"),
+              lt(trainingSessions.updatedAt, oneHourAgo)
+            )
+          );
+        
+        if (stuckSessions.length === 0) {
+          return { success: true, count: 0, message: "No stuck sessions found" };
+        }
+        
+        // Reset each stuck session to error status with descriptive message
+        const resetPromises = stuckSessions.map(async (session: typeof stuckSessions[0]) => {
+          const stuckDuration = Date.now() - new Date(session.updatedAt!).getTime();
+          const hours = Math.floor(stuckDuration / (1000 * 60 * 60));
+          const minutes = Math.floor((stuckDuration % (1000 * 60 * 60)) / (1000 * 60));
+          
+          const errorMessage = `Session timed out - no progress for ${hours}h ${minutes}m. Last phase: ${session.trainingPhase || 'unknown'}. Progress: ${session.currentProgress}/${session.iterations} iterations.`;
+          
+          await db
+            .update(trainingSessions)
+            .set({
+              status: "error",
+              errorMessage: errorMessage,
+              updatedAt: new Date(),
+            })
+            .where(eq(trainingSessions.id, session.id));
+        });
+        
+        await Promise.all(resetPromises);
+        
+        return { 
+          success: true, 
+          count: stuckSessions.length, 
+          message: `Reset ${stuckSessions.length} stuck session(s) to error status` 
+        };
+      }),
+    getStuckSessionsCount: protectedProcedure
+      .query(async ({ ctx }) => {
+        const { getDb } = await import("./db");
+        const { trainingSessions } = await import("../drizzle/schema");
+        const { eq, and, lt, count } = await import("drizzle-orm");
+        const db = await getDb();
+        if (!db) throw new Error("Database not initialized");
+        
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        
+        const result = await db
+          .select({ count: count() })
+          .from(trainingSessions)
+          .where(
+            and(
+              eq(trainingSessions.userId, ctx.user.id),
+              eq(trainingSessions.status, "in_progress"),
+              lt(trainingSessions.updatedAt, oneHourAgo)
+            )
+          );
+        
+        return { count: result[0]?.count || 0 };
+      }),
   }),
 
   // Dashboard metrics
