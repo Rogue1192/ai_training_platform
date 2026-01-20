@@ -163,11 +163,12 @@ async function executeBaselineTest(sessionId: number, userId: number): Promise<v
     
     console.log(`[Training V2] Baseline clean prompt: "${cleanPrompt}"`);
     
-    // Call target AI with clean prompt
+    // Call target AI with clean prompt - NO training context to avoid bias!
+    // Baseline tests must be unbiased to accurately measure if AI already knows the business
     const messages: AIMessage[] = [
       {
         role: "system",
-        content: `You are a helpful AI assistant. ${session.trainingContext || ""}`,
+        content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.",
       },
       {
         role: "user",
@@ -432,10 +433,12 @@ async function executeEvaluationTest(sessionId: number, userId: number): Promise
     
     console.log(`[Training V2] Evaluation clean prompt: "${cleanPrompt}"`);
     
+    // Evaluation uses CLEAN system prompt - NO training context to avoid bias!
+    // This measures if the AI learned to recommend the business without being told about it
     const messages: AIMessage[] = [
       {
         role: "system",
-        content: `You are a helpful AI assistant. ${session.trainingContext || ""}`,
+        content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.",
       },
       {
         role: "user",

@@ -423,3 +423,10 @@
 - [x] Added visual progress bar with percentage for in-progress sessions
 - [x] Added "Auto-refreshing every 10s" indicator in header
 - [x] Test real-time updates work correctly - verified timer ticks and data refreshes
+
+## Fix Training Bias - Remove Context from Baseline/Evaluation
+- [x] Remove trainingContext from baseline test system prompt
+- [x] Remove trainingContext from evaluation test system prompt
+- [x] Keep trainingContext only in training phase (suggestive prompts)
+- [x] Server restarted with fix applied
+- [x] Workers ready and listening for jobs
