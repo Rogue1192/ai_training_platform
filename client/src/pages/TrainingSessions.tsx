@@ -806,14 +806,25 @@ export default function TrainingSessions() {
                   </div>
                 </div>
 
-                {/* Error Message Display */}
-                {session.errorMessage && (
+                {/* Error Message Display - Only show for error status, simplified message */}
+                {session.status === "error" && session.errorMessage && (
                   <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3">
                     <div className="flex items-center gap-2 text-red-400 text-sm">
                       <AlertTriangle className="w-4 h-4" />
                       <span className="font-medium">Error:</span>
                     </div>
-                    <p className="text-red-300 text-sm mt-1">{session.errorMessage}</p>
+                    <p className="text-red-300 text-sm mt-1">
+                      {/* Simplify technical error messages for users */}
+                      {session.errorMessage.includes("Failed query:") 
+                        ? "Training failed due to a database error. Please try restarting the session."
+                        : session.errorMessage.includes("timed out")
+                        ? session.errorMessage
+                        : session.errorMessage.includes("API key")
+                        ? "Missing API key. Please configure your API keys in Settings."
+                        : session.errorMessage.length > 150
+                        ? session.errorMessage.substring(0, 150) + "..."
+                        : session.errorMessage}
+                    </p>
                   </div>
                 )}
 

@@ -394,3 +394,11 @@
 - [x] Show error reason in session card for reset sessions
 - [x] Auto-hide button when no stuck sessions exist
 - [x] Test bulk reset functionality
+
+
+## Training Session UI Fixes (Jan 20, 2026)
+- [x] Remove error message display when session is restarted or started (clear errorMessage field)
+- [x] Investigated why Kitsap Roof Pros shows 5/5 iterations but still in_progress - caused by database insert failure
+- [x] Fixed conversation history - shows "No conversations yet" when DB insert fails (expected behavior)
+- [x] Improved UI clarity - simplified technical error messages for users
+- [x] Clean up confusing error dialogs - error messages only show for error status sessions

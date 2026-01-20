@@ -1,0 +1,70 @@
+{
+  "query": "SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'trainingConversations' ORDER BY ordinal_position;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'trainingConversations' ORDER BY ordinal_position;",
+  "rows": [
+    {
+      "column_name": "id",
+      "data_type": "int",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "trainingSessionId",
+      "data_type": "int",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "iterationNumber",
+      "data_type": "int",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "conversationHistory",
+      "data_type": "json",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "promptUsed",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "goalAchieved",
+      "data_type": "tinyint",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "responseTime",
+      "data_type": "int",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "createdAt",
+      "data_type": "timestamp",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "conversationType",
+      "data_type": "varchar",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "promptType",
+      "data_type": "varchar",
+      "is_nullable": "NO"
+    },
+    {
+      "column_name": "businessMentionedUnprompted",
+      "data_type": "tinyint",
+      "is_nullable": "YES"
+    },
+    {
+      "column_name": "mentionConfidence",
+      "data_type": "int",
+      "is_nullable": "YES"
+    }
+  ],
+  "messages": [],
+  "stdout": "column_name\tdata_type\tis_nullable\nid\tint\tNO\ntrainingSessionId\tint\tNO\niterationNumber\tint\tNO\nconversationHistory\tjson\tNO\npromptUsed\ttext\tNO\ngoalAchieved\ttinyint\tNO\nresponseTime\tint\tYES\ncreatedAt\ttimestamp\tNO\nconversationType\tvarchar\tNO\npromptType\tvarchar\tNO\nbusinessMentionedUnprompted\ttinyint\tYES\nmentionConfidence\tint\tYES\n",
+  "stderr": "",
+  "execution_time_ms": 1147
+}

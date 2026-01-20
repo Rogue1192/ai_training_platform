@@ -351,8 +351,8 @@ export const appRouter = router({
           }
         }
         
-        // Clear error message when retrying from error state
-        if (input.status === "paused") {
+        // Clear error message when starting or pausing (retrying from error state)
+        if (input.status === "in_progress" || input.status === "paused") {
           await updateTrainingSession(input.id, { status: input.status, errorMessage: null });
         } else {
           await updateTrainingSession(input.id, { status: input.status });
