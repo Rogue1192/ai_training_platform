@@ -402,3 +402,11 @@
 - [x] Fixed conversation history - shows "No conversations yet" when DB insert fails (expected behavior)
 - [x] Improved UI clarity - simplified technical error messages for users
 - [x] Clean up confusing error dialogs - error messages only show for error status sessions
+
+
+## Database Error Investigation (Jan 20, 2026)
+- [x] Checked server logs and Redis queue - found 5 failed jobs with database insert errors
+- [x] Identified why trainingConversations insert was failing - missing V2 columns
+- [x] Compared database schema with Drizzle schema - found 4 missing columns
+- [x] Fixed schema mismatches by adding missing columns (conversationType, promptType, businessMentionedUnprompted, mentionConfidence)
+- [x] Tested training session execution after fix - sessions now complete successfully with all V2 fields populated
