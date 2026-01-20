@@ -430,3 +430,8 @@
 - [x] Keep trainingContext only in training phase (suggestive prompts)
 - [x] Server restarted with fix applied
 - [x] Workers ready and listening for jobs
+
+## Fix Redis NOAUTH Error on Production
+- [ ] Investigate Redis connection configuration
+- [ ] Fix Redis authentication for BullMQ queues
+- [ ] Test training session starts without error
