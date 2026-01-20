@@ -410,3 +410,16 @@
 - [x] Compared database schema with Drizzle schema - found 4 missing columns
 - [x] Fixed schema mismatches by adding missing columns (conversationType, promptType, businessMentionedUnprompted, mentionConfidence)
 - [x] Tested training session execution after fix - sessions now complete successfully with all V2 fields populated
+
+
+## Real-Time Training Session UI Updates
+- [x] Create LiveTimer component that ticks every second
+- [x] Display elapsed time in format: "Xd Xh Xm Xs" with seconds (e.g., "7d 23h 31m 6s")
+- [x] Implement auto-refresh for session data (every 10 seconds)
+- [x] Auto-update progress counter without manual refresh
+- [x] Auto-update session status (completed, error, stuck) without manual refresh
+- [x] Auto-update "Possibly Stuck" badge in real-time
+- [x] Only enable auto-refresh when there are in-progress sessions
+- [x] Added visual progress bar with percentage for in-progress sessions
+- [x] Added "Auto-refreshing every 10s" indicator in header
+- [x] Test real-time updates work correctly - verified timer ticks and data refreshes

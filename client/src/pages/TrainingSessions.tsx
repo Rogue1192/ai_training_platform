@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,16 @@ import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain, Ch
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { ConversationViewer } from "@/components/ConversationViewer";
+import { LiveTimer } from "@/components/LiveTimer";
 
 export default function TrainingSessions() {
-  const { data: sessions, isLoading, refetch } = trpc.training.list.useQuery();
+  // Check if there are any in-progress sessions to enable auto-refresh
+  const [hasInProgressSessions, setHasInProgressSessions] = useState(false);
+  
+  const { data: sessions, isLoading, refetch } = trpc.training.list.useQuery(undefined, {
+    // Auto-refresh every 10 seconds when there are in-progress sessions
+    refetchInterval: hasInProgressSessions ? 10000 : false,
+  });
   const { data: businesses } = trpc.business.list.useQuery();
   const createSession = trpc.training.create.useMutation();
   const updateSession = trpc.training.update.useMutation();
@@ -73,6 +80,21 @@ export default function TrainingSessions() {
     { provider: formData.influencerAiProvider },
     { enabled: !!formData.influencerAiProvider }
   );
+
+  // Update hasInProgressSessions when sessions data changes
+  useEffect(() => {
+    if (sessions) {
+      const inProgress = sessions.some(s => s.status === 'in_progress');
+      setHasInProgressSessions(inProgress);
+    }
+  }, [sessions]);
+
+  // Also auto-refresh stuck sessions count when sessions change
+  useEffect(() => {
+    if (sessions) {
+      refetchStuckCount();
+    }
+  }, [sessions, refetchStuckCount]);
 
   const resetForm = () => {
     setFormData({
@@ -418,6 +440,12 @@ export default function TrainingSessions() {
         <div>
           <h1 className="text-3xl font-bold text-foreground">Training Sessions</h1>
           <p className="text-muted-foreground">Create and manage AI training sessions</p>
+          {hasInProgressSessions && (
+            <div className="flex items-center gap-2 mt-1">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs text-green-400">Auto-refreshing every 10s</span>
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           {(stuckCount?.count ?? 0) > 0 && (
@@ -771,21 +799,32 @@ export default function TrainingSessions() {
                     <span>Started: {formatDate(session.createdAt)}</span>
                   </div>
                   {session.status === 'in_progress' && (
-                    <div className="flex items-center gap-1">
-                      <Activity className="w-3 h-3" />
-                      <span>Running: {formatDuration(session.createdAt)}</span>
+                    <div className="flex items-center gap-1 text-green-400">
+                      <Activity className="w-3 h-3 animate-pulse" />
+                      <span>Running: <LiveTimer startDate={session.createdAt} className="font-mono" /></span>
                     </div>
                   )}
                   <div className="flex items-center gap-1">
                     <Clock className="w-3 h-3" />
                     <span>Last Update: {formatDate(session.updatedAt)}</span>
                   </div>
-                  {session.status === 'in_progress' && session.currentProgress > 0 && (
-                    <div className="flex items-center gap-1">
-                      <span>Progress: {session.currentProgress}/{session.iterations} iterations</span>
-                    </div>
-                  )}
                 </div>
+                
+                {/* Progress Bar for in-progress sessions */}
+                {session.status === 'in_progress' && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Progress</span>
+                      <span className="text-foreground font-medium">
+                        {session.currentProgress}/{session.iterations} iterations ({Math.round((session.currentProgress / session.iterations) * 100)}%)
+                      </span>
+                    </div>
+                    <Progress 
+                      value={(session.currentProgress / session.iterations) * 100} 
+                      className="h-2"
+                    />
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
