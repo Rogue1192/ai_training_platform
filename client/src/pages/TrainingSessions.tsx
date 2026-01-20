@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Check, ChevronsUpDown, Square, CheckSquare, MinusSquare, Pencil } from "lucide-react";
+import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Check, ChevronsUpDown, Square, CheckSquare, MinusSquare, Pencil, Clock, AlertTriangle, Activity } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { ConversationViewer } from "@/components/ConversationViewer";
@@ -350,6 +350,64 @@ export default function TrainingSessions() {
     }
   };
 
+  // Helper function to format duration
+  const formatDuration = (startDate: Date | string) => {
+    const start = new Date(startDate);
+    const now = new Date();
+    const diffMs = now.getTime() - start.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffDays > 0) {
+      return `${diffDays}d ${diffHours % 24}h`;
+    } else if (diffHours > 0) {
+      return `${diffHours}h ${diffMins % 60}m`;
+    } else {
+      return `${diffMins}m`;
+    }
+  };
+
+  // Helper function to format date
+  const formatDate = (date: Date | string) => {
+    return new Date(date).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Helper function to check if session is stuck (in_progress for more than 1 hour with no progress)
+  const isSessionStuck = (session: any) => {
+    if (session.status !== 'in_progress') return false;
+    const updatedAt = new Date(session.updatedAt);
+    const now = new Date();
+    const diffMs = now.getTime() - updatedAt.getTime();
+    const diffHours = diffMs / (1000 * 60 * 60);
+    // Consider stuck if no update for more than 1 hour
+    return diffHours > 1;
+  };
+
+  // Helper function to get training phase display
+  const getPhaseDisplay = (phase: string) => {
+    switch (phase) {
+      case 'pending':
+        return { label: 'Pending', color: 'text-gray-400' };
+      case 'baseline':
+        return { label: 'Baseline Test', color: 'text-blue-400' };
+      case 'training':
+        return { label: 'Training', color: 'text-yellow-400' };
+      case 'evaluation':
+        return { label: 'Evaluation', color: 'text-purple-400' };
+      case 'completed':
+        return { label: 'Completed', color: 'text-green-400' };
+      default:
+        return { label: phase, color: 'text-gray-400' };
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -627,16 +685,55 @@ export default function TrainingSessions() {
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <CardTitle className="text-card-foreground">{session.trainingName}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-card-foreground">{session.trainingName}</CardTitle>
+                      {isSessionStuck(session) && (
+                        <Badge variant="destructive" className="gap-1 text-xs">
+                          <AlertTriangle className="w-3 h-3" />
+                          Possibly Stuck
+                        </Badge>
+                      )}
+                    </div>
                     <CardDescription>{session.topic}</CardDescription>
                   </div>
-                  <Badge className={cn("gap-1", getStatusColor(session.status))}>
-                    {getStatusIcon(session.status)}
-                    {session.status}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge className={cn("gap-1", getStatusColor(session.status))}>
+                      {getStatusIcon(session.status)}
+                      {session.status}
+                    </Badge>
+                    {session.status === 'in_progress' && session.trainingPhase && (
+                      <span className={cn("text-xs flex items-center gap-1", getPhaseDisplay(session.trainingPhase).color)}>
+                        <Activity className="w-3 h-3" />
+                        {getPhaseDisplay(session.trainingPhase).label}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Timing Information */}
+                <div className="flex flex-wrap gap-4 text-xs text-muted-foreground border-b border-border pb-3">
+                  <div className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    <span>Started: {formatDate(session.createdAt)}</span>
+                  </div>
+                  {session.status === 'in_progress' && (
+                    <div className="flex items-center gap-1">
+                      <Activity className="w-3 h-3" />
+                      <span>Running: {formatDuration(session.createdAt)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    <span>Last Update: {formatDate(session.updatedAt)}</span>
+                  </div>
+                  {session.status === 'in_progress' && session.currentProgress > 0 && (
+                    <div className="flex items-center gap-1">
+                      <span>Progress: {session.currentProgress}/{session.iterations} iterations</span>
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-muted-foreground">Target AI:</span>
@@ -655,6 +752,17 @@ export default function TrainingSessions() {
                     <p className="text-foreground font-medium">{session.retryInterval} minutes</p>
                   </div>
                 </div>
+
+                {/* Error Message Display */}
+                {session.errorMessage && (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3">
+                    <div className="flex items-center gap-2 text-red-400 text-sm">
+                      <AlertTriangle className="w-4 h-4" />
+                      <span className="font-medium">Error:</span>
+                    </div>
+                    <p className="text-red-300 text-sm mt-1">{session.errorMessage}</p>
+                  </div>
+                )}
 
 
 

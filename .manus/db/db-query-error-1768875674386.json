@@ -1,0 +1,11 @@
+{
+  "query": "SELECT id, \"trainingName\", status, \"currentProgress\", iterations, \"trainingPhase\", \"isLegacy\", \"errorMessage\", \"createdAt\", \"updatedAt\" \nFROM \"trainingSessions\" \nWHERE status = 'in_progress' \nORDER BY \"createdAt\" DESC \nLIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT id, \"trainingName\", status, \"currentProgress\", iterations, \"trainingPhase\", \"isLegacy\", \"errorMessage\", \"createdAt\", \"updatedAt\" \nFROM \"trainingSessions\" \nWHERE status = 'in_progress' \nORDER BY \"createdAt\" DESC \nLIMIT 10;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that corresponds to your TiDB version for the right syntax to use line 2 column 24 near \"\"trainingSessions\" ",
+    "WHERE status = 'in_progress' ",
+    "ORDER BY \"createdAt\" DESC ",
+    "LIMIT 10\""
+  ]
+}

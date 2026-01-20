@@ -371,3 +371,13 @@
 - [x] Fix Issue #1: Add explicit isLegacy flag to new sessions
 - [x] Fix Issue #2: Add comprehensive error logging to V2 worker
 - [x] Fix Issue #4: Update scheduler to use trainingEngine
+
+
+## Training Session UI Improvements
+- [x] Show session start date/time on each card
+- [x] Display running duration for in-progress sessions
+- [x] Add "stuck" indicator for sessions running longer than expected ("Possibly Stuck" badge)
+- [x] Show last activity timestamp
+- [x] Add visual warning for sessions that may have errors
+- [x] Display training phase (baseline/training/evaluation) for V2 sessions
+- [x] Show progress (current iteration / total iterations) for in-progress sessions
