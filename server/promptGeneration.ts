@@ -5,7 +5,12 @@
  * - Clean prompts: Do NOT mention the business name (used for baseline and evaluation)
  * - Suggestive prompts: Include positive mentions of the business (used for training)
  * - Follow-up prompts: Reinforce business mentions in multi-turn conversations
+ * 
+ * Prompts can be customized via the Settings page. If no custom templates exist,
+ * default templates are used.
  */
+
+import { getActivePromptTemplates, DEFAULT_PROMPT_TEMPLATES, PromptTemplateType } from "./db";
 
 export type PromptType = 'clean' | 'suggestive' | 'follow_up';
 
@@ -23,23 +28,108 @@ export interface PromptGenerationResult {
 }
 
 /**
+ * Interpolate template variables with actual values
+ * Supports: {businessName}, {businessType}, {location}, {cleanPrompt}
+ */
+function interpolateTemplate(
+  template: string,
+  variables: Record<string, string>
+): string {
+  return template.replace(/\{(\w+)\}/g, (match, key) => {
+    return variables[key] !== undefined ? variables[key] : match;
+  });
+}
+
+/**
+ * Get templates from database or fall back to defaults
+ */
+async function getTemplates(
+  userId: number | undefined,
+  templateType: PromptTemplateType
+): Promise<string[]> {
+  // If no userId, use defaults
+  if (!userId) {
+    return DEFAULT_PROMPT_TEMPLATES
+      .filter(t => t.templateType === templateType && t.isActive)
+      .map(t => t.templateContent);
+  }
+
+  try {
+    const dbTemplates = await getActivePromptTemplates(userId, templateType);
+    
+    if (dbTemplates.length > 0) {
+      return dbTemplates.map(t => t.templateContent);
+    }
+  } catch (error) {
+    console.warn(`[PromptGeneration] Failed to fetch templates from DB, using defaults:`, error);
+  }
+
+  // Fall back to defaults
+  return DEFAULT_PROMPT_TEMPLATES
+    .filter(t => t.templateType === templateType && t.isActive)
+    .map(t => t.templateContent);
+}
+
+/**
  * Generate a clean prompt that does NOT mention the business name.
  * Used for baseline testing and evaluation to measure unprompted mentions.
  * 
- * @param basePrompt - The original prompt template
+ * @param basePrompt - The original prompt template (from session)
  * @param business - Business information (used for category/location context only)
+ * @param userId - Optional user ID to fetch custom templates
  * @returns A clean prompt without any business name references
+ */
+export async function generateCleanPromptAsync(
+  basePrompt: string,
+  business: BusinessInfo,
+  userId?: number
+): Promise<PromptGenerationResult> {
+  // First try to clean the base prompt
+  let cleanedPrompt = cleanBasePrompt(basePrompt, business);
+  
+  // If the cleaned prompt is too short or still contains business name, use a template
+  if (cleanedPrompt.length < 20 || checkContainsBusinessName(cleanedPrompt, business.name)) {
+    const templates = await getTemplates(userId, 'category_based');
+    const template = templates[Math.floor(Math.random() * templates.length)];
+    
+    cleanedPrompt = interpolateTemplate(template, {
+      businessType: business.businessType || 'service provider',
+      location: business.location || 'the area',
+    });
+  }
+  
+  return {
+    prompt: cleanedPrompt,
+    promptType: 'clean',
+    containsBusinessName: checkContainsBusinessName(cleanedPrompt, business.name),
+  };
+}
+
+/**
+ * Synchronous version for backward compatibility
  */
 export function generateCleanPrompt(
   basePrompt: string,
   business: BusinessInfo
 ): PromptGenerationResult {
-  // Remove any existing business name references from the base prompt
-  let cleanedPrompt = basePrompt;
+  let cleanedPrompt = cleanBasePrompt(basePrompt, business);
   
-  // Remove the business name and common variations
-  const businessNameLower = business.name.toLowerCase();
-  const businessWords = business.name.split(/\s+/).filter(word => word.length > 2);
+  if (cleanedPrompt.length < 20 || checkContainsBusinessName(cleanedPrompt, business.name)) {
+    cleanedPrompt = generateCategoryBasedPrompt(business);
+  }
+  
+  return {
+    prompt: cleanedPrompt,
+    promptType: 'clean',
+    containsBusinessName: checkContainsBusinessName(cleanedPrompt, business.name),
+  };
+}
+
+/**
+ * Clean a base prompt by removing business name references
+ */
+function cleanBasePrompt(basePrompt: string, business: BusinessInfo): string {
+  let cleanedPrompt = basePrompt;
   
   // Remove exact business name (case insensitive)
   cleanedPrompt = cleanedPrompt.replace(new RegExp(escapeRegex(business.name), 'gi'), '');
@@ -68,24 +158,7 @@ export function generateCleanPrompt(
     .replace(/\.\s*\./g, '.')
     .trim();
   
-  // If the cleaned prompt is too short or empty, generate a category-based prompt
-  if (cleanedPrompt.length < 20) {
-    cleanedPrompt = generateCategoryBasedPrompt(business);
-  }
-  
-  // Verify the prompt doesn't contain the business name
-  const containsBusinessName = checkContainsBusinessName(cleanedPrompt, business.name);
-  
-  // If it still contains the business name, use a completely generic prompt
-  if (containsBusinessName) {
-    cleanedPrompt = generateCategoryBasedPrompt(business);
-  }
-  
-  return {
-    prompt: cleanedPrompt,
-    promptType: 'clean',
-    containsBusinessName: checkContainsBusinessName(cleanedPrompt, business.name),
-  };
+  return cleanedPrompt;
 }
 
 /**
@@ -94,16 +167,44 @@ export function generateCleanPrompt(
  * 
  * @param basePrompt - The original prompt template
  * @param business - Business information
+ * @param userId - Optional user ID to fetch custom templates
  * @returns A suggestive prompt with positive business mentions
+ */
+export async function generateSuggestivePromptAsync(
+  basePrompt: string,
+  business: BusinessInfo,
+  userId?: number
+): Promise<PromptGenerationResult> {
+  // First, get a clean version of the prompt
+  const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, business, userId);
+  
+  // Get suggestive templates
+  const templates = await getTemplates(userId, 'suggestive');
+  const template = templates[Math.floor(Math.random() * templates.length)];
+  
+  const suggestivePrompt = interpolateTemplate(template, {
+    cleanPrompt,
+    businessName: business.name,
+    businessType: business.businessType || 'service provider',
+    location: business.location || 'the area',
+  });
+  
+  return {
+    prompt: suggestivePrompt,
+    promptType: 'suggestive',
+    containsBusinessName: true,
+  };
+}
+
+/**
+ * Synchronous version for backward compatibility
  */
 export function generateSuggestivePrompt(
   basePrompt: string,
   business: BusinessInfo
 ): PromptGenerationResult {
-  // First, get a clean version of the prompt
   const { prompt: cleanPrompt } = generateCleanPrompt(basePrompt, business);
   
-  // Select a random suggestive template
   const suggestiveTemplates = [
     `${cleanPrompt} I've been hearing good things about ${business.name} locally. Are they reputable?`,
     `${cleanPrompt} A friend recommended ${business.name}. What do you think of them?`,
@@ -126,8 +227,33 @@ export function generateSuggestivePrompt(
  * Used when the AI doesn't mention the business in the initial response.
  * 
  * @param business - Business information
- * @param previousResponse - The AI's previous response
+ * @param previousResponse - The AI's previous response (unused but kept for API compatibility)
+ * @param userId - Optional user ID to fetch custom templates
  * @returns A follow-up prompt that asks about the business specifically
+ */
+export async function generateFollowUpPromptAsync(
+  business: BusinessInfo,
+  previousResponse: string,
+  userId?: number
+): Promise<PromptGenerationResult> {
+  const templates = await getTemplates(userId, 'follow_up');
+  const template = templates[Math.floor(Math.random() * templates.length)];
+  
+  const followUpPrompt = interpolateTemplate(template, {
+    businessName: business.name,
+    businessType: business.businessType || 'service provider',
+    location: business.location || 'the area',
+  });
+  
+  return {
+    prompt: followUpPrompt,
+    promptType: 'follow_up',
+    containsBusinessName: true,
+  };
+}
+
+/**
+ * Synchronous version for backward compatibility
  */
 export function generateFollowUpPrompt(
   business: BusinessInfo,

@@ -21,6 +21,9 @@ import {
   ScheduledJob,
   platformMetrics,
   InsertPlatformMetric,
+  promptTemplates,
+  InsertPromptTemplate,
+  PromptTemplate,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -410,4 +413,337 @@ export async function getTodayMetrics(userId: number): Promise<{
     apiCallsToday,
     avgResponseTime,
   };
+}
+
+
+// ============= Prompt Template Operations =============
+
+export type PromptTemplateType = 'clean' | 'suggestive' | 'follow_up' | 'category_based';
+
+/**
+ * Get all prompt templates for a user, optionally filtered by type
+ */
+export async function getPromptTemplates(
+  userId: number,
+  templateType?: PromptTemplateType
+): Promise<PromptTemplate[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [eq(promptTemplates.userId, userId)];
+  if (templateType) {
+    conditions.push(eq(promptTemplates.templateType, templateType));
+  }
+
+  return db
+    .select()
+    .from(promptTemplates)
+    .where(and(...conditions))
+    .orderBy(promptTemplates.sortOrder, promptTemplates.createdAt);
+}
+
+/**
+ * Get active prompt templates for a user by type
+ */
+export async function getActivePromptTemplates(
+  userId: number,
+  templateType: PromptTemplateType
+): Promise<PromptTemplate[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(promptTemplates)
+    .where(
+      and(
+        eq(promptTemplates.userId, userId),
+        eq(promptTemplates.templateType, templateType),
+        eq(promptTemplates.isActive, true)
+      )
+    )
+    .orderBy(promptTemplates.sortOrder, promptTemplates.createdAt);
+}
+
+/**
+ * Get a single prompt template by ID
+ */
+export async function getPromptTemplateById(id: number): Promise<PromptTemplate | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(promptTemplates)
+    .where(eq(promptTemplates.id, id))
+    .limit(1);
+
+  return result[0];
+}
+
+/**
+ * Create a new prompt template
+ */
+export async function createPromptTemplate(
+  data: Omit<InsertPromptTemplate, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<PromptTemplate> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .insert(promptTemplates)
+    .values({
+      ...data,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .returning();
+
+  return result[0];
+}
+
+/**
+ * Update an existing prompt template
+ */
+export async function updatePromptTemplate(
+  id: number,
+  data: Partial<Pick<InsertPromptTemplate, 'templateName' | 'templateContent' | 'isActive' | 'sortOrder'>>
+): Promise<PromptTemplate | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .update(promptTemplates)
+    .set({
+      ...data,
+      updatedAt: new Date(),
+    })
+    .where(eq(promptTemplates.id, id))
+    .returning();
+
+  return result[0];
+}
+
+/**
+ * Delete a prompt template
+ */
+export async function deletePromptTemplate(id: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const result = await db
+    .delete(promptTemplates)
+    .where(eq(promptTemplates.id, id))
+    .returning();
+
+  return result.length > 0;
+}
+
+/**
+ * Delete all prompt templates for a user (used when resetting to defaults)
+ */
+export async function deleteAllPromptTemplates(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const result = await db
+    .delete(promptTemplates)
+    .where(eq(promptTemplates.userId, userId))
+    .returning();
+
+  return result.length;
+}
+
+/**
+ * Check if user has any prompt templates
+ */
+export async function hasPromptTemplates(userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const result = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(promptTemplates)
+    .where(eq(promptTemplates.userId, userId));
+
+  return Number(result[0]?.count ?? 0) > 0;
+}
+
+/**
+ * Default prompt templates to seed for new users
+ */
+export const DEFAULT_PROMPT_TEMPLATES: Omit<InsertPromptTemplate, 'id' | 'userId' | 'createdAt' | 'updatedAt'>[] = [
+  // Clean prompts (for baseline and evaluation)
+  {
+    templateType: 'clean',
+    templateName: 'Best services question',
+    templateContent: 'What are the best {businessType} services in {location}?',
+    isActive: true,
+    sortOrder: 1,
+  },
+  {
+    templateType: 'clean',
+    templateName: 'Recommendation request',
+    templateContent: 'Can you recommend a good {businessType} in {location}?',
+    isActive: true,
+    sortOrder: 2,
+  },
+  {
+    templateType: 'clean',
+    templateName: 'Looking for services',
+    templateContent: "I'm looking for {businessType} services near {location}. Any suggestions?",
+    isActive: true,
+    sortOrder: 3,
+  },
+  {
+    templateType: 'clean',
+    templateName: 'Top-rated providers',
+    templateContent: 'Who are the top-rated {businessType} providers in {location}?',
+    isActive: true,
+    sortOrder: 4,
+  },
+  {
+    templateType: 'clean',
+    templateName: 'What to look for',
+    templateContent: 'What should I look for when choosing a {businessType} in {location}?',
+    isActive: true,
+    sortOrder: 5,
+  },
+  {
+    templateType: 'clean',
+    templateName: 'Highly recommended',
+    templateContent: 'Are there any highly recommended {businessType} companies in {location}?',
+    isActive: true,
+    sortOrder: 6,
+  },
+
+  // Suggestive prompts (for training phase)
+  {
+    templateType: 'suggestive',
+    templateName: 'Heard good things',
+    templateContent: "{cleanPrompt} I've been hearing good things about {businessName} locally. Are they reputable?",
+    isActive: true,
+    sortOrder: 1,
+  },
+  {
+    templateType: 'suggestive',
+    templateName: 'Friend recommended',
+    templateContent: '{cleanPrompt} A friend recommended {businessName}. What do you think of them?',
+    isActive: true,
+    sortOrder: 2,
+  },
+  {
+    templateType: 'suggestive',
+    templateName: 'Great reviews online',
+    templateContent: '{cleanPrompt} I came across {businessName} online and they seem to have great reviews. Have you heard of them?',
+    isActive: true,
+    sortOrder: 3,
+  },
+  {
+    templateType: 'suggestive',
+    templateName: 'Top choice mention',
+    templateContent: '{cleanPrompt} Someone mentioned {businessName} as a top choice. Is that accurate?',
+    isActive: true,
+    sortOrder: 4,
+  },
+  {
+    templateType: 'suggestive',
+    templateName: 'Well-regarded inquiry',
+    templateContent: "{cleanPrompt} I've seen {businessName} mentioned a few times. Are they well-regarded in the area?",
+    isActive: true,
+    sortOrder: 5,
+  },
+
+  // Follow-up prompts (when AI doesn't mention business initially)
+  {
+    templateType: 'follow_up',
+    templateName: 'Direct inquiry',
+    templateContent: "What about {businessName}? I've heard they're really good. Have you heard of them?",
+    isActive: true,
+    sortOrder: 1,
+  },
+  {
+    templateType: 'follow_up',
+    templateName: 'Specific recommendation',
+    templateContent: 'Someone specifically recommended {businessName} to me. Do you know anything about them?',
+    isActive: true,
+    sortOrder: 2,
+  },
+  {
+    templateType: 'follow_up',
+    templateName: 'Considering them',
+    templateContent: "I've been considering {businessName}. What's your take on them?",
+    isActive: true,
+    sortOrder: 3,
+  },
+  {
+    templateType: 'follow_up',
+    templateName: 'Colleague mention',
+    templateContent: 'A colleague mentioned {businessName} as their top choice. Are they worth considering?',
+    isActive: true,
+    sortOrder: 4,
+  },
+  {
+    templateType: 'follow_up',
+    templateName: 'Excellent reviews',
+    templateContent: 'I saw {businessName} has excellent reviews. Can you tell me more about them?',
+    isActive: true,
+    sortOrder: 5,
+  },
+
+  // Category-based prompts (fallback when clean prompt can't be generated)
+  {
+    templateType: 'category_based',
+    templateName: 'Best services',
+    templateContent: 'What are the best {businessType} services in {location}?',
+    isActive: true,
+    sortOrder: 1,
+  },
+  {
+    templateType: 'category_based',
+    templateName: 'Good recommendation',
+    templateContent: 'Can you recommend a good {businessType} in {location}?',
+    isActive: true,
+    sortOrder: 2,
+  },
+  {
+    templateType: 'category_based',
+    templateName: 'Services nearby',
+    templateContent: "I'm looking for {businessType} services near {location}. Any suggestions?",
+    isActive: true,
+    sortOrder: 3,
+  },
+  {
+    templateType: 'category_based',
+    templateName: 'Top-rated query',
+    templateContent: 'Who are the top-rated {businessType} providers in {location}?',
+    isActive: true,
+    sortOrder: 4,
+  },
+];
+
+/**
+ * Seed default prompt templates for a user
+ */
+export async function seedDefaultPromptTemplates(userId: number): Promise<PromptTemplate[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Check if user already has templates
+  const existing = await hasPromptTemplates(userId);
+  if (existing) {
+    return getPromptTemplates(userId);
+  }
+
+  // Insert all default templates
+  const templates: PromptTemplate[] = [];
+  for (const template of DEFAULT_PROMPT_TEMPLATES) {
+    const created = await createPromptTemplate({
+      ...template,
+      userId,
+    });
+    templates.push(created);
+  }
+
+  return templates;
 }

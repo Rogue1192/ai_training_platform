@@ -22,9 +22,9 @@ import {
   getBusinessById,
 } from "./db";
 import {
-  generateCleanPrompt,
-  generateSuggestivePrompt,
-  generateFollowUpPrompt,
+  generateCleanPromptAsync,
+  generateSuggestivePromptAsync,
+  generateFollowUpPromptAsync,
   selectRandomPrompt,
   BusinessInfo,
 } from "./promptGeneration";
@@ -159,7 +159,7 @@ async function executeBaselineTest(sessionId: number, userId: number): Promise<v
     // Select a random prompt and generate CLEAN version
     const prompts = session.trainingPrompts as string[];
     const basePrompt = selectRandomPrompt(prompts);
-    const { prompt: cleanPrompt } = generateCleanPrompt(basePrompt, businessInfo);
+    const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo, session.userId);
     
     console.log(`[Training V2] Baseline clean prompt: "${cleanPrompt}"`);
     
@@ -269,7 +269,7 @@ async function executeTrainingIteration(
     // Select a random prompt and generate SUGGESTIVE version
     const prompts = session.trainingPrompts as string[];
     const basePrompt = selectRandomPrompt(prompts);
-    const { prompt: suggestivePrompt } = generateSuggestivePrompt(basePrompt, businessInfo);
+    const { prompt: suggestivePrompt } = await generateSuggestivePromptAsync(basePrompt, businessInfo, session.userId);
     
     console.log(`[Training V2] Training suggestive prompt: "${suggestivePrompt.substring(0, 100)}..."`);
     
@@ -311,7 +311,7 @@ async function executeTrainingIteration(
     
     // If not mentioned, send follow-up to reinforce
     if (!firstMention.mentioned) {
-      const { prompt: followUp } = generateFollowUpPrompt(businessInfo, response.content);
+      const { prompt: followUp } = await generateFollowUpPromptAsync(businessInfo, response.content, session.userId);
       
       const followUpMessages: AIMessage[] = [
         ...messages,
@@ -429,7 +429,7 @@ async function executeEvaluationTest(sessionId: number, userId: number): Promise
     // Select a random prompt and generate CLEAN version (same as baseline)
     const prompts = session.trainingPrompts as string[];
     const basePrompt = selectRandomPrompt(prompts);
-    const { prompt: cleanPrompt } = generateCleanPrompt(basePrompt, businessInfo);
+    const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo, session.userId);
     
     console.log(`[Training V2] Evaluation clean prompt: "${cleanPrompt}"`);
     

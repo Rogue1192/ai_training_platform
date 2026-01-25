@@ -435,3 +435,16 @@
 - [ ] Investigate Redis connection configuration
 - [ ] Fix Redis authentication for BullMQ queues
 - [ ] Test training session starts without error
+
+
+## Global Prompt Management Feature
+- [x] Add promptTemplates table to database schema
+- [x] Run database migration (created table via SQL)
+- [x] Create database helpers for prompt templates (CRUD operations)
+- [x] Add tRPC procedures for prompt template management
+- [x] Update promptGeneration.ts to use database templates (async versions)
+- [x] Create PromptTemplateEditor component
+- [x] Update Settings page with Prompt Templates tab
+- [x] Add default template seeding logic (seeds on first access)
+- [x] Test prompt template CRUD operations (14 tests passing)
+- [x] Updated trainingQueueV2.ts to use async prompt generation

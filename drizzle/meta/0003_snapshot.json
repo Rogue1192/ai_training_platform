@@ -1,6 +1,6 @@
 {
-  "id": "0c24ed1d-a9a0-482d-85db-2d8f5f9f4b44",
-  "prevId": "c68c9c2d-b9a5-4ca4-8c30-991531cbb0fb",
+  "id": "2eb0899a-8dd8-4641-a9e9-cbf31aa2ef02",
+  "prevId": "0c24ed1d-a9a0-482d-85db-2d8f5f9f4b44",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -283,8 +283,7 @@
         },
         "templateType": {
           "name": "templateType",
-          "type": "prompt_template_type",
-          "typeSchema": "public",
+          "type": "varchar(50)",
           "primaryKey": false,
           "notNull": true
         },
@@ -895,16 +894,6 @@
       "values": [
         "connected",
         "disconnected"
-      ]
-    },
-    "public.prompt_template_type": {
-      "name": "prompt_template_type",
-      "schema": "public",
-      "values": [
-        "clean",
-        "suggestive",
-        "follow_up",
-        "category_based"
       ]
     },
     "public.role": {

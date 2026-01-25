@@ -16,6 +16,8 @@ export const trainingStatusEnum = pgEnum("training_status", ["paused", "in_progr
 // Valid values: conversationType: 'baseline' | 'training' | 'evaluation'
 // Valid values: promptType: 'clean' | 'suggestive' | 'follow_up'
 export const scheduleTypeEnum = pgEnum("schedule_type", ["daily", "weekly", "monthly", "custom"]);
+// Note: promptTemplateType uses varchar instead of enum for TiDB compatibility
+// Valid values: 'clean' | 'suggestive' | 'follow_up' | 'category_based'
 
 // Users table
 export const users = pgTable("users", {
@@ -175,3 +177,21 @@ export const platformMetrics = pgTable("platformMetrics", {
 
 export type PlatformMetric = typeof platformMetrics.$inferSelect;
 export type InsertPlatformMetric = typeof platformMetrics.$inferInsert;
+
+// Prompt Templates table - Global prompt configuration
+export const promptTemplates = pgTable("promptTemplates", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  templateType: varchar("templateType", { length: 50 }).notNull(), // 'clean' | 'suggestive' | 'follow_up' | 'category_based'
+  templateName: varchar("templateName", { length: 255 }).notNull(),
+  templateContent: text("templateContent").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: integer("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type PromptTemplate = typeof promptTemplates.$inferSelect;
+export type InsertPromptTemplate = typeof promptTemplates.$inferInsert;

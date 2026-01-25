@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, Check, X, Key, PlayCircle, AlertCircle } from "lucide-react";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
+import PromptTemplateEditor from "@/components/PromptTemplateEditor";
 
 export default function Settings() {
   const { data: apiKeys, isLoading, refetch } = trpc.apiKey.list.useQuery();
@@ -361,6 +362,9 @@ export default function Settings() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Prompt Templates */}
+      <PromptTemplateEditor />
 
       {/* Two-Factor Authentication */}
       <TwoFactorAuth />

@@ -612,6 +612,104 @@ export const appRouter = router({
       return getAvailableModels(input.provider);
     }),
   }),
+
+  // Prompt template management
+  promptTemplate: router({
+    // List all templates for the current user, optionally filtered by type
+    list: protectedProcedure
+      .input(z.object({ templateType: z.enum(["clean", "suggestive", "follow_up", "category_based"]).optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        const { getPromptTemplates, seedDefaultPromptTemplates, hasPromptTemplates } = await import("./db");
+        
+        // Seed defaults if user has no templates
+        const hasTemplates = await hasPromptTemplates(ctx.user.id);
+        if (!hasTemplates) {
+          await seedDefaultPromptTemplates(ctx.user.id);
+        }
+        
+        return getPromptTemplates(ctx.user.id, input?.templateType as any);
+      }),
+
+    // Get a single template by ID
+    get: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const { getPromptTemplateById } = await import("./db");
+        const template = await getPromptTemplateById(input.id);
+        
+        // Verify ownership
+        if (template && template.userId !== ctx.user.id) {
+          throw new Error("Not authorized to view this template");
+        }
+        
+        return template;
+      }),
+
+    // Create a new template
+    create: protectedProcedure
+      .input(z.object({
+        templateType: z.enum(["clean", "suggestive", "follow_up", "category_based"]),
+        templateName: z.string().min(1).max(255),
+        templateContent: z.string().min(1),
+        isActive: z.boolean().default(true),
+        sortOrder: z.number().default(0),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { createPromptTemplate } = await import("./db");
+        return createPromptTemplate({
+          ...input,
+          userId: ctx.user.id,
+        });
+      }),
+
+    // Update an existing template
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        templateName: z.string().min(1).max(255).optional(),
+        templateContent: z.string().min(1).optional(),
+        isActive: z.boolean().optional(),
+        sortOrder: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { getPromptTemplateById, updatePromptTemplate } = await import("./db");
+        
+        // Verify ownership
+        const existing = await getPromptTemplateById(input.id);
+        if (!existing || existing.userId !== ctx.user.id) {
+          throw new Error("Not authorized to update this template");
+        }
+        
+        const { id, ...updateData } = input;
+        return updatePromptTemplate(id, updateData);
+      }),
+
+    // Delete a template
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { getPromptTemplateById, deletePromptTemplate } = await import("./db");
+        
+        // Verify ownership
+        const existing = await getPromptTemplateById(input.id);
+        if (!existing || existing.userId !== ctx.user.id) {
+          throw new Error("Not authorized to delete this template");
+        }
+        
+        return deletePromptTemplate(input.id);
+      }),
+
+    // Reset all templates to defaults
+    resetToDefaults: protectedProcedure.mutation(async ({ ctx }) => {
+      const { deleteAllPromptTemplates, seedDefaultPromptTemplates } = await import("./db");
+      
+      // Delete all existing templates
+      await deleteAllPromptTemplates(ctx.user.id);
+      
+      // Seed defaults
+      return seedDefaultPromptTemplates(ctx.user.id);
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
