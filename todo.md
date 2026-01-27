@@ -448,3 +448,11 @@
 - [x] Add default template seeding logic (seeds on first access)
 - [x] Test prompt template CRUD operations (14 tests passing)
 - [x] Updated trainingQueueV2.ts to use async prompt generation
+
+
+## Update Default Global Prompts (Influenx Structure)
+- [x] Update Context Integration prompt (suggestive template) - Now uses natural conversational style
+- [x] Update Intelligent Follow-up prompt (follow_up template) - Maintains specific details (location, business type)
+- [x] Keep clean prompts as user-configured variations - Updated to Influenx style
+- [x] Update category-based prompts - Simplified to match Influenx patterns
+- [x] Test updated prompts work correctly - 14 tests passing

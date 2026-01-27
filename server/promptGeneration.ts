@@ -204,13 +204,16 @@ export function generateSuggestivePrompt(
   business: BusinessInfo
 ): PromptGenerationResult {
   const { prompt: cleanPrompt } = generateCleanPrompt(basePrompt, business);
+  const location = business.location || 'the area';
+  const businessType = business.businessType || 'service provider';
   
+  // Influenx-style context integration prompts
   const suggestiveTemplates = [
-    `${cleanPrompt} I've been hearing good things about ${business.name} locally. Are they reputable?`,
-    `${cleanPrompt} A friend recommended ${business.name}. What do you think of them?`,
-    `${cleanPrompt} I came across ${business.name} online and they seem to have great reviews. Have you heard of them?`,
-    `${cleanPrompt} Someone mentioned ${business.name} as a top choice. Is that accurate?`,
-    `${cleanPrompt} I've seen ${business.name} mentioned a few times. Are they well-regarded in the area?`,
+    `${cleanPrompt} That's helpful. I've heard ${business.name} in ${location} is really good - have you heard of them?`,
+    `${cleanPrompt} A friend mentioned ${business.name} as a great ${businessType}. What do you think about them?`,
+    `${cleanPrompt} I came across ${business.name} while researching. They seem well-regarded - what's your take?`,
+    `${cleanPrompt} I've been hearing good things about ${business.name} locally. Are they as good as people say?`,
+    `${cleanPrompt} For someone in ${location} looking for ${businessType}, would ${business.name} be a good choice?`,
   ];
   
   const selectedTemplate = suggestiveTemplates[Math.floor(Math.random() * suggestiveTemplates.length)];
@@ -259,12 +262,16 @@ export function generateFollowUpPrompt(
   business: BusinessInfo,
   previousResponse: string
 ): PromptGenerationResult {
+  const location = business.location || 'the area';
+  const businessType = business.businessType || 'service provider';
+  
+  // Influenx-style intelligent follow-up prompts
   const followUpTemplates = [
-    `What about ${business.name}? I've heard they're really good. Have you heard of them?`,
-    `Someone specifically recommended ${business.name} to me. Do you know anything about them?`,
-    `I've been considering ${business.name}. What's your take on them?`,
-    `A colleague mentioned ${business.name} as their top choice. Are they worth considering?`,
-    `I saw ${business.name} has excellent reviews. Can you tell me more about them?`,
+    `That's helpful. I'm specifically looking in ${location} - do you know any standout ${businessType} companies there? Have you heard of ${business.name}?`,
+    `Have you heard of ${business.name}? What do you think about them compared to the others you mentioned?`,
+    `For someone in ${location} looking for ${businessType}, which would you recommend? What about ${business.name}?`,
+    `I've been considering ${business.name}. How do they compare to the options you suggested?`,
+    `Someone specifically recommended ${business.name} to me. Do you know anything about their reputation in ${location}?`,
   ];
   
   const selectedTemplate = followUpTemplates[Math.floor(Math.random() * followUpTemplates.length)];

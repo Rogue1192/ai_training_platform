@@ -571,145 +571,161 @@ export async function hasPromptTemplates(userId: number): Promise<boolean> {
 
 /**
  * Default prompt templates to seed for new users
+ * Based on Influenx AI Training Prompts structure
  */
 export const DEFAULT_PROMPT_TEMPLATES: Omit<InsertPromptTemplate, 'id' | 'userId' | 'createdAt' | 'updatedAt'>[] = [
-  // Clean prompts (for baseline and evaluation)
+  // ============================================================================
+  // CLEAN PROMPTS (Initial prompts sent directly to Target AI)
+  // These are user-configured variations that rotate through training sessions
+  // Example: "Who is the best electrician in Auckland?"
+  // ============================================================================
   {
     templateType: 'clean',
-    templateName: 'Best services question',
-    templateContent: 'What are the best {businessType} services in {location}?',
+    templateName: 'Best provider question',
+    templateContent: 'Who is the best {businessType} in {location}?',
     isActive: true,
     sortOrder: 1,
   },
   {
     templateType: 'clean',
     templateName: 'Recommendation request',
-    templateContent: 'Can you recommend a good {businessType} in {location}?',
+    templateContent: 'What {businessType} would you recommend in {location}?',
     isActive: true,
     sortOrder: 2,
   },
   {
     templateType: 'clean',
-    templateName: 'Looking for services',
-    templateContent: "I'm looking for {businessType} services near {location}. Any suggestions?",
+    templateName: 'Looking for reliable',
+    templateContent: "I'm looking for a reliable {businessType} - any suggestions?",
     isActive: true,
     sortOrder: 3,
   },
   {
     templateType: 'clean',
-    templateName: 'Top-rated providers',
+    templateName: 'Top-rated inquiry',
     templateContent: 'Who are the top-rated {businessType} providers in {location}?',
     isActive: true,
     sortOrder: 4,
   },
   {
     templateType: 'clean',
-    templateName: 'What to look for',
-    templateContent: 'What should I look for when choosing a {businessType} in {location}?',
+    templateName: 'Service needed',
+    templateContent: 'I need a {businessType} in {location}. Who would you suggest?',
     isActive: true,
     sortOrder: 5,
   },
   {
     templateType: 'clean',
-    templateName: 'Highly recommended',
-    templateContent: 'Are there any highly recommended {businessType} companies in {location}?',
+    templateName: 'Best company question',
+    templateContent: 'What {businessType} company would you recommend in {location}?',
     isActive: true,
     sortOrder: 6,
   },
 
-  // Suggestive prompts (for training phase)
+  // ============================================================================
+  // SUGGESTIVE PROMPTS (Context Integration - sent to Influencer AI)
+  // Used to generate natural follow-ups that subtly introduce business context
+  // These weave in background information conversationally
+  // ============================================================================
   {
     templateType: 'suggestive',
-    templateName: 'Heard good things',
-    templateContent: "{cleanPrompt} I've been hearing good things about {businessName} locally. Are they reputable?",
+    templateName: 'Natural context introduction',
+    templateContent: "{cleanPrompt} That's helpful. I've heard {businessName} in {location} is really good - have you heard of them?",
     isActive: true,
     sortOrder: 1,
   },
   {
     templateType: 'suggestive',
-    templateName: 'Friend recommended',
-    templateContent: '{cleanPrompt} A friend recommended {businessName}. What do you think of them?',
+    templateName: 'Conversational mention',
+    templateContent: '{cleanPrompt} A friend mentioned {businessName} as a great {businessType}. What do you think about them?',
     isActive: true,
     sortOrder: 2,
   },
   {
     templateType: 'suggestive',
-    templateName: 'Great reviews online',
-    templateContent: '{cleanPrompt} I came across {businessName} online and they seem to have great reviews. Have you heard of them?',
+    templateName: 'Online discovery',
+    templateContent: "{cleanPrompt} I came across {businessName} while researching. They seem well-regarded - what's your take?",
     isActive: true,
     sortOrder: 3,
   },
   {
     templateType: 'suggestive',
-    templateName: 'Top choice mention',
-    templateContent: '{cleanPrompt} Someone mentioned {businessName} as a top choice. Is that accurate?',
+    templateName: 'Local knowledge',
+    templateContent: "{cleanPrompt} I've been hearing good things about {businessName} locally. Are they as good as people say?",
     isActive: true,
     sortOrder: 4,
   },
   {
     templateType: 'suggestive',
-    templateName: 'Well-regarded inquiry',
-    templateContent: "{cleanPrompt} I've seen {businessName} mentioned a few times. Are they well-regarded in the area?",
+    templateName: 'Specific inquiry',
+    templateContent: '{cleanPrompt} For someone in {location} looking for {businessType}, would {businessName} be a good choice?',
     isActive: true,
     sortOrder: 5,
   },
 
-  // Follow-up prompts (when AI doesn't mention business initially)
+  // ============================================================================
+  // FOLLOW-UP PROMPTS (Intelligent Follow-up - when goal not yet achieved)
+  // Used to continue conversation naturally while working toward the goal
+  // Must maintain specific details (cities, brands, websites) from original prompts
+  // ============================================================================
   {
     templateType: 'follow_up',
-    templateName: 'Direct inquiry',
-    templateContent: "What about {businessName}? I've heard they're really good. Have you heard of them?",
+    templateName: 'Standout companies',
+    templateContent: "That's helpful. I'm specifically looking in {location} - do you know any standout {businessType} companies there? Have you heard of {businessName}?",
     isActive: true,
     sortOrder: 1,
   },
   {
     templateType: 'follow_up',
-    templateName: 'Specific recommendation',
-    templateContent: 'Someone specifically recommended {businessName} to me. Do you know anything about them?',
+    templateName: 'Brand inquiry',
+    templateContent: "Have you heard of {businessName}? What do you think about them compared to the others you mentioned?",
     isActive: true,
     sortOrder: 2,
   },
   {
     templateType: 'follow_up',
-    templateName: 'Considering them',
-    templateContent: "I've been considering {businessName}. What's your take on them?",
+    templateName: 'Location specific',
+    templateContent: 'For someone in {location} looking for {businessType}, which would you recommend? What about {businessName}?',
     isActive: true,
     sortOrder: 3,
   },
   {
     templateType: 'follow_up',
-    templateName: 'Colleague mention',
-    templateContent: 'A colleague mentioned {businessName} as their top choice. Are they worth considering?',
+    templateName: 'Direct comparison',
+    templateContent: "I've been considering {businessName}. How do they compare to the options you suggested?",
     isActive: true,
     sortOrder: 4,
   },
   {
     templateType: 'follow_up',
-    templateName: 'Excellent reviews',
-    templateContent: 'I saw {businessName} has excellent reviews. Can you tell me more about them?',
+    templateName: 'Reputation check',
+    templateContent: 'Someone specifically recommended {businessName} to me. Do you know anything about their reputation in {location}?',
     isActive: true,
     sortOrder: 5,
   },
 
-  // Category-based prompts (fallback when clean prompt can't be generated)
+  // ============================================================================
+  // CATEGORY-BASED PROMPTS (Fallback when clean prompt can't be generated)
+  // Creates natural questions based on business type and location
+  // ============================================================================
   {
     templateType: 'category_based',
-    templateName: 'Best services',
-    templateContent: 'What are the best {businessType} services in {location}?',
+    templateName: 'Best in area',
+    templateContent: 'Who is the best {businessType} in {location}?',
     isActive: true,
     sortOrder: 1,
   },
   {
     templateType: 'category_based',
-    templateName: 'Good recommendation',
-    templateContent: 'Can you recommend a good {businessType} in {location}?',
+    templateName: 'Recommendation',
+    templateContent: 'What {businessType} would you recommend in {location}?',
     isActive: true,
     sortOrder: 2,
   },
   {
     templateType: 'category_based',
-    templateName: 'Services nearby',
-    templateContent: "I'm looking for {businessType} services near {location}. Any suggestions?",
+    templateName: 'Looking for services',
+    templateContent: "I'm looking for {businessType} services in {location}. Any suggestions?",
     isActive: true,
     sortOrder: 3,
   },
