@@ -125,7 +125,7 @@ async function callGoogle(apiKey: string, model: string, messages: AIMessage[]):
  * When a model is deprecated by its provider, add a mapping here
  * so existing sessions with the old model name continue to work.
  */
-const DEPRECATED_MODEL_MAP: Record<string, string> = {
+export const DEPRECATED_MODEL_MAP: Record<string, string> = {
   "gemini-2.0-flash-exp": "gemini-2.0-flash",
   "gemini-pro": "gemini-1.5-pro",
   "claude-3-opus-20240229": "claude-sonnet-4-5-20250929",
@@ -136,7 +136,7 @@ const DEPRECATED_MODEL_MAP: Record<string, string> = {
 /**
  * Resolve a model name, replacing deprecated models with their current equivalents.
  */
-function resolveModel(model: string): string {
+export function resolveModel(model: string): string {
   const resolved = DEPRECATED_MODEL_MAP[model];
   if (resolved) {
     console.log(`[AI Provider] Model "${model}" is deprecated, using "${resolved}" instead`);

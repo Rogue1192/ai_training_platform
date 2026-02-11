@@ -538,3 +538,8 @@
 - [x] Update routers.ts to accept "hourly" schedule type
 - [x] Update ScheduledJobs.tsx UI to show Hourly instead of Custom (Cron)
 - [x] Update tests for hourly scheduling (32 tests passing)
+
+## Fix: Auto-update deprecated model names for existing sessions
+- [x] Add model migration logic when starting/restarting a session (update DB record if model is deprecated)
+- [x] Ensure the model fallback map in aiProviders.ts is used consistently (exported resolveModel)
+- [x] Test that restarting a session with old model name auto-corrects it (32 scheduler tests passing)

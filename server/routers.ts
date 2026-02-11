@@ -331,12 +331,29 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const { updateTrainingSession, getTrainingSessionById, validateApiKeysForTraining } = await import("./db");
         const { startTrainingSession } = await import("./trainingEngine");
+        const { resolveModel } = await import("./aiProviders");
         
         // Validate API keys before starting training
         if (input.status === "in_progress") {
           const session = await getTrainingSessionById(input.id);
           if (!session) {
             throw new Error("Training session not found");
+          }
+          
+          // Auto-migrate deprecated model names in the database
+          const resolvedTargetModel = resolveModel(session.targetAiModel);
+          const resolvedInfluencerModel = resolveModel(session.influencerAiModel);
+          const modelUpdates: Record<string, string> = {};
+          if (resolvedTargetModel !== session.targetAiModel) {
+            modelUpdates.targetAiModel = resolvedTargetModel;
+            console.log(`[Training] Auto-migrating target model: ${session.targetAiModel} → ${resolvedTargetModel}`);
+          }
+          if (resolvedInfluencerModel !== session.influencerAiModel) {
+            modelUpdates.influencerAiModel = resolvedInfluencerModel;
+            console.log(`[Training] Auto-migrating influencer model: ${session.influencerAiModel} → ${resolvedInfluencerModel}`);
+          }
+          if (Object.keys(modelUpdates).length > 0) {
+            await updateTrainingSession(input.id, modelUpdates);
           }
           
           const validation = await validateApiKeysForTraining(

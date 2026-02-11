@@ -16,7 +16,9 @@ import {
   createScheduledJobRun,
   updateScheduledJobRun,
   getTrainingSessionById,
+  updateTrainingSession,
 } from "./db";
+import { resolveModel } from "./aiProviders";
 import { scheduledJobs, trainingSessions, trainingConversations } from "../drizzle/schema";
 import { eq, and, lte, sql } from "drizzle-orm";
 import { startTrainingSession } from "./trainingEngine";
@@ -520,6 +522,22 @@ async function executeScheduledJob(
   });
 
   try {
+    // Auto-migrate deprecated model names before resetting
+    const resolvedTarget = resolveModel(session.targetAiModel);
+    const resolvedInfluencer = resolveModel(session.influencerAiModel);
+    const modelUpdates: Record<string, string> = {};
+    if (resolvedTarget !== session.targetAiModel) {
+      modelUpdates.targetAiModel = resolvedTarget;
+      console.log(`[Scheduler] Auto-migrating target model: ${session.targetAiModel} → ${resolvedTarget}`);
+    }
+    if (resolvedInfluencer !== session.influencerAiModel) {
+      modelUpdates.influencerAiModel = resolvedInfluencer;
+      console.log(`[Scheduler] Auto-migrating influencer model: ${session.influencerAiModel} → ${resolvedInfluencer}`);
+    }
+    if (Object.keys(modelUpdates).length > 0) {
+      await updateTrainingSession(session.id, modelUpdates);
+    }
+
     // Fully reset the training session
     await resetTrainingSessionForRerun(session.id);
 
