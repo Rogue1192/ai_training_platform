@@ -408,6 +408,25 @@ export async function getScheduledJobRunsByUserId(userId: number, limit = 100): 
   return runs;
 }
 
+/**
+ * Find the most recent "running" scheduledJobRun for a given training session.
+ * Used by the V2 worker to update run history when a session completes or fails.
+ */
+export async function getActiveRunBySessionId(trainingSessionId: number): Promise<ScheduledJobRun | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const runs = await db.select().from(scheduledJobRuns)
+    .where(
+      and(
+        eq(scheduledJobRuns.trainingSessionId, trainingSessionId),
+        eq(scheduledJobRuns.status, "running")
+      )
+    )
+    .orderBy(desc(scheduledJobRuns.startedAt))
+    .limit(1);
+  return runs[0] || null;
+}
+
 // ============= Platform Metrics Operations =============
 
 export async function getTodayMetrics(userId: number): Promise<{

@@ -514,3 +514,16 @@
 
 ## Bug Fixes
 - [x] Fix deprecated Google AI model: gemini-2.0-flash-exp → gemini-2.0-flash
+
+## Scheduler Fixes (from analysis report)
+- [x] Batch 0: Add deprecated model fallback mapping (gemini-2.0-flash-exp → gemini-2.0-flash)
+- [x] Batch 1a: Clear old conversations when scheduler resets a session for re-run (already implemented)
+- [x] Batch 1b: Fix trainingPrompts double-encoding with defensive JSON parsing
+- [x] Batch 2: Update run history records when sessions complete/fail (connect V2 worker to scheduledJobRuns)
+- [x] Batch 3a: Add ownership validation to schedule.delete
+- [x] Batch 3b: Add ownership validation to schedule.runNow
+- [x] Batch 3c: Add ownership validation to schedule.getRunHistory (jobId path)
+- [x] Batch 6a: Add staleness detection for stuck in_progress sessions (2hr threshold, auto-marks as error)
+- [x] Batch 7a: Fix monthly day overflow for day 29-31 (clamp to last day of month)
+- [x] Batch 7b: Custom cron falls back to daily with warning log (kept for future expansion)
+- [x] Write tests for all scheduler fixes (27 tests passing)

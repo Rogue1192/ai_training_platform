@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { calculateNextRun, getScheduleDescription } from "./scheduler";
+import { parseTrainingPrompts, selectRandomPrompt } from "./promptGeneration";
+
+// ============= calculateNextRun tests =============
 
 describe("calculateNextRun", () => {
   describe("daily schedule", () => {
     it("returns the next occurrence of the specified time", () => {
-      // Use a fixed reference date: Feb 11, 2026, 6:00 AM UTC
       const fromDate = new Date("2026-02-11T06:00:00Z");
       const result = calculateNextRun("daily", {
         timeOfDay: "09:00",
@@ -12,14 +14,12 @@ describe("calculateNextRun", () => {
         fromDate,
       });
 
-      // Should be 9:00 AM UTC on Feb 11 (same day, since 6 AM < 9 AM)
       expect(result.getUTCHours()).toBe(9);
       expect(result.getUTCMinutes()).toBe(0);
       expect(result.getUTCDate()).toBe(11);
     });
 
     it("rolls to next day if time has already passed", () => {
-      // 10:00 AM UTC, requesting 09:00 → should be tomorrow
       const fromDate = new Date("2026-02-11T10:00:00Z");
       const result = calculateNextRun("daily", {
         timeOfDay: "09:00",
@@ -43,14 +43,12 @@ describe("calculateNextRun", () => {
         fromDate,
       });
 
-      // Should be Friday Feb 13
       expect(result.getUTCDay()).toBe(5);
       expect(result.getUTCDate()).toBe(13);
       expect(result.getUTCHours()).toBe(9);
     });
 
     it("rolls to next week if the day has already passed", () => {
-      // Feb 11, 2026 is Wednesday (day 3), requesting Monday (day 1)
       const fromDate = new Date("2026-02-11T06:00:00Z");
       const result = calculateNextRun("weekly", {
         timeOfDay: "09:00",
@@ -59,13 +57,11 @@ describe("calculateNextRun", () => {
         fromDate,
       });
 
-      // Should be next Monday, Feb 16
       expect(result.getUTCDay()).toBe(1);
       expect(result.getUTCDate()).toBe(16);
     });
 
     it("rolls to next week if same day but time has passed", () => {
-      // Feb 11, 2026 is Wednesday (day 3), requesting Wednesday at 09:00 but it's 10:00
       const fromDate = new Date("2026-02-11T10:00:00Z");
       const result = calculateNextRun("weekly", {
         timeOfDay: "09:00",
@@ -74,7 +70,6 @@ describe("calculateNextRun", () => {
         fromDate,
       });
 
-      // Should be next Wednesday, Feb 18
       expect(result.getUTCDay()).toBe(3);
       expect(result.getUTCDate()).toBe(18);
     });
@@ -82,7 +77,6 @@ describe("calculateNextRun", () => {
 
   describe("monthly schedule", () => {
     it("returns the target day of the current month if not yet passed", () => {
-      // Feb 11, requesting the 15th
       const fromDate = new Date("2026-02-11T06:00:00Z");
       const result = calculateNextRun("monthly", {
         timeOfDay: "09:00",
@@ -92,11 +86,10 @@ describe("calculateNextRun", () => {
       });
 
       expect(result.getUTCDate()).toBe(15);
-      expect(result.getUTCMonth()).toBe(1); // February (0-indexed)
+      expect(result.getUTCMonth()).toBe(1); // February
     });
 
     it("rolls to next month if the target day has passed", () => {
-      // Feb 11, requesting the 5th (already passed)
       const fromDate = new Date("2026-02-11T06:00:00Z");
       const result = calculateNextRun("monthly", {
         timeOfDay: "09:00",
@@ -105,16 +98,75 @@ describe("calculateNextRun", () => {
         fromDate,
       });
 
-      // Should be March 5
       expect(result.getUTCDate()).toBe(5);
-      expect(result.getUTCMonth()).toBe(2); // March (0-indexed)
+      expect(result.getUTCMonth()).toBe(2); // March
+    });
+
+    // Batch 7a: Monthly day overflow tests
+    it("clamps day 31 to Feb 28 in a non-leap year", () => {
+      // Feb 2026 has 28 days (not a leap year)
+      const fromDate = new Date("2026-02-01T06:00:00Z");
+      const result = calculateNextRun("monthly", {
+        timeOfDay: "09:00",
+        dayOfMonth: 31,
+        timezone: "UTC",
+        fromDate,
+      });
+
+      // Should clamp to Feb 28
+      expect(result.getUTCDate()).toBe(28);
+      expect(result.getUTCMonth()).toBe(1); // February
+    });
+
+    it("clamps day 31 to Feb 29 in a leap year", () => {
+      // Feb 2028 is a leap year
+      const fromDate = new Date("2028-02-01T06:00:00Z");
+      const result = calculateNextRun("monthly", {
+        timeOfDay: "09:00",
+        dayOfMonth: 31,
+        timezone: "UTC",
+        fromDate,
+      });
+
+      // Should clamp to Feb 29
+      expect(result.getUTCDate()).toBe(29);
+      expect(result.getUTCMonth()).toBe(1); // February
+    });
+
+    it("clamps day 31 to 30 for April (30-day month)", () => {
+      const fromDate = new Date("2026-04-01T06:00:00Z");
+      const result = calculateNextRun("monthly", {
+        timeOfDay: "09:00",
+        dayOfMonth: 31,
+        timezone: "UTC",
+        fromDate,
+      });
+
+      // April has 30 days, should clamp to 30
+      expect(result.getUTCDate()).toBe(30);
+      expect(result.getUTCMonth()).toBe(3); // April
+    });
+
+    it("handles day 29 rolling from Feb to March correctly", () => {
+      // In Feb 2026 (non-leap), day 29 should clamp to 28 for this month
+      // But if already past the 28th, it should go to March 29
+      const fromDate = new Date("2026-02-28T10:00:00Z"); // Already past the clamped day
+      const result = calculateNextRun("monthly", {
+        timeOfDay: "09:00",
+        dayOfMonth: 29,
+        timezone: "UTC",
+        fromDate,
+      });
+
+      // Should be March 29 (March has 31 days, so 29 is valid)
+      expect(result.getUTCDate()).toBe(29);
+      expect(result.getUTCMonth()).toBe(2); // March
     });
   });
 
   describe("timezone handling", () => {
     it("correctly handles Pacific Time offset", () => {
-      // 5:00 PM UTC = 9:00 AM PST (UTC-8)
-      const fromDate = new Date("2026-02-11T06:00:00Z"); // 10 PM PST previous day
+      const fromDate = new Date("2026-02-11T06:00:00Z");
       const result = calculateNextRun("daily", {
         timeOfDay: "09:00",
         timezone: "America/Los_Angeles",
@@ -126,7 +178,24 @@ describe("calculateNextRun", () => {
       expect(result.getUTCMinutes()).toBe(0);
     });
   });
+
+  describe("custom schedule fallback", () => {
+    it("falls back to daily when cron expression is empty", () => {
+      const fromDate = new Date("2026-02-11T06:00:00Z");
+      const result = calculateNextRun("custom", {
+        timeOfDay: "09:00",
+        timezone: "UTC",
+        fromDate,
+      });
+
+      // Should fall back to daily behavior
+      expect(result.getUTCHours()).toBe(9);
+      expect(result.getUTCDate()).toBe(11);
+    });
+  });
 });
+
+// ============= getScheduleDescription tests =============
 
 describe("getScheduleDescription", () => {
   it("describes a daily schedule correctly", () => {
@@ -164,36 +233,84 @@ describe("getScheduleDescription", () => {
   });
 
   it("handles ordinal suffixes correctly", () => {
-    const desc1 = getScheduleDescription({
-      scheduleType: "monthly",
-      timeOfDay: "09:00",
-      dayOfMonth: 1,
-      timezone: "UTC",
-    });
+    const desc1 = getScheduleDescription({ scheduleType: "monthly", timeOfDay: "09:00", dayOfMonth: 1, timezone: "UTC" });
     expect(desc1).toContain("1st");
 
-    const desc2 = getScheduleDescription({
-      scheduleType: "monthly",
-      timeOfDay: "09:00",
-      dayOfMonth: 2,
-      timezone: "UTC",
-    });
+    const desc2 = getScheduleDescription({ scheduleType: "monthly", timeOfDay: "09:00", dayOfMonth: 2, timezone: "UTC" });
     expect(desc2).toContain("2nd");
 
-    const desc3 = getScheduleDescription({
-      scheduleType: "monthly",
-      timeOfDay: "09:00",
-      dayOfMonth: 3,
-      timezone: "UTC",
-    });
+    const desc3 = getScheduleDescription({ scheduleType: "monthly", timeOfDay: "09:00", dayOfMonth: 3, timezone: "UTC" });
     expect(desc3).toContain("3rd");
 
-    const desc11 = getScheduleDescription({
-      scheduleType: "monthly",
-      timeOfDay: "09:00",
-      dayOfMonth: 11,
-      timezone: "UTC",
-    });
+    const desc11 = getScheduleDescription({ scheduleType: "monthly", timeOfDay: "09:00", dayOfMonth: 11, timezone: "UTC" });
     expect(desc11).toContain("11th");
+  });
+});
+
+// ============= parseTrainingPrompts tests (Batch 1b) =============
+
+describe("parseTrainingPrompts", () => {
+  it("handles a normal string array", () => {
+    const result = parseTrainingPrompts(["prompt1", "prompt2", "prompt3"]);
+    expect(result).toEqual(["prompt1", "prompt2", "prompt3"]);
+  });
+
+  it("handles a JSON-encoded string (double-encoding)", () => {
+    const jsonString = JSON.stringify(["What is the best cleaning service?", "Who cleans offices?"]);
+    const result = parseTrainingPrompts(jsonString);
+    expect(result).toEqual(["What is the best cleaning service?", "Who cleans offices?"]);
+  });
+
+  it("handles a doubly-encoded JSON string", () => {
+    const inner = JSON.stringify(["prompt1", "prompt2"]);
+    const doubleEncoded = JSON.stringify(inner);
+    // After first parse, it's a string. After second parse, it's an array.
+    const result = parseTrainingPrompts(doubleEncoded);
+    // parseTrainingPrompts only does one level of parsing, so it should get the inner string
+    // and then treat it as a single prompt (since it's > 10 chars)
+    expect(result.length).toBeGreaterThan(0);
+    // Each result should be a proper string, not a single character
+    result.forEach(p => expect(p.length).toBeGreaterThan(1));
+  });
+
+  it("filters out empty strings", () => {
+    const result = parseTrainingPrompts(["valid", "", "also valid", ""]);
+    expect(result).toEqual(["valid", "also valid"]);
+  });
+
+  it("returns empty array for null/undefined", () => {
+    expect(parseTrainingPrompts(null)).toEqual([]);
+    expect(parseTrainingPrompts(undefined)).toEqual([]);
+  });
+
+  it("handles a single string longer than 10 chars as a prompt", () => {
+    const result = parseTrainingPrompts("This is a long prompt that should be treated as a single item");
+    expect(result).toEqual(["This is a long prompt that should be treated as a single item"]);
+  });
+
+  it("returns empty for short non-JSON strings", () => {
+    const result = parseTrainingPrompts("abc");
+    expect(result).toEqual([]);
+  });
+});
+
+describe("selectRandomPrompt", () => {
+  it("returns a valid prompt from an array", () => {
+    const prompts = ["prompt1", "prompt2", "prompt3"];
+    const result = selectRandomPrompt(prompts);
+    expect(prompts).toContain(result);
+    expect(result.length).toBeGreaterThan(1);
+  });
+
+  it("handles JSON-encoded prompts without returning single characters", () => {
+    const jsonString = JSON.stringify(["What is the best service?", "Who provides cleaning?"]);
+    const result = selectRandomPrompt(jsonString);
+    // Should return a full prompt, not a single character
+    expect(result.length).toBeGreaterThan(5);
+  });
+
+  it("throws for empty input", () => {
+    expect(() => selectRandomPrompt([])).toThrow("No prompts available");
+    expect(() => selectRandomPrompt(null)).toThrow("No prompts available");
   });
 });

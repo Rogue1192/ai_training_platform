@@ -121,16 +121,43 @@ async function callGoogle(apiKey: string, model: string, messages: AIMessage[]):
 }
 
 /**
+ * Map of deprecated model names to their current replacements.
+ * When a model is deprecated by its provider, add a mapping here
+ * so existing sessions with the old model name continue to work.
+ */
+const DEPRECATED_MODEL_MAP: Record<string, string> = {
+  "gemini-2.0-flash-exp": "gemini-2.0-flash",
+  "gemini-pro": "gemini-1.5-pro",
+  "claude-3-opus-20240229": "claude-sonnet-4-5-20250929",
+  "claude-3-sonnet-20240229": "claude-sonnet-4-5-20250929",
+  "claude-3-haiku-20240307": "claude-haiku-4-5-20251001",
+};
+
+/**
+ * Resolve a model name, replacing deprecated models with their current equivalents.
+ */
+function resolveModel(model: string): string {
+  const resolved = DEPRECATED_MODEL_MAP[model];
+  if (resolved) {
+    console.log(`[AI Provider] Model "${model}" is deprecated, using "${resolved}" instead`);
+    return resolved;
+  }
+  return model;
+}
+
+/**
  * Generic AI provider call
  */
 export async function callAI(provider: AIProvider, apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
+  const resolvedModel = resolveModel(model);
+  
   switch (provider) {
     case "openai":
-      return callOpenAI(apiKey, model, messages);
+      return callOpenAI(apiKey, resolvedModel, messages);
     case "anthropic":
-      return callAnthropic(apiKey, model, messages);
+      return callAnthropic(apiKey, resolvedModel, messages);
     case "google":
-      return callGoogle(apiKey, model, messages);
+      return callGoogle(apiKey, resolvedModel, messages);
     default:
       throw new Error(`Unsupported AI provider: ${provider}`);
   }

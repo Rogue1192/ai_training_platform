@@ -20,6 +20,8 @@ import {
   createTrainingConversation,
   getApiKeyByUserAndProvider,
   getBusinessById,
+  getActiveRunBySessionId,
+  updateScheduledJobRun,
 } from "./db";
 import {
   generateCleanPromptAsync,
@@ -157,8 +159,7 @@ async function executeBaselineTest(sessionId: number, userId: number): Promise<v
     targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
     
     // Select a random prompt and generate CLEAN version
-    const prompts = session.trainingPrompts as string[];
-    const basePrompt = selectRandomPrompt(prompts);
+    const basePrompt = selectRandomPrompt(session.trainingPrompts);
     const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo, session.userId);
     
     console.log(`[Training V2] Baseline clean prompt: "${cleanPrompt}"`);
@@ -267,8 +268,7 @@ async function executeTrainingIteration(
     targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
     
     // Select a random prompt and generate SUGGESTIVE version
-    const prompts = session.trainingPrompts as string[];
-    const basePrompt = selectRandomPrompt(prompts);
+    const basePrompt = selectRandomPrompt(session.trainingPrompts);
     const { prompt: suggestivePrompt } = await generateSuggestivePromptAsync(basePrompt, businessInfo, session.userId);
     
     console.log(`[Training V2] Training suggestive prompt: "${suggestivePrompt.substring(0, 100)}..."`);
@@ -427,8 +427,7 @@ async function executeEvaluationTest(sessionId: number, userId: number): Promise
     targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
     
     // Select a random prompt and generate CLEAN version (same as baseline)
-    const prompts = session.trainingPrompts as string[];
-    const basePrompt = selectRandomPrompt(prompts);
+    const basePrompt = selectRandomPrompt(session.trainingPrompts);
     const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo, session.userId);
     
     console.log(`[Training V2] Evaluation clean prompt: "${cleanPrompt}"`);
@@ -501,8 +500,55 @@ async function executeEvaluationTest(sessionId: number, userId: number): Promise
     console.log(`[Training V2] Session ${sessionId} COMPLETED`);
     console.log(`[Training V2] Results: baseline=${session.baselineMentioned}, evaluation=${mentioned}, influence=${influenceScore}`);
     
+    // Update scheduled job run history if this session was triggered by a schedule
+    await updateRunHistoryOnCompletion(sessionId, {
+      baselineMentioned: session.baselineMentioned ?? false,
+      evaluationMentioned: mentioned,
+      influenceScore,
+      iterationsCompleted: session.iterations,
+    });
+    
   } finally {
     clearSensitiveData(targetApiKey);
+  }
+}
+
+/**
+ * Update the scheduled job run history record when a session completes or fails.
+ * This bridges the gap between the V2 worker and the scheduler's run history.
+ */
+async function updateRunHistoryOnCompletion(
+  sessionId: number,
+  results: {
+    baselineMentioned?: boolean;
+    evaluationMentioned?: boolean;
+    influenceScore?: number;
+    iterationsCompleted?: number;
+    errorMessage?: string;
+    status?: "completed" | "failed";
+  }
+): Promise<void> {
+  try {
+    const activeRun = await getActiveRunBySessionId(sessionId);
+    if (!activeRun) {
+      // Session was not triggered by a scheduled job — nothing to update
+      return;
+    }
+    
+    await updateScheduledJobRun(activeRun.id, {
+      status: results.status || "completed",
+      completedAt: new Date(),
+      baselineMentioned: results.baselineMentioned ?? null,
+      evaluationMentioned: results.evaluationMentioned ?? null,
+      influenceScore: results.influenceScore ?? null,
+      iterationsCompleted: results.iterationsCompleted ?? null,
+      errorMessage: results.errorMessage || null,
+    });
+    
+    console.log(`[Training V2] Updated run history record ${activeRun.id} for session ${sessionId}: ${results.status || "completed"}`);
+  } catch (error: any) {
+    // Non-fatal — log but don't fail the training
+    console.warn(`[Training V2] Failed to update run history for session ${sessionId}:`, error.message);
   }
 }
 
@@ -570,9 +616,16 @@ export function startTrainingWorkerV2(): Worker {
         if (job.attemptsMade >= (job.opts?.attempts || 3) - 1) {
           console.error(`[Training V2 Worker] Job ${job.id} exhausted all retries, marking session as error`);
           try {
+            const errorMsg = `Training failed after ${job.attemptsMade + 1} attempts: ${error.message}`;
             await updateTrainingSession(jobData.sessionId, {
               status: 'error',
-              errorMessage: `Training failed after ${job.attemptsMade + 1} attempts: ${error.message}`,
+              errorMessage: errorMsg,
+            });
+            
+            // Update run history with failure
+            await updateRunHistoryOnCompletion(jobData.sessionId, {
+              status: "failed",
+              errorMessage: errorMsg,
             });
           } catch (updateError: any) {
             console.error(`[Training V2 Worker] Failed to update session error status:`, updateError.message);

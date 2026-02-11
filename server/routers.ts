@@ -600,44 +600,64 @@ export const appRouter = router({
           cronExpression: z.string().optional().nullable(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const { updateScheduledJob } = await import("./db");
         const { calculateNextRun } = await import("./scheduler");
         const { id, ...updates } = input;
         
+        // Verify ownership
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const { scheduledJobs } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, id)).limit(1);
+        const job = jobs[0];
+        if (!job || job.userId !== ctx.user.id) {
+          throw new Error("Scheduled job not found or access denied");
+        }
+        
         // If schedule changed, recalculate next run
         if (updates.scheduleType || updates.timeOfDay || updates.dayOfWeek !== undefined || updates.dayOfMonth !== undefined) {
-          // We need current job data to merge
-          const { getDb } = await import("./db");
-          const db = await getDb();
-          if (db) {
-            const { scheduledJobs } = await import("../drizzle/schema");
-            const { eq } = await import("drizzle-orm");
-            const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, id)).limit(1);
-            const job = jobs[0];
-            if (job) {
-              const scheduleType = (updates.scheduleType || job.scheduleType) as "daily" | "weekly" | "monthly" | "custom";
-              const nextRun = calculateNextRun(scheduleType, {
-                timeOfDay: updates.timeOfDay || job.timeOfDay,
-                dayOfWeek: updates.dayOfWeek !== undefined ? updates.dayOfWeek : job.dayOfWeek,
-                dayOfMonth: updates.dayOfMonth !== undefined ? updates.dayOfMonth : job.dayOfMonth,
-                timezone: updates.timezone || job.timezone,
-                cronExpression: updates.cronExpression !== undefined ? (updates.cronExpression ?? undefined) : (job.cronExpression ?? undefined),
-              });
-              (updates as any).nextRun = nextRun;
-            }
-          }
+          const scheduleType = (updates.scheduleType || job.scheduleType) as "daily" | "weekly" | "monthly" | "custom";
+          const nextRun = calculateNextRun(scheduleType, {
+            timeOfDay: updates.timeOfDay || job.timeOfDay,
+            dayOfWeek: updates.dayOfWeek !== undefined ? updates.dayOfWeek : job.dayOfWeek,
+            dayOfMonth: updates.dayOfMonth !== undefined ? updates.dayOfMonth : job.dayOfMonth,
+            timezone: updates.timezone || job.timezone,
+            cronExpression: updates.cronExpression !== undefined ? (updates.cronExpression ?? undefined) : (job.cronExpression ?? undefined),
+          });
+          (updates as any).nextRun = nextRun;
         }
         
         await updateScheduledJob(id, updates as any);
         return { success: true };
       }),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
-      const { deleteScheduledJob } = await import("./db");
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      // Verify ownership before deleting
+      const { getDb, deleteScheduledJob } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { scheduledJobs } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, input.id)).limit(1);
+      if (!jobs[0] || jobs[0].userId !== ctx.user.id) {
+        throw new Error("Scheduled job not found or access denied");
+      }
       await deleteScheduledJob(input.id);
       return { success: true };
     }),
-    runNow: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    runNow: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      // Verify ownership before running
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { scheduledJobs } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, input.id)).limit(1);
+      if (!jobs[0] || jobs[0].userId !== ctx.user.id) {
+        throw new Error("Scheduled job not found or access denied");
+      }
       const { runJobNow } = await import("./scheduler");
       return runJobNow(input.id);
     }),
@@ -646,7 +666,16 @@ export const appRouter = router({
       .input(z.object({ jobId: z.number().optional() }))
       .query(async ({ ctx, input }) => {
         if (input.jobId) {
-          const { getScheduledJobRunsByJobId } = await import("./db");
+          // Verify the job belongs to the current user before returning its history
+          const { getDb, getScheduledJobRunsByJobId } = await import("./db");
+          const db = await getDb();
+          if (!db) throw new Error("Database not available");
+          const { scheduledJobs } = await import("../drizzle/schema");
+          const { eq } = await import("drizzle-orm");
+          const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, input.jobId)).limit(1);
+          if (!jobs[0] || jobs[0].userId !== ctx.user.id) {
+            throw new Error("Scheduled job not found or access denied");
+          }
           return getScheduledJobRunsByJobId(input.jobId);
         } else {
           const { getScheduledJobRunsByUserId } = await import("./db");

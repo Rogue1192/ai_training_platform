@@ -24,6 +24,9 @@ import { startTrainingSession } from "./trainingEngine";
 // Scheduler interval in milliseconds (1 minute)
 const SCHEDULER_INTERVAL = 60 * 1000;
 
+// Maximum time a session can be in_progress before it's considered stale (2 hours)
+const STALE_SESSION_THRESHOLD_MS = 2 * 60 * 60 * 1000;
+
 let schedulerTimer: NodeJS.Timeout | null = null;
 
 // Day name mapping for display
@@ -89,22 +92,33 @@ export function calculateNextRun(
 
     case "monthly": {
       const targetDay = dayOfMonth ?? 1; // Default 1st
-      let next = setTimeInTimezone(now, hours, minutes, timezone);
       
-      // Set to target day of current month
+      // Helper: clamp day to the last valid day of a given month
+      const clampDay = (year: number, month: number, day: number): number => {
+        // month is 0-indexed (JS Date convention)
+        const lastDay = new Date(year, month + 1, 0).getDate(); // last day of month
+        return Math.min(day, lastDay);
+      };
+      
       const currentDayOfMonth = getDayOfMonthInTimezone(now, timezone);
       
-      if (currentDayOfMonth < targetDay || (currentDayOfMonth === targetDay && next > now)) {
+      // Try current month first
+      const nowYear = now.getFullYear();
+      const nowMonth = now.getMonth();
+      const clampedThisMonth = clampDay(nowYear, nowMonth, targetDay);
+      
+      let next = setTimeInTimezone(now, hours, minutes, timezone);
+      
+      if (currentDayOfMonth < clampedThisMonth || (currentDayOfMonth === clampedThisMonth && next > now)) {
         // Still this month
-        const daysToAdd = targetDay - currentDayOfMonth;
+        const daysToAdd = clampedThisMonth - currentDayOfMonth;
         next = new Date(next.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
       } else {
-        // Next month
-        const nextMonth = new Date(now);
-        nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-        nextMonth.setUTCDate(1);
-        next = setTimeInTimezone(nextMonth, hours, minutes, timezone);
-        const daysToAdd = targetDay - 1;
+        // Next month — clamp to that month's last day
+        const nextMonthDate = new Date(nowYear, nowMonth + 1, 1);
+        const clampedNextMonth = clampDay(nextMonthDate.getFullYear(), nextMonthDate.getMonth(), targetDay);
+        next = setTimeInTimezone(nextMonthDate, hours, minutes, timezone);
+        const daysToAdd = clampedNextMonth - 1;
         next = new Date(next.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
       }
       return next;
@@ -115,7 +129,8 @@ export function calculateNextRun(
         const nextFromCron = parseSimpleCron(cronExpression, now);
         if (nextFromCron) return nextFromCron;
       }
-      // Fallback to daily
+      // Fallback to daily if no valid cron expression
+      console.warn(`[Scheduler] Custom cron expression "${cronExpression}" could not be parsed, falling back to daily at ${timeOfDay}`);
       let next = setTimeInTimezone(now, hours, minutes, timezone);
       if (next <= now) {
         next = new Date(next.getTime() + 24 * 60 * 60 * 1000);
@@ -334,6 +349,52 @@ async function resetTrainingSessionForRerun(sessionId: number): Promise<void> {
 }
 
 /**
+ * Detect and recover stale training sessions that have been in_progress for too long.
+ * This handles cases where the BullMQ worker crashed or the job was lost.
+ */
+async function detectAndRecoverStaleSessions(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    const staleThreshold = new Date(Date.now() - STALE_SESSION_THRESHOLD_MS);
+    
+    // Find sessions that have been in_progress for longer than the threshold
+    const staleSessions = await db
+      .select()
+      .from(trainingSessions)
+      .where(
+        and(
+          eq(trainingSessions.status, "in_progress"),
+          lte(trainingSessions.updatedAt, staleThreshold)
+        )
+      );
+
+    for (const session of staleSessions) {
+      const runningTime = Date.now() - new Date(session.updatedAt).getTime();
+      const runningHours = (runningTime / (1000 * 60 * 60)).toFixed(1);
+      
+      console.warn(`[Scheduler] Stale session detected: ID ${session.id} has been in_progress for ${runningHours} hours (last updated: ${session.updatedAt})`);
+      
+      // Mark as error so the scheduler can re-run it or the user can restart
+      await db.update(trainingSessions).set({
+        status: "error",
+        errorMessage: `Session was stuck in_progress for ${runningHours} hours and was automatically marked as stale. You can restart it manually or wait for the next scheduled run.`,
+        updatedAt: new Date(),
+      }).where(eq(trainingSessions.id, session.id));
+      
+      console.log(`[Scheduler] Marked session ${session.id} as error (stale recovery)`);
+    }
+
+    if (staleSessions.length > 0) {
+      console.log(`[Scheduler] Recovered ${staleSessions.length} stale session(s)`);
+    }
+  } catch (error) {
+    console.error("[Scheduler] Error detecting stale sessions:", error);
+  }
+}
+
+/**
  * Process all due scheduled jobs
  */
 async function processDueJobs(): Promise<void> {
@@ -342,6 +403,9 @@ async function processDueJobs(): Promise<void> {
     console.log("[Scheduler] Database not available, skipping job check");
     return;
   }
+
+  // First, detect and recover any stale sessions
+  await detectAndRecoverStaleSessions();
 
   const now = new Date();
 

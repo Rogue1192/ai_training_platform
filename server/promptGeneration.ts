@@ -338,11 +338,48 @@ function escapeRegex(string: string): string {
 }
 
 /**
- * Select a random prompt from the training prompts array.
+ * Safely parse training prompts, handling double-encoded JSON strings.
+ * The database may store prompts as a JSON string (e.g., '["prompt1","prompt2"]')
+ * or as an already-parsed array. This function handles both cases.
  */
-export function selectRandomPrompt(prompts: string[]): string {
-  if (!prompts || prompts.length === 0) {
+export function parseTrainingPrompts(prompts: unknown): string[] {
+  if (!prompts) return [];
+  
+  // Already an array — validate each element is a string
+  if (Array.isArray(prompts)) {
+    return prompts.filter(p => typeof p === 'string' && p.length > 0);
+  }
+  
+  // It's a string — try to parse as JSON
+  if (typeof prompts === 'string') {
+    try {
+      const parsed = JSON.parse(prompts);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((p: unknown) => typeof p === 'string' && (p as string).length > 0);
+      }
+      // Single string value
+      if (typeof parsed === 'string' && parsed.length > 0) {
+        return [parsed];
+      }
+    } catch {
+      // Not valid JSON — treat the string itself as a single prompt if it's long enough
+      if (prompts.length > 10) {
+        return [prompts];
+      }
+    }
+  }
+  
+  return [];
+}
+
+/**
+ * Select a random prompt from the training prompts array.
+ * Uses parseTrainingPrompts to safely handle double-encoded JSON.
+ */
+export function selectRandomPrompt(prompts: unknown): string {
+  const parsed = parseTrainingPrompts(prompts);
+  if (parsed.length === 0) {
     throw new Error('No prompts available');
   }
-  return prompts[Math.floor(Math.random() * prompts.length)];
+  return parsed[Math.floor(Math.random() * parsed.length)];
 }
