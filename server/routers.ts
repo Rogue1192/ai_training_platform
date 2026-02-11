@@ -553,9 +553,9 @@ export const appRouter = router({
         z.object({
           trainingSessionId: z.number(),
           jobName: z.string().min(1),
-          scheduleType: z.enum(["daily", "weekly", "monthly", "custom"]),
-          timeOfDay: z.string().regex(/^\d{2}:\d{2}$/), // "HH:mm"
-          dayOfWeek: z.number().min(0).max(6).optional(), // 0=Sun, 6=Sat
+scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
+           timeOfDay: z.string().regex(/^\d{2}:\d{2}$/), // "HH:mm"
+           dayOfWeek: z.number().min(0).max(6).optional(), // 0=Sun, 6=Sat
           dayOfMonth: z.number().min(1).max(31).optional(),
           timezone: z.string().default("America/Los_Angeles"),
           cronExpression: z.string().optional(),
@@ -592,7 +592,7 @@ export const appRouter = router({
         z.object({
           id: z.number(),
           isActive: z.boolean().optional(),
-          scheduleType: z.enum(["daily", "weekly", "monthly", "custom"]).optional(),
+          scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]).optional(),
           timeOfDay: z.string().regex(/^\d{2}:\d{2}$/).optional(),
           dayOfWeek: z.number().min(0).max(6).optional().nullable(),
           dayOfMonth: z.number().min(1).max(31).optional().nullable(),
@@ -619,7 +619,7 @@ export const appRouter = router({
         
         // If schedule changed, recalculate next run
         if (updates.scheduleType || updates.timeOfDay || updates.dayOfWeek !== undefined || updates.dayOfMonth !== undefined) {
-          const scheduleType = (updates.scheduleType || job.scheduleType) as "daily" | "weekly" | "monthly" | "custom";
+          const scheduleType = (updates.scheduleType || job.scheduleType) as "hourly" | "daily" | "weekly" | "monthly" | "custom";
           const nextRun = calculateNextRun(scheduleType, {
             timeOfDay: updates.timeOfDay || job.timeOfDay,
             dayOfWeek: updates.dayOfWeek !== undefined ? updates.dayOfWeek : job.dayOfWeek,

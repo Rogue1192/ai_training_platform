@@ -1,0 +1,1 @@
+ALTER TYPE "public"."schedule_type" ADD VALUE 'hourly' BEFORE 'daily';

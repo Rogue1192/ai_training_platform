@@ -38,7 +38,7 @@ export default function ScheduledJobs() {
   const [formData, setFormData] = useState({
     jobName: "",
     trainingSessionId: "",
-    scheduleType: "daily" as "daily" | "weekly" | "monthly" | "custom",
+    scheduleType: "daily" as "hourly" | "daily" | "weekly" | "monthly",
     timeOfDay: "09:00",
     dayOfWeek: "1", // Monday
     dayOfMonth: "1",
@@ -81,7 +81,7 @@ export default function ScheduledJobs() {
         dayOfWeek: formData.scheduleType === "weekly" ? parseInt(formData.dayOfWeek) : undefined,
         dayOfMonth: formData.scheduleType === "monthly" ? parseInt(formData.dayOfMonth) : undefined,
         timezone: formData.timezone,
-        cronExpression: formData.scheduleType === "custom" ? formData.cronExpression : undefined,
+        // cronExpression removed - using hourly/daily/weekly/monthly only
       });
 
       toast.success("Scheduled job created successfully");
@@ -146,8 +146,11 @@ export default function ScheduledJobs() {
         const day = job.dayOfMonth ?? 1;
         const suffix = getOrdinalSuffix(day);
         return `${day}${suffix} of every month at ${time12h} ${tz}`;
-      case "custom":
-        return `Custom: ${job.cronExpression || "Not set"} at ${time12h} ${tz}`;
+      case "hourly": {
+        const [, mins] = job.timeOfDay.split(":").map(Number);
+        if (mins > 0) return `Every hour at :${String(mins).padStart(2, "0")} past ${tz}`;
+        return `Every hour on the hour ${tz}`;
+      }
       default:
         return "Unknown schedule";
     }
@@ -266,28 +269,51 @@ export default function ScheduledJobs() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="daily">Daily</SelectItem>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                      <SelectItem value="custom">Custom (Cron)</SelectItem>
+                      <SelectItem value="hourly">Hourly</SelectItem>
+                       <SelectItem value="daily">Daily</SelectItem>
+                       <SelectItem value="weekly">Weekly</SelectItem>
+                       <SelectItem value="monthly">Monthly</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {/* Time of Day */}
-                <div className="space-y-2">
-                  <Label htmlFor="timeOfDay">Time of Day *</Label>
-                  <Input
-                    id="timeOfDay"
-                    type="time"
-                    value={formData.timeOfDay}
-                    onChange={(e) => setFormData({ ...formData, timeOfDay: e.target.value })}
-                    className="bg-background border-input w-40"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    The exact time the training will run each scheduled day
-                  </p>
-                </div>
+                {/* Time of Day / Minutes past hour */}
+                {formData.scheduleType === "hourly" ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="minutesPast">Minutes Past the Hour</Label>
+                    <Select
+                      value={formData.timeOfDay.split(":")[1] || "00"}
+                      onValueChange={(v) => setFormData({ ...formData, timeOfDay: `00:${v}` })}
+                    >
+                      <SelectTrigger className="bg-background border-input w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="00">:00 (on the hour)</SelectItem>
+                        <SelectItem value="15">:15 (quarter past)</SelectItem>
+                        <SelectItem value="30">:30 (half past)</SelectItem>
+                        <SelectItem value="45">:45 (quarter to)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      The training will run every hour at this minute mark
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="timeOfDay">Time of Day *</Label>
+                    <Input
+                      id="timeOfDay"
+                      type="time"
+                      value={formData.timeOfDay}
+                      onChange={(e) => setFormData({ ...formData, timeOfDay: e.target.value })}
+                      className="bg-background border-input w-40"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      The exact time the training will run each scheduled day
+                    </p>
+                  </div>
+                )}
 
                 {/* Day of Week (for weekly) */}
                 {formData.scheduleType === "weekly" && (
@@ -349,21 +375,7 @@ export default function ScheduledJobs() {
                   </Select>
                 </div>
 
-                {formData.scheduleType === "custom" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="cronExpression">Cron Expression</Label>
-                    <Input
-                      id="cronExpression"
-                      value={formData.cronExpression}
-                      onChange={(e) => setFormData({ ...formData, cronExpression: e.target.value })}
-                      placeholder="e.g., 0 9 * * * (every day at 9 AM)"
-                      className="bg-background border-input"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Format: minute hour day month weekday
-                    </p>
-                  </div>
-                )}
+                {/* Hourly schedules don't need time-of-day — only minutes past the hour */}
 
                 {/* Schedule Preview */}
                 <div className="bg-muted/50 rounded-lg p-4 border border-border">

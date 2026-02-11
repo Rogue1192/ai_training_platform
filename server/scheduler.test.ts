@@ -5,6 +5,45 @@ import { parseTrainingPrompts, selectRandomPrompt } from "./promptGeneration";
 // ============= calculateNextRun tests =============
 
 describe("calculateNextRun", () => {
+  describe("hourly schedule", () => {
+    it("returns the next hour on the hour when minutes are :00", () => {
+      const fromDate = new Date("2026-02-11T06:30:00Z");
+      const result = calculateNextRun("hourly", {
+        timeOfDay: "00:00",
+        timezone: "UTC",
+        fromDate,
+      });
+
+      expect(result.getUTCHours()).toBe(7);
+      expect(result.getUTCMinutes()).toBe(0);
+    });
+
+    it("returns the next occurrence at :15 past", () => {
+      const fromDate = new Date("2026-02-11T06:20:00Z");
+      const result = calculateNextRun("hourly", {
+        timeOfDay: "00:15",
+        timezone: "UTC",
+        fromDate,
+      });
+
+      // Already past :15 this hour, so next is 7:15
+      expect(result.getUTCHours()).toBe(7);
+      expect(result.getUTCMinutes()).toBe(15);
+    });
+
+    it("returns current hour if minute mark has not yet passed", () => {
+      const fromDate = new Date("2026-02-11T06:10:00Z");
+      const result = calculateNextRun("hourly", {
+        timeOfDay: "00:30",
+        timezone: "UTC",
+        fromDate,
+      });
+
+      expect(result.getUTCHours()).toBe(6);
+      expect(result.getUTCMinutes()).toBe(30);
+    });
+  });
+
   describe("daily schedule", () => {
     it("returns the next occurrence of the specified time", () => {
       const fromDate = new Date("2026-02-11T06:00:00Z");
@@ -198,6 +237,26 @@ describe("calculateNextRun", () => {
 // ============= getScheduleDescription tests =============
 
 describe("getScheduleDescription", () => {
+  it("describes an hourly schedule on the hour", () => {
+    const desc = getScheduleDescription({
+      scheduleType: "hourly",
+      timeOfDay: "00:00",
+      timezone: "America/Los_Angeles",
+    });
+    expect(desc).toContain("Every hour");
+    expect(desc).toContain("on the hour");
+  });
+
+  it("describes an hourly schedule with minutes past", () => {
+    const desc = getScheduleDescription({
+      scheduleType: "hourly",
+      timeOfDay: "00:15",
+      timezone: "UTC",
+    });
+    expect(desc).toContain("Every hour");
+    expect(desc).toContain(":15");
+  });
+
   it("describes a daily schedule correctly", () => {
     const desc = getScheduleDescription({
       scheduleType: "daily",

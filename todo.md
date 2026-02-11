@@ -527,3 +527,14 @@
 - [x] Batch 7a: Fix monthly day overflow for day 29-31 (clamp to last day of month)
 - [x] Batch 7b: Custom cron falls back to daily with warning log (kept for future expansion)
 - [x] Write tests for all scheduler fixes (27 tests passing)
+
+## Bug: Logout not working on dev server
+- [ ] Investigate and fix logout redirecting back to dashboard instead of logging out
+
+## Scheduler: Replace Custom with Hourly
+- [x] Add "hourly" to schedule type enum in schema
+- [x] Add hourly case to calculateNextRun in scheduler.ts
+- [x] Update getScheduleDescription for hourly
+- [x] Update routers.ts to accept "hourly" schedule type
+- [x] Update ScheduledJobs.tsx UI to show Hourly instead of Custom (Cron)
+- [x] Update tests for hourly scheduling (32 tests passing)

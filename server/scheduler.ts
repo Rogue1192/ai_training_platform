@@ -37,7 +37,7 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
  * All calculations respect the job's configured timezone.
  */
 export function calculateNextRun(
-  scheduleType: "daily" | "weekly" | "monthly" | "custom",
+  scheduleType: "hourly" | "daily" | "weekly" | "monthly" | "custom",
   options: {
     timeOfDay?: string;       // "HH:mm" format
     dayOfWeek?: number | null; // 0=Sun, 1=Mon, ..., 6=Sat
@@ -63,6 +63,18 @@ export function calculateNextRun(
   const nowInTz = getDateInTimezone(now, timezone);
 
   switch (scheduleType) {
+    case "hourly": {
+      // Next occurrence at the top of the next hour (or specified minutes past)
+      const [, minutesPast] = timeOfDay.split(":").map(Number);
+      const minuteMark = minutesPast || 0;
+      const nextHour = new Date(now);
+      nextHour.setMinutes(minuteMark, 0, 0);
+      if (nextHour <= now) {
+        nextHour.setTime(nextHour.getTime() + 60 * 60 * 1000);
+      }
+      return nextHour;
+    }
+
     case "daily": {
       // Next occurrence of HH:mm in the target timezone
       let next = setTimeInTimezone(now, hours, minutes, timezone);
@@ -286,6 +298,13 @@ export function getScheduleDescription(job: {
   const time12h = formatTime12h(job.timeOfDay);
   
   switch (job.scheduleType) {
+    case "hourly": {
+      const [, mins] = job.timeOfDay.split(":").map(Number);
+      if (mins > 0) {
+        return `Every hour at :${String(mins).padStart(2, "0")} past (${job.timezone})`;
+      }
+      return `Every hour on the hour (${job.timezone})`;
+    }
     case "daily":
       return `Every day at ${time12h} (${job.timezone})`;
     case "weekly":

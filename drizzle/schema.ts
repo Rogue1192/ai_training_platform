@@ -15,7 +15,7 @@ export const trainingStatusEnum = pgEnum("training_status", ["paused", "in_progr
 // Valid values: trainingPhase: 'pending' | 'baseline' | 'training' | 'evaluation' | 'completed'
 // Valid values: conversationType: 'baseline' | 'training' | 'evaluation'
 // Valid values: promptType: 'clean' | 'suggestive' | 'follow_up'
-export const scheduleTypeEnum = pgEnum("schedule_type", ["daily", "weekly", "monthly", "custom"]);
+export const scheduleTypeEnum = pgEnum("schedule_type", ["hourly", "daily", "weekly", "monthly", "custom"]);
 // Note: promptTemplateType uses varchar instead of enum for TiDB compatibility
 // Valid values: 'clean' | 'suggestive' | 'follow_up' | 'category_based'
 
