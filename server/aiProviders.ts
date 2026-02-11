@@ -147,7 +147,7 @@ export function getAvailableModels(provider: AIProvider): string[] {
       // Updated to current Claude 4.5 models (Jan 2026)
       return ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001", "claude-opus-4-5-20251101"];
     case "google":
-      return ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"];
+      return ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"];
     default:
       return [];
   }

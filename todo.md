@@ -511,3 +511,6 @@
 - [x] Update tRPC procedures for new scheduling fields
 - [x] Write tests for scheduler logic (12 tests passing)
 - [x] Verify end-to-end scheduling flow
+
+## Bug Fixes
+- [x] Fix deprecated Google AI model: gemini-2.0-flash-exp → gemini-2.0-flash
