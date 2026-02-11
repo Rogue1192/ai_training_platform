@@ -456,3 +456,26 @@
 - [x] Keep clean prompts as user-configured variations - Updated to Influenx style
 - [x] Update category-based prompts - Simplified to match Influenx patterns
 - [x] Test updated prompts work correctly - 14 tests passing
+
+
+## Fix promptTemplates Table Error (Feb 10, 2026)
+- [x] Identified table was missing from Supabase PostgreSQL database
+- [x] Created promptTemplates table directly in Supabase PostgreSQL with correct schema
+- [x] Fixed drizzle.config.ts to use SUPABASE_DATABASE_URL instead of DATABASE_URL
+- [x] Verified Settings page loads without errors - Prompt Templates section displays correctly
+- [x] Verified Training page loads without errors
+
+
+## Clean Up Test/Dummy Businesses (Feb 10, 2026)
+- [x] Log in and review all 57 businesses
+- [x] Identify 16 test/dummy businesses (no domain, test names, dummy data)
+- [x] Present list to user for confirmation before deletion
+- [x] Delete 16 confirmed test businesses (41 legitimate remain)
+- [x] Delete 19 test training sessions and 18 linked conversations
+- [x] Verify cleanup is complete (41 businesses, 84 sessions remain)
+
+
+## Remove Training Phase Bias - Priority 1 Fix
+- [x] Remove trainingContext from training phase system prompt in trainingQueueV2.ts
+- [x] Verify tests pass (14/14 passing)
+- [ ] Deploy fix

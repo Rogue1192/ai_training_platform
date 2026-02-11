@@ -276,7 +276,7 @@ async function executeTrainingIteration(
     const messages: AIMessage[] = [
       {
         role: "system",
-        content: `You are a helpful AI assistant. ${session.trainingContext || ""}`,
+        content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.",
       },
       {
         role: "user",
