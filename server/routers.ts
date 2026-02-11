@@ -551,9 +551,13 @@ export const appRouter = router({
     create: protectedProcedure
       .input(
         z.object({
-          trainingSessionId: z.number(), // Required - must link to a training session
+          trainingSessionId: z.number(),
           jobName: z.string().min(1),
           scheduleType: z.enum(["daily", "weekly", "monthly", "custom"]),
+          timeOfDay: z.string().regex(/^\d{2}:\d{2}$/), // "HH:mm"
+          dayOfWeek: z.number().min(0).max(6).optional(), // 0=Sun, 6=Sat
+          dayOfMonth: z.number().min(1).max(31).optional(),
+          timezone: z.string().default("America/Los_Angeles"),
           cronExpression: z.string().optional(),
         })
       )
@@ -561,14 +565,18 @@ export const appRouter = router({
         const { createScheduledJob, getTrainingSessionById } = await import("./db");
         const { calculateNextRun } = await import("./scheduler");
         
-        // Verify training session exists and belongs to user
         const session = await getTrainingSessionById(input.trainingSessionId);
         if (!session || session.userId !== ctx.user.id) {
           throw new Error("Training session not found or access denied");
         }
         
-        // Calculate next run time
-        const nextRun = calculateNextRun(input.scheduleType, input.cronExpression);
+        const nextRun = calculateNextRun(input.scheduleType, {
+          timeOfDay: input.timeOfDay,
+          dayOfWeek: input.dayOfWeek,
+          dayOfMonth: input.dayOfMonth,
+          timezone: input.timezone,
+          cronExpression: input.cronExpression,
+        });
         
         return createScheduledJob({
           ...input,
@@ -585,13 +593,43 @@ export const appRouter = router({
           id: z.number(),
           isActive: z.boolean().optional(),
           scheduleType: z.enum(["daily", "weekly", "monthly", "custom"]).optional(),
-          cronExpression: z.string().optional(),
+          timeOfDay: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+          dayOfWeek: z.number().min(0).max(6).optional().nullable(),
+          dayOfMonth: z.number().min(1).max(31).optional().nullable(),
+          timezone: z.string().optional(),
+          cronExpression: z.string().optional().nullable(),
         })
       )
       .mutation(async ({ input }) => {
         const { updateScheduledJob } = await import("./db");
+        const { calculateNextRun } = await import("./scheduler");
         const { id, ...updates } = input;
-        await updateScheduledJob(id, updates);
+        
+        // If schedule changed, recalculate next run
+        if (updates.scheduleType || updates.timeOfDay || updates.dayOfWeek !== undefined || updates.dayOfMonth !== undefined) {
+          // We need current job data to merge
+          const { getDb } = await import("./db");
+          const db = await getDb();
+          if (db) {
+            const { scheduledJobs } = await import("../drizzle/schema");
+            const { eq } = await import("drizzle-orm");
+            const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, id)).limit(1);
+            const job = jobs[0];
+            if (job) {
+              const scheduleType = (updates.scheduleType || job.scheduleType) as "daily" | "weekly" | "monthly" | "custom";
+              const nextRun = calculateNextRun(scheduleType, {
+                timeOfDay: updates.timeOfDay || job.timeOfDay,
+                dayOfWeek: updates.dayOfWeek !== undefined ? updates.dayOfWeek : job.dayOfWeek,
+                dayOfMonth: updates.dayOfMonth !== undefined ? updates.dayOfMonth : job.dayOfMonth,
+                timezone: updates.timezone || job.timezone,
+                cronExpression: updates.cronExpression !== undefined ? (updates.cronExpression ?? undefined) : (job.cronExpression ?? undefined),
+              });
+              (updates as any).nextRun = nextRun;
+            }
+          }
+        }
+        
+        await updateScheduledJob(id, updates as any);
         return { success: true };
       }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
@@ -603,6 +641,18 @@ export const appRouter = router({
       const { runJobNow } = await import("./scheduler");
       return runJobNow(input.id);
     }),
+    // Run history
+    getRunHistory: protectedProcedure
+      .input(z.object({ jobId: z.number().optional() }))
+      .query(async ({ ctx, input }) => {
+        if (input.jobId) {
+          const { getScheduledJobRunsByJobId } = await import("./db");
+          return getScheduledJobRunsByJobId(input.jobId);
+        } else {
+          const { getScheduledJobRunsByUserId } = await import("./db");
+          return getScheduledJobRunsByUserId(ctx.user.id);
+        }
+      }),
   }),
 
   // AI provider utilities

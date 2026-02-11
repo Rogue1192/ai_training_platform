@@ -150,6 +150,11 @@ export const scheduledJobs = pgTable("scheduledJobs", {
   jobName: varchar("jobName", { length: 255 }).notNull(),
   scheduleType: scheduleTypeEnum("scheduleType").notNull(),
   cronExpression: varchar("cronExpression", { length: 100 }),
+  // Exact scheduling fields
+  timeOfDay: varchar("timeOfDay", { length: 5 }).notNull().default("09:00"), // HH:mm format
+  dayOfWeek: integer("dayOfWeek"), // 0=Sunday, 1=Monday, ..., 6=Saturday (for weekly)
+  dayOfMonth: integer("dayOfMonth"), // 1-31 (for monthly)
+  timezone: varchar("timezone", { length: 100 }).default("America/Los_Angeles").notNull(),
   isActive: boolean("isActive").default(true).notNull(),
   lastRun: timestamp("lastRun"),
   nextRun: timestamp("nextRun"),
@@ -160,6 +165,30 @@ export const scheduledJobs = pgTable("scheduledJobs", {
 
 export type ScheduledJob = typeof scheduledJobs.$inferSelect;
 export type InsertScheduledJob = typeof scheduledJobs.$inferInsert;
+
+// Scheduled Job Runs - History of every execution
+export const scheduledJobRuns = pgTable("scheduledJobRuns", {
+  id: serial("id").primaryKey(),
+  scheduledJobId: integer("scheduledJobId")
+    .notNull()
+    .references(() => scheduledJobs.id, { onDelete: "cascade" }),
+  trainingSessionId: integer("trainingSessionId").references(() => trainingSessions.id, {
+    onDelete: "set null",
+  }),
+  status: varchar("status", { length: 20 }).notNull().default("running"), // 'running' | 'completed' | 'failed' | 'skipped'
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  errorMessage: text("errorMessage"),
+  // Snapshot of training results at completion
+  baselineMentioned: boolean("baselineMentioned"),
+  evaluationMentioned: boolean("evaluationMentioned"),
+  influenceScore: integer("influenceScore"),
+  iterationsCompleted: integer("iterationsCompleted"),
+  triggeredBy: varchar("triggeredBy", { length: 20 }).default("scheduler").notNull(), // 'scheduler' | 'manual'
+});
+
+export type ScheduledJobRun = typeof scheduledJobRuns.$inferSelect;
+export type InsertScheduledJobRun = typeof scheduledJobRuns.$inferInsert;
 
 // Platform Metrics table
 export const platformMetrics = pgTable("platformMetrics", {

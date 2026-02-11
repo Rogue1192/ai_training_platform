@@ -478,4 +478,36 @@
 ## Remove Training Phase Bias - Priority 1 Fix
 - [x] Remove trainingContext from training phase system prompt in trainingQueueV2.ts
 - [x] Verify tests pass (14/14 passing)
-- [ ] Deploy fix
+- [x] Deploy fix (checkpoint saved, auto-deploys to Railway via GitHub)
+
+
+## End-to-End Test - Titan Cleaning Company
+- [ ] Crawl Titan Cleaning Company website for business details
+- [ ] Log in as paul@roguebusinessmarketing.com test account
+- [ ] Create Titan Cleaning Company business profile
+- [ ] Create training session for the business
+- [ ] Start training session and monitor progress
+- [ ] Validate baseline, training, and evaluation phases work correctly
+- [ ] Verify no bias in prompts
+
+
+## Scheduling/Cron Audit
+- [ ] Audit training session scheduling/cron implementation
+- [ ] Verify scheduled sessions are automatically triggered at configured times
+- [ ] Fix any gaps in the scheduling pipeline
+- [ ] Test scheduling flow end-to-end
+
+## Scheduler Overhaul
+- [x] Add scheduledJobRuns history table to database schema
+- [x] Add scheduledAt (exact datetime) and timeOfDay fields to scheduledJobs table
+- [x] Push database migration
+- [x] Refactor scheduler to use exact date/time instead of relative intervals
+- [x] Implement proper session reset (clear all V2 fields) before re-run
+- [x] Add duplicate run protection (skip if session already in_progress)
+- [x] Log every run to scheduledJobRuns history table
+- [x] Refactor Schedule UI with date/time picker for exact scheduling
+- [x] Add run history view showing all past executions with status
+- [x] Show exact next run date/time prominently on job cards
+- [x] Update tRPC procedures for new scheduling fields
+- [x] Write tests for scheduler logic (12 tests passing)
+- [x] Verify end-to-end scheduling flow

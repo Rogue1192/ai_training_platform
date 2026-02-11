@@ -19,6 +19,9 @@ import {
   scheduledJobs,
   InsertScheduledJob,
   ScheduledJob,
+  scheduledJobRuns,
+  InsertScheduledJobRun,
+  ScheduledJobRun,
   platformMetrics,
   InsertPlatformMetric,
   promptTemplates,
@@ -353,6 +356,56 @@ export async function deleteScheduledJob(id: number): Promise<void> {
   if (!db) throw new Error("Database not available");
 
   await db.delete(scheduledJobs).where(eq(scheduledJobs.id, id));
+}
+
+// ============= Scheduled Job Runs (History) =============
+
+export async function createScheduledJobRun(run: InsertScheduledJobRun): Promise<ScheduledJobRun> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(scheduledJobRuns).values(run).returning();
+  return result[0]!;
+}
+
+export async function updateScheduledJobRun(id: number, updates: Partial<InsertScheduledJobRun>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(scheduledJobRuns).set(updates).where(eq(scheduledJobRuns.id, id));
+}
+
+export async function getScheduledJobRunsByJobId(jobId: number, limit = 50): Promise<ScheduledJobRun[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(scheduledJobRuns)
+    .where(eq(scheduledJobRuns.scheduledJobId, jobId))
+    .orderBy(desc(scheduledJobRuns.startedAt))
+    .limit(limit);
+}
+
+export async function getScheduledJobRunsByUserId(userId: number, limit = 100): Promise<(ScheduledJobRun & { jobName?: string })[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const runs = await db.select({
+    id: scheduledJobRuns.id,
+    scheduledJobId: scheduledJobRuns.scheduledJobId,
+    trainingSessionId: scheduledJobRuns.trainingSessionId,
+    status: scheduledJobRuns.status,
+    startedAt: scheduledJobRuns.startedAt,
+    completedAt: scheduledJobRuns.completedAt,
+    errorMessage: scheduledJobRuns.errorMessage,
+    baselineMentioned: scheduledJobRuns.baselineMentioned,
+    evaluationMentioned: scheduledJobRuns.evaluationMentioned,
+    influenceScore: scheduledJobRuns.influenceScore,
+    iterationsCompleted: scheduledJobRuns.iterationsCompleted,
+    triggeredBy: scheduledJobRuns.triggeredBy,
+    jobName: scheduledJobs.jobName,
+  })
+    .from(scheduledJobRuns)
+    .innerJoin(scheduledJobs, eq(scheduledJobRuns.scheduledJobId, scheduledJobs.id))
+    .where(eq(scheduledJobs.userId, userId))
+    .orderBy(desc(scheduledJobRuns.startedAt))
+    .limit(limit);
+  return runs;
 }
 
 // ============= Platform Metrics Operations =============
