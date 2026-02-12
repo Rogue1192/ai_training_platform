@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateNextRun, getScheduleDescription } from "./scheduler";
+import { calculateNextRun, getScheduleDescription, getStaleThresholdMs } from "./scheduler";
 import { parseTrainingPrompts, selectRandomPrompt } from "./promptGeneration";
 
 // ============= calculateNextRun tests =============
@@ -303,6 +303,61 @@ describe("getScheduleDescription", () => {
 
     const desc11 = getScheduleDescription({ scheduleType: "monthly", timeOfDay: "09:00", dayOfMonth: 11, timezone: "UTC" });
     expect(desc11).toContain("11th");
+  });
+});
+
+// ============= getStaleThresholdMs tests (dynamic staleness) =============
+
+describe("getStaleThresholdMs", () => {
+  it("returns 30 min floor for very short retry intervals (1 min)", () => {
+    // 1 min * 3 = 3 min, but floor is 30 min
+    expect(getStaleThresholdMs(1)).toBe(30 * 60 * 1000);
+  });
+
+  it("returns 30 min floor for 5-min retry interval", () => {
+    // 5 min * 3 = 15 min, but floor is 30 min
+    expect(getStaleThresholdMs(5)).toBe(30 * 60 * 1000);
+  });
+
+  it("returns 30 min for 10-min retry interval (10*3=30)", () => {
+    // 10 min * 3 = 30 min — exactly the floor
+    expect(getStaleThresholdMs(10)).toBe(30 * 60 * 1000);
+  });
+
+  it("returns dynamic value for 15-min retry interval", () => {
+    // 15 min * 3 = 45 min — above floor, below ceiling
+    expect(getStaleThresholdMs(15)).toBe(45 * 60 * 1000);
+  });
+
+  it("returns dynamic value for 60-min retry interval", () => {
+    // 60 min * 3 = 180 min = 3 hours
+    expect(getStaleThresholdMs(60)).toBe(3 * 60 * 60 * 1000);
+  });
+
+  it("returns dynamic value for 120-min retry interval", () => {
+    // 120 min * 3 = 360 min = 6 hours
+    expect(getStaleThresholdMs(120)).toBe(6 * 60 * 60 * 1000);
+  });
+
+  it("returns 24h ceiling for very large retry intervals (600 min)", () => {
+    // 600 min * 3 = 1800 min = 30 hours, but ceiling is 24 hours
+    expect(getStaleThresholdMs(600)).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it("returns 24h ceiling for extreme retry intervals (1440 min = 1 day)", () => {
+    expect(getStaleThresholdMs(1440)).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it("correctly handles the 10-min retry interval used by Copper & Cable sessions", () => {
+    // This is the critical case: 10 min * 3 = 30 min
+    // A session with 50 iterations at 10-min intervals takes ~8.3 hours
+    // The old fixed 2-hour threshold would kill it at iteration 12
+    // The new 30-min threshold only kills it if no progress for 30 min
+    const threshold = getStaleThresholdMs(10);
+    expect(threshold).toBe(30 * 60 * 1000); // 30 minutes
+    // This is much less than the old 2-hour fixed threshold,
+    // but it's based on updatedAt (last progress), not session start time
+    // So a session making progress every 10 min will never trigger this
   });
 });
 

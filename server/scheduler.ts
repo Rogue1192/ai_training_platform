@@ -26,8 +26,12 @@ import { startTrainingSession } from "./trainingEngine";
 // Scheduler interval in milliseconds (1 minute)
 const SCHEDULER_INTERVAL = 60 * 1000;
 
-// Maximum time a session can be in_progress before it's considered stale (2 hours)
-const STALE_SESSION_THRESHOLD_MS = 2 * 60 * 60 * 1000;
+// Staleness detection: dynamic per-session threshold based on retryInterval
+// Floor: 30 minutes — even fast sessions get a grace period
+// Ceiling: 24 hours — no session should be in_progress longer than this
+// Formula: retryInterval (minutes) × 3, clamped to [30min, 24h]
+const STALE_FLOOR_MS = 30 * 60 * 1000;       // 30 minutes
+const STALE_CEILING_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 let schedulerTimer: NodeJS.Timeout | null = null;
 
@@ -370,45 +374,68 @@ async function resetTrainingSessionForRerun(sessionId: number): Promise<void> {
 }
 
 /**
+ * Calculate the dynamic stale threshold for a session based on its retryInterval.
+ * Formula: retryInterval (minutes) × 3, clamped between 30 min and 24 hours.
+ * Exported for testing.
+ */
+export function getStaleThresholdMs(retryIntervalMinutes: number): number {
+  const dynamicMs = retryIntervalMinutes * 3 * 60 * 1000;
+  return Math.max(STALE_FLOOR_MS, Math.min(dynamicMs, STALE_CEILING_MS));
+}
+
+/**
  * Detect and recover stale training sessions that have been in_progress for too long.
- * This handles cases where the BullMQ worker crashed or the job was lost.
+ * Uses a dynamic per-session threshold based on each session's retryInterval so that
+ * long-running sessions with large retry intervals are not prematurely killed.
  */
 async function detectAndRecoverStaleSessions(): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
   try {
-    const staleThreshold = new Date(Date.now() - STALE_SESSION_THRESHOLD_MS);
-    
-    // Find sessions that have been in_progress for longer than the threshold
-    const staleSessions = await db
+    // Fetch ALL in_progress sessions — we'll evaluate staleness individually
+    const inProgressSessions = await db
       .select()
       .from(trainingSessions)
-      .where(
-        and(
-          eq(trainingSessions.status, "in_progress"),
-          lte(trainingSessions.updatedAt, staleThreshold)
-        )
-      );
+      .where(eq(trainingSessions.status, "in_progress"));
 
-    for (const session of staleSessions) {
-      const runningTime = Date.now() - new Date(session.updatedAt).getTime();
-      const runningHours = (runningTime / (1000 * 60 * 60)).toFixed(1);
+    let recoveredCount = 0;
+
+    for (const session of inProgressSessions) {
+      const timeSinceUpdate = Date.now() - new Date(session.updatedAt).getTime();
+      const thresholdMs = getStaleThresholdMs(session.retryInterval);
+
+      if (timeSinceUpdate < thresholdMs) {
+        // Session is still within its expected window — skip
+        continue;
+      }
+
+      const runningHours = (timeSinceUpdate / (1000 * 60 * 60)).toFixed(1);
+      const thresholdMin = Math.round(thresholdMs / (60 * 1000));
       
-      console.warn(`[Scheduler] Stale session detected: ID ${session.id} has been in_progress for ${runningHours} hours (last updated: ${session.updatedAt})`);
+      console.warn(
+        `[Scheduler] Stale session detected: ID ${session.id} ` +
+        `has had no progress for ${runningHours} hours ` +
+        `(threshold: ${thresholdMin} min based on ${session.retryInterval}-min retry interval, ` +
+        `last updated: ${session.updatedAt})`
+      );
       
       // Mark as error so the scheduler can re-run it or the user can restart
       await db.update(trainingSessions).set({
         status: "error",
-        errorMessage: `Session was stuck in_progress for ${runningHours} hours and was automatically marked as stale. You can restart it manually or wait for the next scheduled run.`,
+        errorMessage:
+          `Session had no progress for ${runningHours} hours ` +
+          `(expected update every ${session.retryInterval} min). ` +
+          `Automatically marked as stale. You can restart it manually or wait for the next scheduled run.`,
         updatedAt: new Date(),
       }).where(eq(trainingSessions.id, session.id));
       
       console.log(`[Scheduler] Marked session ${session.id} as error (stale recovery)`);
+      recoveredCount++;
     }
 
-    if (staleSessions.length > 0) {
-      console.log(`[Scheduler] Recovered ${staleSessions.length} stale session(s)`);
+    if (recoveredCount > 0) {
+      console.log(`[Scheduler] Recovered ${recoveredCount} stale session(s)`);
     }
   } catch (error) {
     console.error("[Scheduler] Error detecting stale sessions:", error);

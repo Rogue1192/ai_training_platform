@@ -550,3 +550,19 @@
 ## Fix: Unify login screens — remove "Sign in to continue" intermediary
 - [x] Replace DashboardLayout's "Sign in to continue" UI with direct redirect to /login
 - [x] Ensure logout flow goes directly to /login (the real login form)
+
+
+## Bug: Copper & Cable session stuck in_progress (Feb 12, 2026)
+- [ ] Analyze why session gets stuck despite correct model names (gemini-2.0-flash / gpt-4o)
+- [ ] Check training queue V2 worker for failure points
+- [ ] Check AI provider error handling and timeout logic
+- [ ] Check Redis connectivity and BullMQ job processing
+- [ ] Identify root cause and implement fix
+
+
+## Fix: Dynamic staleness detection (Feb 12, 2026)
+- [x] Replace fixed 2-hour stale threshold with dynamic threshold based on session retryInterval
+- [x] Use retryInterval * 3 as the minimum stale window per session
+- [x] Set a floor of 30 minutes and a ceiling of 24 hours for the dynamic threshold
+- [x] Update staleness detection to fetch all in_progress sessions and evaluate per-session
+- [x] Update unit tests for new staleness logic (41/41 passing)
