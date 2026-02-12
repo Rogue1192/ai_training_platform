@@ -1,7 +1,9 @@
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
+import { useLocation } from "wouter";
 
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
@@ -24,22 +26,42 @@ export function useAuth(options?: UseAuthOptions) {
     },
   });
 
+  const [, setLocation] = useLocation();
+
   const logout = useCallback(async () => {
     try {
+      // 1. Clear server-side session cookie
       await logoutMutation.mutateAsync();
     } catch (error: unknown) {
       if (
         error instanceof TRPCClientError &&
         error.data?.code === "UNAUTHORIZED"
       ) {
-        return;
+        // Already logged out on server, continue cleanup
+      } else {
+        console.error("[Logout] Server logout error:", error);
       }
-      throw error;
-    } finally {
-      utils.auth.me.setData(undefined, null);
-      await utils.auth.me.invalidate();
     }
-  }, [logoutMutation, utils]);
+
+    // 2. Clear Supabase client-side session
+    try {
+      if (isSupabaseConfigured) {
+        await supabase.auth.signOut();
+      }
+    } catch (error) {
+      console.error("[Logout] Supabase signOut error:", error);
+    }
+
+    // 3. Clear the global token immediately
+    window.__supabaseToken = null;
+
+    // 4. Clear tRPC cache
+    utils.auth.me.setData(undefined, null);
+    await utils.auth.me.invalidate();
+
+    // 5. Redirect to login page
+    setLocation("/login");
+  }, [logoutMutation, utils, setLocation]);
 
   const state = useMemo(() => {
     localStorage.setItem(

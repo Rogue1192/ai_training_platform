@@ -543,3 +543,6 @@
 - [x] Add model migration logic when starting/restarting a session (update DB record if model is deprecated)
 - [x] Ensure the model fallback map in aiProviders.ts is used consistently (exported resolveModel)
 - [x] Test that restarting a session with old model name auto-corrects it (32 scheduler tests passing)
+
+## Bug: Logout redirect not working — stuck on dashboard
+- [x] Trace and fix the full logout flow: clicking Sign Out now clears Supabase session + token + cookie and redirects to /login
