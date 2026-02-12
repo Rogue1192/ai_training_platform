@@ -546,3 +546,7 @@
 
 ## Bug: Logout redirect not working — stuck on dashboard
 - [x] Trace and fix the full logout flow: clicking Sign Out now clears Supabase session + token + cookie and redirects to /login
+
+## Fix: Unify login screens — remove "Sign in to continue" intermediary
+- [x] Replace DashboardLayout's "Sign in to continue" UI with direct redirect to /login
+- [x] Ensure logout flow goes directly to /login (the real login form)

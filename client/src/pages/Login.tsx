@@ -6,15 +6,22 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { useLocation } from "wouter";
+import { useLocation, Redirect } from "wouter";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 export default function Login() {
+  const { user, loading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const utils = trpc.useUtils();
   const [, setLocation] = useLocation();
+
+  // If already authenticated, redirect to dashboard
+  if (!authLoading && user) {
+    return <Redirect to="/" />;
+  }
 
   // Check if user needs MFA verification
   const checkMFARequirement = async () => {
