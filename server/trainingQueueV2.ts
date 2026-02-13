@@ -354,10 +354,11 @@ async function executeTrainingIteration(
       mentionConfidence: null,
     });
     
-    // Update progress
+    // Update progress AND updatedAt so the staleness detector knows we're alive
     await updateTrainingSession(sessionId, {
       currentProgress: iterationNumber,
       trainingIterationsCompleted: iterationNumber,
+      updatedAt: new Date(),
     });
     
     console.log(`[Training V2] Training iteration ${iterationNumber}/${session.iterations} complete`);
@@ -366,16 +367,28 @@ async function executeTrainingIteration(
     if (iterationNumber < session.iterations) {
       const delayMs = session.retryInterval * 60 * 1000;
       
-      await trainingQueueV2.add("phase-job", {
-        sessionId,
-        userId,
-        phase: 'training',
-        iterationNumber: iterationNumber + 1,
-      }, {
-        delay: delayMs,
-      });
-      
-      console.log(`[Training V2] Scheduled iteration ${iterationNumber + 1} in ${session.retryInterval} minutes`);
+      try {
+        await trainingQueueV2.add("phase-job", {
+          sessionId,
+          userId,
+          phase: 'training',
+          iterationNumber: iterationNumber + 1,
+        }, {
+          delay: delayMs,
+        });
+        
+        // Refresh updatedAt AFTER successful queue add so staleness detector
+        // knows the delayed job was actually created
+        await updateTrainingSession(sessionId, {
+          updatedAt: new Date(),
+        });
+        
+        console.log(`[Training V2] Scheduled iteration ${iterationNumber + 1} in ${session.retryInterval} minutes`);
+      } catch (queueError: any) {
+        console.error(`[Training V2] CRITICAL: Failed to queue iteration ${iterationNumber + 1} for session ${sessionId}:`, queueError.message);
+        // Don't mark as error — the scheduler's recoverStuckSessions will re-queue it
+        console.log(`[Training V2] The scheduler recovery mechanism will re-queue this iteration`);
+      }
     } else {
       // Training complete, move to evaluation
       await updateTrainingSession(sessionId, {

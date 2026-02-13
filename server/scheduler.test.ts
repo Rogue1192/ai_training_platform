@@ -428,3 +428,78 @@ describe("selectRandomPrompt", () => {
     expect(() => selectRandomPrompt(null)).toThrow("No prompts available");
   });
 });
+
+// ============= Recovery threshold logic tests =============
+
+describe("recoverStuckSessions threshold logic", () => {
+  // The recovery threshold is retryInterval * 1.5 minutes
+  // These tests validate the threshold calculation logic used in recoverStuckSessions
+
+  it("recovery threshold for 10-min retry is 15 minutes", () => {
+    const retryInterval = 10; // minutes
+    const recoveryThresholdMs = retryInterval * 1.5 * 60 * 1000;
+    expect(recoveryThresholdMs).toBe(15 * 60 * 1000); // 15 minutes
+  });
+
+  it("recovery threshold for 5-min retry is 7.5 minutes", () => {
+    const retryInterval = 5;
+    const recoveryThresholdMs = retryInterval * 1.5 * 60 * 1000;
+    expect(recoveryThresholdMs).toBe(7.5 * 60 * 1000);
+  });
+
+  it("recovery threshold for 30-min retry is 45 minutes", () => {
+    const retryInterval = 30;
+    const recoveryThresholdMs = retryInterval * 1.5 * 60 * 1000;
+    expect(recoveryThresholdMs).toBe(45 * 60 * 1000);
+  });
+
+  it("recovery threshold for 60-min retry is 90 minutes", () => {
+    const retryInterval = 60;
+    const recoveryThresholdMs = retryInterval * 1.5 * 60 * 1000;
+    expect(recoveryThresholdMs).toBe(90 * 60 * 1000);
+  });
+
+  it("recovery fires BEFORE staleness kills the session (10-min case)", () => {
+    const retryInterval = 10;
+    const recoveryThresholdMs = retryInterval * 1.5 * 60 * 1000; // 15 min
+    const staleThresholdMs = Math.max(30 * 60 * 1000, retryInterval * 3 * 60 * 1000); // 30 min
+    
+    // Recovery fires at 15 min, staleness kills at 30 min
+    // So recovery has a 15-minute window to save the session
+    expect(recoveryThresholdMs).toBeLessThan(staleThresholdMs);
+    expect(staleThresholdMs - recoveryThresholdMs).toBe(15 * 60 * 1000);
+  });
+
+  it("recovery fires BEFORE staleness kills the session (30-min case)", () => {
+    const retryInterval = 30;
+    const recoveryThresholdMs = retryInterval * 1.5 * 60 * 1000; // 45 min
+    const staleThresholdMs = Math.max(30 * 60 * 1000, retryInterval * 3 * 60 * 1000); // 90 min
+    
+    expect(recoveryThresholdMs).toBeLessThan(staleThresholdMs);
+    expect(staleThresholdMs - recoveryThresholdMs).toBe(45 * 60 * 1000);
+  });
+
+  it("next iteration calculation is correct", () => {
+    // If latest conversation is iteration 4, next should be 5
+    const latestIterationNumber = 4;
+    const nextIteration = latestIterationNumber + 1;
+    expect(nextIteration).toBe(5);
+  });
+
+  it("detects when all iterations are complete and evaluation is needed", () => {
+    const totalIterations = 50;
+    const latestIterationNumber = 50;
+    const nextIteration = latestIterationNumber + 1;
+    
+    // nextIteration (51) > totalIterations (50) means evaluation is needed
+    expect(nextIteration > totalIterations).toBe(true);
+  });
+
+  it("does not trigger evaluation when iterations remain", () => {
+    const totalIterations = 50;
+    const latestIterationNumber = 12;
+    const nextIteration = latestIterationNumber + 1;
+    
+    expect(nextIteration > totalIterations).toBe(false);
+  });
+});

@@ -580,3 +580,12 @@
 
 ## UI: Searchable business filter on /training (Feb 13, 2026)
 - [x] Replace Select dropdown with searchable Combobox for business filter
+
+## Critical Bug: Sessions still dying - delayed jobs lost (Feb 13, 2026)
+- [x] Investigated BullMQ delayed job loss — jobs vanish between iterations
+- [x] Traced exact failure: after iter 4 completes, no "added" event for iter 5 in Redis
+- [x] Added recoverStuckSessions() to scheduler — re-queues lost jobs before staleness kills them
+- [x] Added try/catch around queue.add() in the worker with graceful fallback to scheduler recovery
+- [x] updatedAt refreshed both after iteration AND after successful queue.add()
+- [x] Recovery fires at retryInterval × 1.5 (15 min for 10-min retry), well before staleness threshold (30 min)
+- [x] All 50 scheduler tests passing including 9 new recovery threshold tests

@@ -20,8 +20,9 @@ import {
 } from "./db";
 import { resolveModel } from "./aiProviders";
 import { scheduledJobs, trainingSessions, trainingConversations } from "../drizzle/schema";
-import { eq, and, lte, sql } from "drizzle-orm";
+import { eq, and, lte, sql, desc } from "drizzle-orm";
 import { startTrainingSession } from "./trainingEngine";
+import { trainingQueueV2 } from "./trainingQueueV2";
 
 // Scheduler interval in milliseconds (1 minute)
 const SCHEDULER_INTERVAL = 60 * 1000;
@@ -443,6 +444,93 @@ async function detectAndRecoverStaleSessions(): Promise<void> {
 }
 
 /**
+ * Recover stuck in_progress sessions where BullMQ delayed jobs were lost.
+ * Checks for sessions that are in_progress but haven't had a new conversation
+ * in retryInterval × 1.5 minutes. If found, re-queues the next iteration.
+ * This runs BEFORE the staleness detector so we can rescue sessions before they're killed.
+ */
+async function recoverStuckSessions(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    const inProgressSessions = await db
+      .select()
+      .from(trainingSessions)
+      .where(eq(trainingSessions.status, "in_progress"));
+
+    for (const session of inProgressSessions) {
+      // Skip sessions that are in baseline or evaluation phase (no retry interval applies)
+      if (session.trainingPhase !== "training") continue;
+
+      // Check the latest conversation for this session
+      const latestConvos = await db
+        .select()
+        .from(trainingConversations)
+        .where(eq(trainingConversations.trainingSessionId, session.id))
+        .orderBy(desc(trainingConversations.createdAt))
+        .limit(1);
+
+      if (latestConvos.length === 0) continue;
+
+      const latestConvo = latestConvos[0];
+      const timeSinceLastConvo = Date.now() - new Date(latestConvo.createdAt).getTime();
+      const recoveryThresholdMs = session.retryInterval * 1.5 * 60 * 1000; // retryInterval × 1.5
+
+      if (timeSinceLastConvo < recoveryThresholdMs) {
+        // Session had a recent conversation — it's fine, delayed job is probably pending
+        continue;
+      }
+
+      // Session is stuck — the delayed job was lost
+      // Figure out which iteration to re-queue
+      const nextIteration = latestConvo.iterationNumber + 1;
+
+      // Don't re-queue if we've already completed all iterations
+      if (nextIteration > session.iterations) {
+        // Should be in evaluation phase — re-queue evaluation
+        console.log(
+          `[Scheduler] Session ${session.id} stuck after all iterations, re-queuing evaluation`
+        );
+        await trainingQueueV2.add("phase-job", {
+          sessionId: session.id,
+          userId: session.userId,
+          phase: "evaluation",
+        }, {
+          delay: 2000,
+        });
+      } else {
+        const minutesSinceConvo = Math.round(timeSinceLastConvo / (60 * 1000));
+        console.log(
+          `[Scheduler] Recovering stuck session ${session.id}: ` +
+          `last conversation was iter ${latestConvo.iterationNumber} ` +
+          `${minutesSinceConvo} min ago (threshold: ${Math.round(recoveryThresholdMs / 60000)} min). ` +
+          `Re-queuing iteration ${nextIteration}`
+        );
+
+        await trainingQueueV2.add("phase-job", {
+          sessionId: session.id,
+          userId: session.userId,
+          phase: "training",
+          iterationNumber: nextIteration,
+        }, {
+          delay: 2000, // Small delay to avoid race conditions
+        });
+      }
+
+      // Update the session's updatedAt so the staleness detector doesn't kill it
+      await db.update(trainingSessions).set({
+        updatedAt: new Date(),
+      }).where(eq(trainingSessions.id, session.id));
+
+      console.log(`[Scheduler] Re-queued session ${session.id} and refreshed updatedAt`);
+    }
+  } catch (error) {
+    console.error("[Scheduler] Error recovering stuck sessions:", error);
+  }
+}
+
+/**
  * Process all due scheduled jobs
  */
 async function processDueJobs(): Promise<void> {
@@ -452,7 +540,10 @@ async function processDueJobs(): Promise<void> {
     return;
   }
 
-  // First, detect and recover any stale sessions
+  // First, try to recover any stuck sessions (re-queue lost delayed jobs)
+  await recoverStuckSessions();
+
+  // Then, detect and mark truly stale sessions
   await detectAndRecoverStaleSessions();
 
   const now = new Date();
