@@ -566,3 +566,14 @@
 - [x] Set a floor of 30 minutes and a ceiling of 24 hours for the dynamic threshold
 - [x] Update staleness detection to fetch all in_progress sessions and evaluate per-session
 - [x] Update unit tests for new staleness logic (41/41 passing)
+
+## Bug Investigation: Sessions stop progressing after ~12 iterations (Feb 13, 2026)
+- [ ] Analyze why BullMQ delayed jobs are being lost after iteration 12
+- [ ] Check Redis connectivity, worker concurrency, and job chaining logic
+- [ ] Identify the true root cause (not just the staleness detector symptom)
+
+## Critical Bug: API keys keep breaking across deployments (Feb 13, 2026)
+- [x] Investigate why JWT_SECRET changes between deployments causing decrypt failures
+- [x] Implement a stable ENCRYPTION_KEY that survives redeployments
+- [x] Add fallback decryption with JWT_SECRET for backward compatibility
+- [x] All 15 encryption tests passing including stability and fallback tests

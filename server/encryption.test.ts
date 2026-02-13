@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { encrypt, decrypt, clearSensitiveData } from "./encryption";
 
 describe("Encryption System", () => {
@@ -71,8 +71,8 @@ describe("Encryption System", () => {
     parts[2] = parts[2]!.substring(0, parts[2]!.length - 2) + "ff"; // Change last byte
     const tampered = parts.join(":");
 
-    // Decryption should fail
-    expect(() => decrypt(tampered)).toThrow();
+    // Decryption should fail with a helpful error message
+    expect(() => decrypt(tampered)).toThrow("Unable to decrypt data");
   });
 
   it("should clear sensitive data from memory", () => {
@@ -105,9 +105,87 @@ describe("Encryption System", () => {
     expect(salt1).not.toBe(salt3);
   });
 
-  it("should require JWT_SECRET environment variable", () => {
-    // This test would need to manipulate process.env, which is tricky
-    // In production, the encryption will throw if JWT_SECRET is not set
-    expect(process.env.JWT_SECRET).toBeDefined();
+  it("should use ENCRYPTION_KEY when available", () => {
+    // ENCRYPTION_KEY should be set in the test environment
+    expect(process.env.ENCRYPTION_KEY).toBeDefined();
+    expect(process.env.ENCRYPTION_KEY!.length).toBeGreaterThan(0);
+
+    // Encrypt/decrypt should work with ENCRYPTION_KEY
+    const text = "test-with-encryption-key";
+    const encrypted = encrypt(text);
+    const decrypted = decrypt(encrypted);
+    expect(decrypted).toBe(text);
+  });
+
+  describe("ENCRYPTION_KEY stability", () => {
+    it("should decrypt data encrypted with the same ENCRYPTION_KEY after simulated redeployment", () => {
+      // Encrypt with current ENCRYPTION_KEY
+      const text = "api-key-that-must-survive-deploy";
+      const encrypted = encrypt(text);
+
+      // Simulate JWT_SECRET changing (as happens on redeployment)
+      const originalJwtSecret = process.env.JWT_SECRET;
+      process.env.JWT_SECRET = "completely-different-jwt-secret-after-deploy";
+
+      // Decryption should still work because ENCRYPTION_KEY hasn't changed
+      const decrypted = decrypt(encrypted);
+      expect(decrypted).toBe(text);
+
+      // Restore
+      process.env.JWT_SECRET = originalJwtSecret;
+    });
+
+    it("should still encrypt/decrypt after JWT_SECRET rotation", () => {
+      const originalJwtSecret = process.env.JWT_SECRET;
+      
+      // Encrypt with current state
+      const text = "survives-jwt-rotation";
+      const encrypted = encrypt(text);
+
+      // Rotate JWT_SECRET
+      process.env.JWT_SECRET = "rotated-jwt-secret-v2";
+      
+      // Should still work — ENCRYPTION_KEY is the primary key
+      expect(decrypt(encrypted)).toBe(text);
+
+      // New encryptions should also work
+      const encrypted2 = encrypt("new-data-after-rotation");
+      expect(decrypt(encrypted2)).toBe("new-data-after-rotation");
+
+      // Restore
+      process.env.JWT_SECRET = originalJwtSecret;
+    });
+  });
+
+  describe("Fallback to JWT_SECRET", () => {
+    it("should fall back to JWT_SECRET when ENCRYPTION_KEY is not set", () => {
+      const originalEncKey = process.env.ENCRYPTION_KEY;
+      delete process.env.ENCRYPTION_KEY;
+
+      // Should still work using JWT_SECRET
+      const text = "fallback-test";
+      const encrypted = encrypt(text);
+      const decrypted = decrypt(encrypted);
+      expect(decrypted).toBe(text);
+
+      // Restore
+      process.env.ENCRYPTION_KEY = originalEncKey;
+    });
+
+    it("should decrypt JWT_SECRET-encrypted data when ENCRYPTION_KEY is set but different", () => {
+      // Step 1: Encrypt with JWT_SECRET only (simulating old behavior)
+      const originalEncKey = process.env.ENCRYPTION_KEY;
+      delete process.env.ENCRYPTION_KEY;
+      
+      const text = "encrypted-with-old-jwt-secret";
+      const encrypted = encrypt(text);
+
+      // Step 2: Now set ENCRYPTION_KEY (simulating migration)
+      process.env.ENCRYPTION_KEY = originalEncKey;
+
+      // Should decrypt via JWT_SECRET fallback
+      const decrypted = decrypt(encrypted);
+      expect(decrypted).toBe(text);
+    });
   });
 });
