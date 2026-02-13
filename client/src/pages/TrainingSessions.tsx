@@ -717,19 +717,54 @@ export default function TrainingSessions() {
       <div className="flex gap-4">
         <div className="flex-1">
           <Label className="text-sm text-muted-foreground">Filter by Business:</Label>
-          <Select value={businessFilter} onValueChange={setBusinessFilter}>
-            <SelectTrigger className="bg-background border-input">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Businesses</SelectItem>
-              {businesses?.map((business) => (
-                <SelectItem key={business.id} value={business.id.toString()}>
-                  {business.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Popover open={businessSearchOpen} onOpenChange={setBusinessSearchOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={businessSearchOpen}
+                className="w-full justify-between bg-background border-input font-normal"
+              >
+                {businessFilter === "all"
+                  ? "All Businesses"
+                  : businesses?.find((b) => b.id.toString() === businessFilter)?.name || "All Businesses"}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+              <Command>
+                <CommandInput placeholder="Search businesses..." />
+                <CommandList>
+                  <CommandEmpty>No business found.</CommandEmpty>
+                  <CommandGroup>
+                    <CommandItem
+                      value="All Businesses"
+                      onSelect={() => {
+                        setBusinessFilter("all");
+                        setBusinessSearchOpen(false);
+                      }}
+                    >
+                      <Check className={cn("mr-2 h-4 w-4", businessFilter === "all" ? "opacity-100" : "opacity-0")} />
+                      All Businesses
+                    </CommandItem>
+                    {businesses?.map((business) => (
+                      <CommandItem
+                        key={business.id}
+                        value={business.name}
+                        onSelect={() => {
+                          setBusinessFilter(business.id.toString());
+                          setBusinessSearchOpen(false);
+                        }}
+                      >
+                        <Check className={cn("mr-2 h-4 w-4", businessFilter === business.id.toString() ? "opacity-100" : "opacity-0")} />
+                        {business.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="flex-1">
           <Label className="text-sm text-muted-foreground">Filter by Status:</Label>

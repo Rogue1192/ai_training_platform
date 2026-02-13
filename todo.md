@@ -577,3 +577,6 @@
 - [x] Implement a stable ENCRYPTION_KEY that survives redeployments
 - [x] Add fallback decryption with JWT_SECRET for backward compatibility
 - [x] All 15 encryption tests passing including stability and fallback tests
+
+## UI: Searchable business filter on /training (Feb 13, 2026)
+- [x] Replace Select dropdown with searchable Combobox for business filter
