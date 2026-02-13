@@ -35,7 +35,9 @@ export default function TrainingSessions() {
   const deleteSession = trpc.training.delete.useMutation();
   const restartConversation = trpc.training.restartConversation.useMutation();
   const resetStuckSessions = trpc.training.resetStuckSessions.useMutation();
+  const restartAllError = trpc.training.restartAllError.useMutation();
   const { data: stuckCount, refetch: refetchStuckCount } = trpc.training.getStuckSessionsCount.useQuery();
+  const { data: errorCount, refetch: refetchErrorCount } = trpc.training.getErrorSessionsCount.useQuery();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -89,12 +91,13 @@ export default function TrainingSessions() {
     }
   }, [sessions]);
 
-  // Also auto-refresh stuck sessions count when sessions change
+  // Also auto-refresh stuck/error sessions count when sessions change
   useEffect(() => {
     if (sessions) {
       refetchStuckCount();
+      refetchErrorCount();
     }
-  }, [sessions, refetchStuckCount]);
+  }, [sessions, refetchStuckCount, refetchErrorCount]);
 
   const resetForm = () => {
     setFormData({
@@ -491,6 +494,67 @@ export default function TrainingSessions() {
                     }}
                   >
                     Reset Sessions
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          {(errorCount?.count ?? 0) > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="gap-2 border-green-500/30 text-green-400 hover:bg-green-500/10 hover:text-green-300"
+                  disabled={restartAllError.isPending}
+                >
+                  {restartAllError.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-4 h-4" />
+                  )}
+                  Restart {errorCount?.count} Error Session{(errorCount?.count ?? 0) !== 1 ? 's' : ''}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="bg-card border-border">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-card-foreground">Restart All Error Sessions?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will restart {errorCount?.count} session{(errorCount?.count ?? 0) !== 1 ? 's' : ''} that are currently in error status.
+                    Sessions will be processed in batches of 5 to avoid overwhelming the system.
+                    Each session's API keys will be validated before starting.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-green-600 text-white hover:bg-green-700"
+                    onClick={() => {
+                      restartAllError.mutate(undefined, {
+                        onSuccess: (data) => {
+                          if (data.failed > 0) {
+                            toast.warning(
+                              <div className="space-y-1">
+                                <p className="font-medium">{data.message}</p>
+                                {data.results.filter((r: any) => !r.success).map((r: any) => (
+                                  <p key={r.sessionId} className="text-xs text-muted-foreground">{r.name}: {r.error}</p>
+                                ))}
+                              </div>,
+                              { duration: 10000 }
+                            );
+                          } else {
+                            toast.success(data.message);
+                          }
+                          refetch();
+                          refetchErrorCount();
+                          refetchStuckCount();
+                        },
+                        onError: (error) => {
+                          toast.error(`Failed to restart sessions: ${error.message}`);
+                        },
+                      });
+                    }}
+                  >
+                    Restart All
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

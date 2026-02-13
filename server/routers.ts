@@ -526,6 +526,118 @@ export const appRouter = router({
           message: `Reset ${stuckSessions.length} stuck session(s) to error status` 
         };
       }),
+    restartAllError: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        const { getDb, getTrainingSessionById, updateTrainingSession, validateApiKeysForTraining } = await import("./db");
+        const { trainingSessions } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+        const { startTrainingSession } = await import("./trainingEngine");
+        const { resolveModel } = await import("./aiProviders");
+        const db = await getDb();
+        if (!db) throw new Error("Database not initialized");
+        
+        // Find all error sessions for this user
+        const errorSessions = await db
+          .select()
+          .from(trainingSessions)
+          .where(
+            and(
+              eq(trainingSessions.userId, ctx.user.id),
+              eq(trainingSessions.status, "error")
+            )
+          );
+        
+        if (errorSessions.length === 0) {
+          return { success: true, started: 0, failed: 0, total: 0, message: "No error sessions found", results: [] };
+        }
+        
+        const results: Array<{ sessionId: number; name: string; success: boolean; error?: string }> = [];
+        
+        // Process in batches of 5 to avoid overwhelming the queue
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < errorSessions.length; i += BATCH_SIZE) {
+          const batch = errorSessions.slice(i, i + BATCH_SIZE);
+          const batchPromises = batch.map(async (session) => {
+            try {
+              // Auto-migrate deprecated model names
+              const resolvedTargetModel = resolveModel(session.targetAiModel);
+              const resolvedInfluencerModel = resolveModel(session.influencerAiModel);
+              const modelUpdates: Record<string, string> = {};
+              if (resolvedTargetModel !== session.targetAiModel) {
+                modelUpdates.targetAiModel = resolvedTargetModel;
+              }
+              if (resolvedInfluencerModel !== session.influencerAiModel) {
+                modelUpdates.influencerAiModel = resolvedInfluencerModel;
+              }
+              if (Object.keys(modelUpdates).length > 0) {
+                await updateTrainingSession(session.id, modelUpdates);
+              }
+              
+              // Validate API keys
+              const validation = await validateApiKeysForTraining(
+                ctx.user.id,
+                session.targetAiProvider as "openai" | "anthropic" | "google",
+                session.influencerAiProvider as "openai" | "anthropic" | "google"
+              );
+              
+              if (!validation.valid) {
+                const providerNames = validation.missingProviders.map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(", ");
+                results.push({ sessionId: session.id, name: session.trainingName, success: false, error: `Missing API key(s): ${providerNames}` });
+                return;
+              }
+              
+              // Clear error and set to in_progress
+              await updateTrainingSession(session.id, { status: "in_progress", errorMessage: null });
+              
+              // Start training in background
+              startTrainingSession(session.id, ctx.user.id);
+              
+              results.push({ sessionId: session.id, name: session.trainingName, success: true });
+            } catch (err: any) {
+              results.push({ sessionId: session.id, name: session.trainingName, success: false, error: err.message });
+            }
+          });
+          
+          await Promise.all(batchPromises);
+          
+          // Small delay between batches to avoid overwhelming Redis
+          if (i + BATCH_SIZE < errorSessions.length) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+        
+        const started = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success).length;
+        
+        return {
+          success: true,
+          started,
+          failed,
+          total: errorSessions.length,
+          message: `Started ${started} session(s)${failed > 0 ? `, ${failed} failed` : ''}`,
+          results,
+        };
+      }),
+    getErrorSessionsCount: protectedProcedure
+      .query(async ({ ctx }) => {
+        const { getDb } = await import("./db");
+        const { trainingSessions } = await import("../drizzle/schema");
+        const { eq, and, count } = await import("drizzle-orm");
+        const db = await getDb();
+        if (!db) throw new Error("Database not initialized");
+        
+        const result = await db
+          .select({ count: count() })
+          .from(trainingSessions)
+          .where(
+            and(
+              eq(trainingSessions.userId, ctx.user.id),
+              eq(trainingSessions.status, "error")
+            )
+          );
+        
+        return { count: result[0]?.count || 0 };
+      }),
     getStuckSessionsCount: protectedProcedure
       .query(async ({ ctx }) => {
         const { getDb } = await import("./db");

@@ -589,3 +589,13 @@
 - [x] updatedAt refreshed both after iteration AND after successful queue.add()
 - [x] Recovery fires at retryInterval × 1.5 (15 min for 10-min retry), well before staleness threshold (30 min)
 - [x] All 50 scheduler tests passing including 9 new recovery threshold tests
+
+## Feature: Restart All Error Sessions button (Feb 13, 2026)
+- [x] Add restartAllError backend procedure (batch processing in groups of 5)
+- [x] Add getErrorSessionsCount query endpoint
+- [x] Add "Restart All Error Sessions" button to training page UI with green styling
+- [x] Show AlertDialog confirmation with count of error sessions
+- [x] Show per-session results with success/failure details in toast
+- [x] Include API key validation and model migration per session
+- [x] Auto-hide button when no error sessions exist
+- [x] All 9 tests passing
