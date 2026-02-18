@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Loader2, Plus, Calendar, Trash2, Clock, Play, RefreshCw, History, ChevronDown, ChevronUp, CheckCircle2, XCircle, SkipForward, AlertCircle } from "lucide-react";
+import { Loader2, Plus, Calendar, Trash2, Clock, Play, RefreshCw, History, ChevronDown, ChevronUp, CheckCircle2, XCircle, SkipForward, AlertCircle, ChevronsUpDown, Check } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -23,6 +25,24 @@ const TIMEZONE_OPTIONS = [
   { value: "UTC", label: "UTC" },
 ];
 
+/** Convert full model name to a short readable label */
+function getModelShortLabel(model: string): string {
+  const map: Record<string, string> = {
+    "gpt-4o": "GPT-4o",
+    "gpt-4o-mini": "GPT-4o Mini",
+    "gpt-4-turbo": "GPT-4 Turbo",
+    "gpt-3.5-turbo": "GPT-3.5",
+    "claude-sonnet-4-20250514": "Claude Sonnet 4",
+    "claude-3-5-sonnet-20241022": "Claude 3.5 Sonnet",
+    "claude-3-haiku-20240307": "Claude 3 Haiku",
+    "gemini-2.0-flash": "Gemini 2.0 Flash",
+    "gemini-2.0-flash-exp": "Gemini 2.0 Flash",
+    "gemini-1.5-pro": "Gemini 1.5 Pro",
+    "gemini-1.5-flash": "Gemini 1.5 Flash",
+  };
+  return map[model] || model;
+}
+
 export default function ScheduledJobs() {
   const { data: jobs, isLoading, refetch } = trpc.schedule.list.useQuery();
   const { data: trainingSessions } = trpc.training.list.useQuery();
@@ -35,6 +55,7 @@ export default function ScheduledJobs() {
   const [runningJobId, setRunningJobId] = useState<number | null>(null);
   const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"schedules" | "history">("schedules");
+  const [sessionPickerOpen, setSessionPickerOpen] = useState(false);
   const [formData, setFormData] = useState({
     jobName: "",
     trainingSessionId: "",
@@ -233,27 +254,79 @@ export default function ScheduledJobs() {
 
                 <div className="space-y-2">
                   <Label htmlFor="trainingSessionId">Training Session *</Label>
-                  <Select
-                    value={formData.trainingSessionId}
-                    onValueChange={(value) => setFormData({ ...formData, trainingSessionId: value })}
-                  >
-                    <SelectTrigger className="bg-background border-input">
-                      <SelectValue placeholder="Select a training session" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {trainingSessions && trainingSessions.length > 0 ? (
-                        trainingSessions.map((session) => (
-                          <SelectItem key={session.id} value={session.id.toString()}>
-                            {session.trainingName}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <div className="px-2 py-4 text-sm text-muted-foreground text-center">
-                          No training sessions available. Create one first.
-                        </div>
-                      )}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={sessionPickerOpen} onOpenChange={setSessionPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={sessionPickerOpen}
+                        className="w-full justify-between bg-background border-input text-left font-normal h-auto min-h-10 py-2"
+                      >
+                        {formData.trainingSessionId ? (
+                          (() => {
+                            const selected = trainingSessions?.find(s => s.id.toString() === formData.trainingSessionId);
+                            if (!selected) return "Select a training session";
+                            const modelLabel = getModelShortLabel(selected.targetAiModel);
+                            return (
+                              <span className="flex items-center gap-2 truncate">
+                                <Badge variant="secondary" className="text-xs shrink-0 font-mono">{modelLabel}</Badge>
+                                <span className="truncate">{selected.trainingName}</span>
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-muted-foreground">Select a training session</span>
+                        )}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search sessions..." />
+                        <CommandList>
+                          <CommandEmpty>No training sessions found.</CommandEmpty>
+                          <CommandGroup>
+                            {trainingSessions && trainingSessions.length > 0 ? (
+                              trainingSessions.map((session) => {
+                                const targetLabel = getModelShortLabel(session.targetAiModel);
+                                const influencerLabel = getModelShortLabel(session.influencerAiModel);
+                                return (
+                                  <CommandItem
+                                    key={session.id}
+                                    value={`${session.trainingName} ${targetLabel} ${influencerLabel}`}
+                                    onSelect={() => {
+                                      setFormData({ ...formData, trainingSessionId: session.id.toString() });
+                                      setSessionPickerOpen(false);
+                                    }}
+                                    className="flex items-center gap-2 py-2"
+                                  >
+                                    <Check
+                                      className={`h-4 w-4 shrink-0 ${formData.trainingSessionId === session.id.toString() ? "opacity-100" : "opacity-0"}`}
+                                    />
+                                    <div className="flex flex-col gap-1 min-w-0">
+                                      <span className="truncate font-medium">{session.trainingName}</span>
+                                      <div className="flex gap-1.5">
+                                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono shrink-0">
+                                          Target: {targetLabel}
+                                        </Badge>
+                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono shrink-0">
+                                          Influencer: {influencerLabel}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                  </CommandItem>
+                                );
+                              })
+                            ) : (
+                              <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                                No training sessions available. Create one first.
+                              </div>
+                            )}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                   <p className="text-xs text-muted-foreground">
                     The training session that will be run on schedule
                   </p>

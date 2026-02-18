@@ -599,3 +599,9 @@
 - [x] Include API key validation and model migration per session
 - [x] Auto-hide button when no error sessions exist
 - [x] All 9 tests passing
+
+## UI: Searchable training session dropdown with AI model labels on /schedule (Feb 18, 2026)
+- [x] Replace Select dropdown with searchable Combobox for training session picker
+- [x] Show AI model labels (Target + Influencer) next to each session name as badges
+- [x] Make it easy to distinguish duplicate session names by their AI model
+- [x] All 6 tests passing for model label mapping
