@@ -605,3 +605,11 @@
 - [x] Show AI model labels (Target + Influencer) next to each session name as badges
 - [x] Make it easy to distinguish duplicate session names by their AI model
 - [x] All 6 tests passing for model label mapping
+
+## Feature: Edit Schedule dialog on /schedule page (Feb 18, 2026)
+- [x] Add Edit button to each scheduled job card
+- [x] Create Edit Schedule dialog pre-populated with current job settings
+- [x] Allow editing: job name, training session, schedule type, time, timezone
+- [x] Wire to existing schedule.update mutation (added jobName + trainingSessionId to input schema)
+- [x] Reuse the searchable session picker with AI model labels
+- [x] 0 TypeScript errors

@@ -720,6 +720,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .input(
         z.object({
           id: z.number(),
+          jobName: z.string().min(1).optional(),
+          trainingSessionId: z.number().optional(),
           isActive: z.boolean().optional(),
           scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]).optional(),
           timeOfDay: z.string().regex(/^\d{2}:\d{2}$/).optional(),

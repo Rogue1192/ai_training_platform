@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Loader2, Plus, Calendar, Trash2, Clock, Play, RefreshCw, History, ChevronDown, ChevronUp, CheckCircle2, XCircle, SkipForward, AlertCircle, ChevronsUpDown, Check } from "lucide-react";
+import { Loader2, Plus, Calendar, Trash2, Clock, Play, RefreshCw, History, ChevronDown, ChevronUp, CheckCircle2, XCircle, SkipForward, AlertCircle, ChevronsUpDown, Check, Pencil } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
@@ -52,6 +52,7 @@ export default function ScheduledJobs() {
   const runNow = trpc.schedule.runNow.useMutation();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<any>(null);
   const [runningJobId, setRunningJobId] = useState<number | null>(null);
   const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"schedules" | "history">("schedules");
@@ -542,6 +543,7 @@ export default function ScheduledJobs() {
                   onRunNow={handleRunNow}
                   onToggleActive={handleToggleActive}
                   onDelete={handleDelete}
+                  onEdit={(job: any) => setEditingJob(job)}
                   getScheduleDescription={getScheduleDescription}
                   getTrainingSessionName={getTrainingSessionName}
                   getNextRunDescription={getNextRunDescription}
@@ -553,6 +555,21 @@ export default function ScheduledJobs() {
       )}
 
       {activeTab === "history" && <RunHistoryPanel />}
+
+      {/* Edit Schedule Dialog */}
+      {editingJob && (
+        <EditScheduleDialog
+          job={editingJob}
+          trainingSessions={trainingSessions || []}
+          updateJob={updateJob}
+          onClose={() => setEditingJob(null)}
+          onSuccess={() => {
+            setEditingJob(null);
+            refetch();
+          }}
+          getScheduleDescription={getScheduleDescription}
+        />
+      )}
     </div>
   );
 }
@@ -566,6 +583,7 @@ function ScheduleCard({
   onRunNow,
   onToggleActive,
   onDelete,
+  onEdit,
   getScheduleDescription,
   getTrainingSessionName,
   getNextRunDescription,
@@ -577,6 +595,7 @@ function ScheduleCard({
   onRunNow: (id: number) => void;
   onToggleActive: (id: number, isActive: boolean) => void;
   onDelete: (id: number) => void;
+  onEdit: (job: any) => void;
   getScheduleDescription: (job: any) => string;
   getTrainingSessionName: (id: number | null) => string;
   getNextRunDescription: (nextRun: Date | null) => string;
@@ -605,6 +624,14 @@ function ScheduleCard({
             </p>
           </div>
           <div className="flex gap-2 items-center">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onEdit(job)}
+            >
+              <Pencil className="w-4 h-4 mr-1" />
+              Edit
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -870,6 +897,290 @@ function RunStatusBadge({ status }: { status: string }) {
     running: "outline",
   };
   return <Badge variant={variants[status] || "outline"} className="text-xs">{status}</Badge>;
+}
+
+// Edit Schedule Dialog Component
+function EditScheduleDialog({
+  job,
+  trainingSessions,
+  updateJob,
+  onClose,
+  onSuccess,
+  getScheduleDescription,
+}: {
+  job: any;
+  trainingSessions: any[];
+  updateJob: any;
+  onClose: () => void;
+  onSuccess: () => void;
+  getScheduleDescription: (job: any) => string;
+}) {
+  const [editData, setEditData] = useState({
+    jobName: job.jobName || "",
+    trainingSessionId: String(job.trainingSessionId || ""),
+    scheduleType: (job.scheduleType || "daily") as "hourly" | "daily" | "weekly" | "monthly",
+    timeOfDay: job.timeOfDay || "09:00",
+    dayOfWeek: String(job.dayOfWeek ?? "1"),
+    dayOfMonth: String(job.dayOfMonth ?? "1"),
+    timezone: job.timezone || "America/Los_Angeles",
+  });
+  const [sessionPickerOpen, setSessionPickerOpen] = useState(false);
+
+  const selectedSession = trainingSessions?.find(
+    (s: any) => String(s.id) === editData.trainingSessionId
+  );
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await updateJob.mutateAsync({
+        id: job.id,
+        jobName: editData.jobName,
+        trainingSessionId: parseInt(editData.trainingSessionId),
+        scheduleType: editData.scheduleType,
+        timeOfDay: editData.timeOfDay,
+        dayOfWeek: editData.scheduleType === "weekly" ? parseInt(editData.dayOfWeek) : null,
+        dayOfMonth: editData.scheduleType === "monthly" ? parseInt(editData.dayOfMonth) : null,
+        timezone: editData.timezone,
+      });
+      toast.success("Schedule updated successfully");
+      onSuccess();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update schedule");
+    }
+  };
+
+  return (
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-[500px] bg-card text-card-foreground border-border">
+        <DialogHeader>
+          <DialogTitle>Edit Schedule</DialogTitle>
+          <DialogDescription>
+            Update the schedule settings for this job
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4 py-4">
+            {/* Job Name */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-jobName">Job Name *</Label>
+              <Input
+                id="edit-jobName"
+                value={editData.jobName}
+                onChange={(e) => setEditData({ ...editData, jobName: e.target.value })}
+                placeholder="e.g., Daily Titan Cleaning Training"
+                className="bg-background border-input"
+                required
+              />
+            </div>
+
+            {/* Training Session - Searchable Combobox */}
+            <div className="space-y-2">
+              <Label>Training Session *</Label>
+              <Popover open={sessionPickerOpen} onOpenChange={setSessionPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={sessionPickerOpen}
+                    className="w-full justify-between bg-background border-input font-normal"
+                  >
+                    <span className="truncate">
+                      {selectedSession ? selectedSession.trainingName : "Select a training session"}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[460px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search sessions..." />
+                    <CommandList>
+                      <CommandEmpty>No sessions found.</CommandEmpty>
+                      <CommandGroup>
+                        {trainingSessions?.map((session: any) => (
+                          <CommandItem
+                            key={session.id}
+                            value={`${session.trainingName} ${session.targetAiModel || ""} ${session.influencerAiModel || ""}`}
+                            onSelect={() => {
+                              setEditData({ ...editData, trainingSessionId: String(session.id) });
+                              setSessionPickerOpen(false);
+                            }}
+                            className="flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Check
+                                className={`h-4 w-4 shrink-0 ${String(session.id) === editData.trainingSessionId ? "opacity-100" : "opacity-0"}`}
+                              />
+                              <span className="truncate">{session.trainingName}</span>
+                            </div>
+                            <div className="flex gap-1 shrink-0 ml-2">
+                              {session.targetAiModel && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                  {getModelShortLabel(session.targetAiModel)}
+                                </Badge>
+                              )}
+                              {session.influencerAiModel && (
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                  {getModelShortLabel(session.influencerAiModel)}
+                                </Badge>
+                              )}
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Schedule Type */}
+            <div className="space-y-2">
+              <Label>Schedule Type *</Label>
+              <Select
+                value={editData.scheduleType}
+                onValueChange={(value: any) => setEditData({ ...editData, scheduleType: value })}
+              >
+                <SelectTrigger className="bg-background border-input">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hourly">Hourly</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Time / Minutes past hour */}
+            {editData.scheduleType === "hourly" ? (
+              <div className="space-y-2">
+                <Label>Minutes Past the Hour</Label>
+                <Select
+                  value={editData.timeOfDay.split(":")[1] || "00"}
+                  onValueChange={(v) => setEditData({ ...editData, timeOfDay: `00:${v}` })}
+                >
+                  <SelectTrigger className="bg-background border-input w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="00">:00 (on the hour)</SelectItem>
+                    <SelectItem value="15">:15 (quarter past)</SelectItem>
+                    <SelectItem value="30">:30 (half past)</SelectItem>
+                    <SelectItem value="45">:45 (quarter to)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Time of Day *</Label>
+                <Input
+                  type="time"
+                  value={editData.timeOfDay}
+                  onChange={(e) => setEditData({ ...editData, timeOfDay: e.target.value })}
+                  className="bg-background border-input w-40"
+                />
+              </div>
+            )}
+
+            {/* Day of Week */}
+            {editData.scheduleType === "weekly" && (
+              <div className="space-y-2">
+                <Label>Day of Week *</Label>
+                <Select
+                  value={editData.dayOfWeek}
+                  onValueChange={(value) => setEditData({ ...editData, dayOfWeek: value })}
+                >
+                  <SelectTrigger className="bg-background border-input">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DAY_NAMES.map((name, i) => (
+                      <SelectItem key={i} value={i.toString()}>{name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Day of Month */}
+            {editData.scheduleType === "monthly" && (
+              <div className="space-y-2">
+                <Label>Day of Month *</Label>
+                <Select
+                  value={editData.dayOfMonth}
+                  onValueChange={(value) => setEditData({ ...editData, dayOfMonth: value })}
+                >
+                  <SelectTrigger className="bg-background border-input">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                      <SelectItem key={d} value={d.toString()}>
+                        {d}{getOrdinalSuffix(d)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Timezone */}
+            <div className="space-y-2">
+              <Label>Timezone</Label>
+              <Select
+                value={editData.timezone}
+                onValueChange={(value) => setEditData({ ...editData, timezone: value })}
+              >
+                <SelectTrigger className="bg-background border-input">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMEZONE_OPTIONS.map((tz) => (
+                    <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Schedule Preview */}
+            <div className="bg-muted/50 rounded-lg p-4 border border-border">
+              <div className="flex items-center gap-2 mb-2">
+                <Calendar className="w-4 h-4 text-primary" />
+                <span className="text-sm font-medium text-foreground">Schedule Preview</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {getScheduleDescription({
+                  scheduleType: editData.scheduleType,
+                  timeOfDay: editData.timeOfDay,
+                  dayOfWeek: parseInt(editData.dayOfWeek),
+                  dayOfMonth: parseInt(editData.dayOfMonth),
+                  timezone: editData.timezone,
+                  cronExpression: null,
+                })}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={updateJob.isPending}>
+              {updateJob.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function getRunDuration(start: string | Date, end: string | Date): string {
