@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Activity, Target, Zap, Clock } from "lucide-react";
+import { Loader2, Activity, Target, Zap, Clock, TrendingUp, Users, BarChart3, Radio } from "lucide-react";
 
 export default function Dashboard() {
   const { data: metrics, isLoading } = trpc.dashboard.metrics.useQuery();
@@ -22,8 +22,10 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground mt-2">AI Training Platform Overview</p>
+        <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "var(--font-heading)" }}>
+          Dashboard
+        </h1>
+        <p className="text-muted-foreground mt-1">AI Answer Forge Command Center</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -34,7 +36,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{metrics?.activeTrainings ?? 0}</div>
-            <p className="text-xs text-muted-foreground">Currently running</p>
+            <p className="text-xs text-muted-foreground">Sessions currently running</p>
           </CardContent>
         </Card>
 
@@ -45,7 +47,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{metrics?.completedGoals ?? 0}</div>
-            <p className="text-xs text-muted-foreground">Total successful trainings</p>
+            <p className="text-xs text-muted-foreground">Successful training sessions</p>
           </CardContent>
         </Card>
 
@@ -62,7 +64,7 @@ export default function Dashboard() {
 
         <Card className="bg-card border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-card-foreground">Avg. Response Time</CardTitle>
+            <CardTitle className="text-sm font-medium text-card-foreground">Avg Response Time</CardTitle>
             <Clock className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
@@ -75,49 +77,50 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-card-foreground">Quick Start</CardTitle>
+            <CardTitle className="text-card-foreground flex items-center gap-2">
+              <Radio className="h-5 w-5 text-primary" />
+              Campaign Pipeline
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <h3 className="font-semibold text-foreground">Get Started with AI Training</h3>
-              <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-                <li>Configure your AI provider API keys in Settings</li>
-                <li>Create a business profile for your target client</li>
-                <li>Set up a new training session with your goals</li>
-                <li>Monitor progress and view conversation history</li>
-                <li>Schedule recurring training runs for automation</li>
-              </ol>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Keyword Research</span>
+                <span className="font-medium text-foreground">Coming Soon</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Content Generation</span>
+                <span className="font-medium text-foreground">Coming Soon</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Active Training</span>
+                <span className="font-medium text-foreground">{metrics?.activeTrainings ?? 0}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Monitoring</span>
+                <span className="font-medium text-foreground">Coming Soon</span>
+              </div>
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-card-foreground">Platform Features</CardTitle>
+            <CardTitle className="text-card-foreground flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Quick Actions
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <div className="w-2 h-2 rounded-full bg-primary mt-2" />
-                <div>
-                  <h4 className="font-medium text-foreground">Multi-AI Support</h4>
-                  <p className="text-sm text-muted-foreground">Train with OpenAI, Anthropic, and Google AI</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="w-2 h-2 rounded-full bg-primary mt-2" />
-                <div>
-                  <h4 className="font-medium text-foreground">Goal-Based Training</h4>
-                  <p className="text-sm text-muted-foreground">Define objectives and track completion</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="w-2 h-2 rounded-full bg-primary mt-2" />
-                <div>
-                  <h4 className="font-medium text-foreground">Automated Scheduling</h4>
-                  <p className="text-sm text-muted-foreground">Set up recurring training sessions</p>
-                </div>
-              </div>
+            <div className="space-y-2">
+              <h3 className="font-semibold text-foreground">Getting Started</h3>
+              <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+                <li>Configure your AI provider API keys in Settings</li>
+                <li>Add a business profile with website and location</li>
+                <li>Set up a training session with your goals</li>
+                <li>Monitor progress and view conversation history</li>
+                <li>Schedule recurring training runs for automation</li>
+              </ol>
             </div>
           </CardContent>
         </Card>

@@ -91,6 +91,7 @@ describe("Training Session Management", () => {
 
     // Create a session
     const createResult = await caller.training.create({
+      businessId,
       trainingName: "Status Test Session",
       topic: "Test topic",
       targetAiProvider: "openai",
@@ -123,6 +124,7 @@ describe("Training Session Management", () => {
 
     // Create a session
     const createResult = await caller.training.create({
+      businessId,
       trainingName: "To Be Deleted",
       topic: "Test",
       targetAiProvider: "openai",
@@ -153,6 +155,7 @@ describe("Training Session Management", () => {
     const caller = appRouter.createCaller(ctx);
 
     const createResult = await caller.training.create({
+      businessId,
       trainingName: "Progress Test",
       topic: "Test",
       targetAiProvider: "openai",
@@ -174,12 +177,26 @@ describe("Training Session Management", () => {
 });
 
 describe("Training Session Error Handling", () => {
+  let businessId: number;
+
+  beforeAll(async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.business.create({
+      name: "Test Error Handling Business",
+      businessType: "Plumbing",
+      location: "Dallas, TX",
+    });
+    businessId = result.businessId!;
+  });
+
   it("should update session status to error with error message", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
 
     // Create a session
     const createResult = await caller.training.create({
+      businessId,
       trainingName: "Error Test Session",
       topic: "Test topic for error handling",
       targetAiProvider: "openai",
@@ -210,6 +227,7 @@ describe("Training Session Error Handling", () => {
 
     // Create a session
     const createResult = await caller.training.create({
+      businessId,
       trainingName: "Retry Test Session",
       topic: "Test topic for retry",
       targetAiProvider: "openai",
@@ -250,6 +268,19 @@ describe("Training Session Error Handling", () => {
 });
 
 describe("API Key Validation Before Training", () => {
+  let businessId: number;
+
+  beforeAll(async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.business.create({
+      name: "Test API Key Business",
+      businessType: "Electrical",
+      location: "Austin, TX",
+    });
+    businessId = result.businessId!;
+  });
+
   it("should have validateApiKeysForTraining function available", async () => {
     const { validateApiKeysForTraining } = await import("./db");
     expect(typeof validateApiKeysForTraining).toBe("function");
@@ -284,6 +315,7 @@ describe("API Key Validation Before Training", () => {
 
     // Create a session with providers that user doesn't have keys for
     const createResult = await caller.training.create({
+      businessId,
       trainingName: "API Key Validation Test",
       topic: "Test topic",
       targetAiProvider: "openai",

@@ -44,7 +44,8 @@ describe("API Key Management", () => {
       expect(result.success).toBe(true);
     } catch (error: any) {
       // Expected to fail with fake keys
-      expect(error.message).toContain("Invalid API key");
+      // Error message varies by provider
+      expect(error.message).toMatch(/invalid|incorrect|api.?key/i);
     }
   });
 
@@ -88,7 +89,8 @@ describe("API Key Management", () => {
       });
     } catch (error: any) {
       // Expected to fail with fake keys
-      expect(error.message).toContain("Invalid API key");
+      // Error message varies by provider
+      expect(error.message).toMatch(/invalid|incorrect|api.?key/i);
     }
   });
 });

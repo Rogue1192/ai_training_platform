@@ -1,21 +1,36 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { getDb } from "./db";
-import { trainingSessions } from "../drizzle/schema";
+import { trainingSessions, businesses } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 
 describe("Training Session Edit Feature", () => {
   let testSessionId: number;
+  let testBusinessId: number;
 
   beforeAll(async () => {
-    // Create a test session in paused status
+    // Create a test business first
     const db = await getDb();
     if (!db) throw new Error("Database not available");
-    
+
+    const bizResult = await db
+      .insert(businesses)
+      .values({
+        userId: 1,
+        name: "Test Edit Business",
+        businessType: "HVAC",
+        location: "Test City, TX",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning({ id: businesses.id });
+    testBusinessId = bizResult[0].id;
+
+    // Create a test session in paused status
     const result = await db
       .insert(trainingSessions)
       .values({
         userId: 1,
-        businessId: 1,
+        businessId: testBusinessId,
         trainingName: "Test Edit Session",
         topic: "Test topic for editing",
         targetAiProvider: "openai",
@@ -39,9 +54,16 @@ describe("Training Session Edit Feature", () => {
     const db = await getDb();
     if (!db) return;
     
-    await db
-      .delete(trainingSessions)
-      .where(eq(trainingSessions.id, testSessionId));
+    if (testSessionId) {
+      await db
+        .delete(trainingSessions)
+        .where(eq(trainingSessions.id, testSessionId));
+    }
+    if (testBusinessId) {
+      await db
+        .delete(businesses)
+        .where(eq(businesses.id, testBusinessId));
+    }
   });
 
   it("should allow editing a paused session", async () => {
@@ -94,7 +116,7 @@ describe("Training Session Edit Feature", () => {
       .insert(trainingSessions)
       .values({
         userId: 1,
-        businessId: 1,
+        businessId: testBusinessId,
         trainingName: "In Progress Session",
         topic: "Test topic",
         targetAiProvider: "openai",
@@ -158,7 +180,7 @@ describe("Training Session Edit Feature", () => {
       .insert(trainingSessions)
       .values({
         userId: 1,
-        businessId: 1,
+        businessId: testBusinessId,
         trainingName: "Error Session",
         topic: "Test topic",
         targetAiProvider: "openai",

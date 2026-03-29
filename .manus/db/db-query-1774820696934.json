@@ -1,0 +1,28 @@
+{
+  "query": "SELECT column_name FROM information_schema.columns WHERE table_name = 'trainingSessions' AND ordinal_position > 20 ORDER BY ordinal_position",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT column_name FROM information_schema.columns WHERE table_name = 'trainingSessions' AND ordinal_position > 20 ORDER BY ordinal_position",
+  "rows": [
+    {
+      "column_name": "trainingPhase"
+    },
+    {
+      "column_name": "baselineMentioned"
+    },
+    {
+      "column_name": "evaluationMentioned"
+    },
+    {
+      "column_name": "influenceScore"
+    },
+    {
+      "column_name": "trainingIterationsCompleted"
+    },
+    {
+      "column_name": "isLegacy"
+    }
+  ],
+  "messages": [],
+  "stdout": "column_name\ntrainingPhase\nbaselineMentioned\nevaluationMentioned\ninfluenceScore\ntrainingIterationsCompleted\nisLegacy\n",
+  "stderr": "",
+  "execution_time_ms": 221
+}

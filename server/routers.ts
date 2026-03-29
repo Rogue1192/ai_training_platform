@@ -823,6 +823,165 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     }),
   }),
 
+  // ============= AI ANSWER FORGE — Package Tiers =============
+  packageTier: router({
+    list: protectedProcedure.query(async () => {
+      const { getPackageTiers, seedDefaultPackageTiers } = await import("./dbCampaigns");
+      const tiers = await getPackageTiers();
+      if (tiers.length === 0) {
+        return seedDefaultPackageTiers();
+      }
+      return tiers;
+    }),
+    create: protectedProcedure
+      .input(
+        z.object({
+          name: z.string().min(1).max(100),
+          maxQueries: z.number().min(1).max(50),
+          maxLocations: z.number().min(1).max(50),
+          monthlyPrice: z.number().min(0).default(0),
+          description: z.string().optional(),
+          isActive: z.boolean().default(true),
+          sortOrder: z.number().default(0),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { createPackageTier } = await import("./dbCampaigns");
+        return createPackageTier(input);
+      }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().min(1).max(100).optional(),
+          maxQueries: z.number().min(1).max(50).optional(),
+          maxLocations: z.number().min(1).max(50).optional(),
+          monthlyPrice: z.number().min(0).optional(),
+          description: z.string().optional(),
+          isActive: z.boolean().optional(),
+          sortOrder: z.number().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { updatePackageTier } = await import("./dbCampaigns");
+        const { id, ...updates } = input;
+        const result = await updatePackageTier(id, updates);
+        if (!result) throw new Error("Package tier not found");
+        return result;
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const { deletePackageTier } = await import("./dbCampaigns");
+        const success = await deletePackageTier(input.id);
+        if (!success) throw new Error("Package tier not found");
+        return { success: true };
+      }),
+  }),
+
+  // ============= AI ANSWER FORGE — Campaigns =============
+  campaign: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const { getCampaignsWithBusinessInfo } = await import("./dbCampaigns");
+      return getCampaignsWithBusinessInfo(ctx.user.id);
+    }),
+    stats: protectedProcedure.query(async ({ ctx }) => {
+      const { getCampaignStats } = await import("./dbCampaigns");
+      return getCampaignStats(ctx.user.id);
+    }),
+    get: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const { getCampaignById, getQueryLocationsByCampaignId } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.id);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        const queryLocations = await getQueryLocationsByCampaignId(input.id);
+        return { ...campaign, queryLocations };
+      }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          campaignName: z.string().min(1).optional(),
+          trainingAggressiveness: z.enum(["aggressive", "moderate", "maintenance"]).optional(),
+          rankCheckFrequency: z.enum(["daily", "weekly", "biweekly"]).optional(),
+          status: z.enum([
+            "pending", "keyword_research", "credibility_research", "content_generation",
+            "publishing", "indexing", "baseline_check", "training", "monitoring", "paused", "error"
+          ]).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const { getCampaignById, updateCampaign } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.id);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        const { id, ...updates } = input;
+        return updateCampaign(id, updates);
+      }),
+    // Query-location management for a campaign
+    getQueryLocations: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const { getCampaignById, getQueryLocationsByCampaignId } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        return getQueryLocationsByCampaignId(input.campaignId);
+      }),
+    addQueryLocations: protectedProcedure
+      .input(
+        z.object({
+          campaignId: z.number(),
+          entries: z.array(
+            z.object({
+              searchQuery: z.string().min(1),
+              location: z.string().min(1),
+              aiSearchVolume: z.number().optional(),
+            })
+          ),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const { getCampaignById, createCampaignQueryLocations } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        return createCampaignQueryLocations(
+          input.entries.map((e) => ({ ...e, campaignId: input.campaignId }))
+        );
+      }),
+  }),
+
+  // ============= AI ANSWER FORGE — Webhook Logs =============
+  webhookLog: router({
+    list: protectedProcedure
+      .input(z.object({ limit: z.number().min(1).max(200).default(50) }).optional())
+      .query(async ({ input }) => {
+        const { getWebhookLogs } = await import("./dbCampaigns");
+        return getWebhookLogs(input?.limit ?? 50);
+      }),
+  }),
+
+  // ============= AI ANSWER FORGE — Industry Keyword Cache =============
+  industryCache: router({
+    list: protectedProcedure.query(async () => {
+      const { getAllIndustryKeywordCaches } = await import("./dbCampaigns");
+      return getAllIndustryKeywordCaches();
+    }),
+    get: protectedProcedure
+      .input(z.object({ industry: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const { getIndustryKeywordCache } = await import("./dbCampaigns");
+        return getIndustryKeywordCache(input.industry);
+      }),
+  }),
+
   // Prompt template management
   promptTemplate: router({
     // List all templates for the current user, optionally filtered by type

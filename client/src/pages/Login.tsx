@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useLocation, Redirect } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { Zap } from "lucide-react";
 
 export default function Login() {
   const { user, loading: authLoading } = useAuth();
@@ -18,21 +19,17 @@ export default function Login() {
   const utils = trpc.useUtils();
   const [, setLocation] = useLocation();
 
-  // If already authenticated, redirect to dashboard
   if (!authLoading && user) {
     return <Redirect to="/" />;
   }
 
-  // Check if user needs MFA verification
   const checkMFARequirement = async () => {
     const { data: factors } = await supabase.auth.mfa.listFactors();
     const hasVerifiedFactor = factors?.totp?.some(f => f.status === "verified");
     
     if (hasVerifiedFactor) {
-      // Check current assurance level
       const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (aalData?.currentLevel === "aal1" && aalData?.nextLevel === "aal2") {
-        // User has MFA enabled but hasn't completed 2FA yet
         setLocation("/2fa-verify");
         return true;
       }
@@ -53,16 +50,11 @@ export default function Login() {
       if (error) throw error;
 
       if (data.session) {
-        // Check if MFA is required
         const needsMFA = await checkMFARequirement();
-        if (needsMFA) {
-          return; // Already redirected to 2FA page
-        }
+        if (needsMFA) return;
         
         toast.success("Logged in successfully!");
-        // Invalidate the auth query to refetch user data with the new token
         await utils.auth.me.invalidate();
-        // Use window.location for a full page reload to ensure the new session is picked up
         window.location.href = "/";
       }
     } catch (error: any) {
@@ -86,9 +78,7 @@ export default function Login() {
 
       if (data.session) {
         toast.success("Account created successfully!");
-        // Invalidate the auth query to refetch user data with the new token
         await utils.auth.me.invalidate();
-        // Use window.location for a full page reload to ensure the new session is picked up
         window.location.href = "/";
       } else {
         toast.success("Check your email to confirm your account!");
@@ -102,78 +92,97 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold">
-            {isSignUp ? "Create an account" : "Welcome back"}
-          </CardTitle>
-          <CardDescription>
-            {isSignUp
-              ? "Enter your email to create your account"
-              : "Enter your email to sign in to your account"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={isSignUp ? handleSignUp : handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="name@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={loading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={loading}
-                minLength={6}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Please wait..." : isSignUp ? "Sign up" : "Sign in"}
-            </Button>
-          </form>
-
-          <div className="mt-4 text-center text-sm">
-            {isSignUp ? (
-              <>
-                Already have an account?{" "}
-                <button
-                  type="button"
-                  className="text-primary hover:underline"
-                  onClick={() => setIsSignUp(false)}
-                  disabled={loading}
-                >
-                  Sign in
-                </button>
-              </>
-            ) : (
-              <>
-                Don't have an account?{" "}
-                <button
-                  type="button"
-                  className="text-primary hover:underline"
-                  onClick={() => setIsSignUp(true)}
-                  disabled={loading}
-                >
-                  Sign up
-                </button>
-              </>
-            )}
+      <div className="w-full max-w-md space-y-8">
+        {/* Logo / Brand */}
+        <div className="text-center space-y-2">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-primary/10 mb-2">
+            <Zap className="w-7 h-7 text-primary" />
           </div>
-        </CardContent>
-      </Card>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
+            AI Answer Forge
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Automated AI Search Visibility Platform
+          </p>
+        </div>
+
+        <Card>
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-xl font-semibold">
+              {isSignUp ? "Create an account" : "Welcome back"}
+            </CardTitle>
+            <CardDescription>
+              {isSignUp
+                ? "Enter your email to create your account"
+                : "Sign in to manage your campaigns"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={isSignUp ? handleSignUp : handleLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  minLength={6}
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "Please wait..." : isSignUp ? "Sign up" : "Sign in"}
+              </Button>
+            </form>
+
+            <div className="mt-4 text-center text-sm">
+              {isSignUp ? (
+                <>
+                  Already have an account?{" "}
+                  <button
+                    type="button"
+                    className="text-primary hover:underline"
+                    onClick={() => setIsSignUp(false)}
+                    disabled={loading}
+                  >
+                    Sign in
+                  </button>
+                </>
+              ) : (
+                <>
+                  Don't have an account?{" "}
+                  <button
+                    type="button"
+                    className="text-primary hover:underline"
+                    onClick={() => setIsSignUp(true)}
+                    disabled={loading}
+                  >
+                    Sign up
+                  </button>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <p className="text-center text-xs text-muted-foreground">
+          Powered by Rogue Business Marketing
+        </p>
+      </div>
     </div>
   );
 }

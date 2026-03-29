@@ -10,15 +10,27 @@ import Businesses from "./pages/Businesses";
 import TrainingSessions from "./pages/TrainingSessions";
 import ScheduledJobs from "./pages/ScheduledJobs";
 import Settings from "./pages/Settings";
+import Campaigns from "./pages/Campaigns";
+import PackageTiers from "./pages/PackageTiers";
 import Login from "./pages/Login";
 import TwoFactorVerify from "./pages/TwoFactorVerify";
-import { LayoutDashboard, Building2, Brain, Calendar, Settings as SettingsIcon } from "lucide-react";
+import {
+  LayoutDashboard,
+  Building2,
+  Brain,
+  Calendar,
+  Settings as SettingsIcon,
+  Rocket,
+  Package,
+} from "lucide-react";
 
 const navigationItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/campaigns", label: "Campaigns", icon: Rocket },
   { href: "/businesses", label: "Businesses", icon: Building2 },
   { href: "/training", label: "Training", icon: Brain },
   { href: "/schedule", label: "Schedule", icon: Calendar },
+  { href: "/packages", label: "Packages", icon: Package },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -30,6 +42,11 @@ function Router() {
       <Route path="/">
         <DashboardLayout navigationItems={navigationItems}>
           <Dashboard />
+        </DashboardLayout>
+      </Route>
+      <Route path="/campaigns">
+        <DashboardLayout navigationItems={navigationItems}>
+          <Campaigns />
         </DashboardLayout>
       </Route>
       <Route path="/businesses">
@@ -45,6 +62,11 @@ function Router() {
       <Route path="/schedule">
         <DashboardLayout navigationItems={navigationItems}>
           <ScheduledJobs />
+        </DashboardLayout>
+      </Route>
+      <Route path="/packages">
+        <DashboardLayout navigationItems={navigationItems}>
+          <PackageTiers />
         </DashboardLayout>
       </Route>
       <Route path="/settings">

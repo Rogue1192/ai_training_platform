@@ -1,0 +1,88 @@
+{
+  "query": "SELECT column_name FROM information_schema.columns WHERE table_name = 'trainingSessions' ORDER BY ordinal_position",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user nhXu7H4Xk4L1eBU.86c0cb1c6648 --database LN7NmKZ9FL6HUojA3D23Z5 --execute SELECT column_name FROM information_schema.columns WHERE table_name = 'trainingSessions' ORDER BY ordinal_position",
+  "rows": [
+    {
+      "column_name": "id"
+    },
+    {
+      "column_name": "userId"
+    },
+    {
+      "column_name": "businessId"
+    },
+    {
+      "column_name": "trainingName"
+    },
+    {
+      "column_name": "topic"
+    },
+    {
+      "column_name": "targetAiProvider"
+    },
+    {
+      "column_name": "targetAiModel"
+    },
+    {
+      "column_name": "influencerAiProvider"
+    },
+    {
+      "column_name": "influencerAiModel"
+    },
+    {
+      "column_name": "trainingPrompts"
+    },
+    {
+      "column_name": "trainingContext"
+    },
+    {
+      "column_name": "trainingGoal"
+    },
+    {
+      "column_name": "iterations"
+    },
+    {
+      "column_name": "retryInterval"
+    },
+    {
+      "column_name": "currentProgress"
+    },
+    {
+      "column_name": "status"
+    },
+    {
+      "column_name": "errorMessage"
+    },
+    {
+      "column_name": "createdAt"
+    },
+    {
+      "column_name": "updatedAt"
+    },
+    {
+      "column_name": "completedAt"
+    },
+    {
+      "column_name": "trainingPhase"
+    },
+    {
+      "column_name": "baselineMentioned"
+    },
+    {
+      "column_name": "evaluationMentioned"
+    },
+    {
+      "column_name": "influenceScore"
+    },
+    {
+      "column_name": "trainingIterationsCompleted"
+    },
+    {
+      "column_name": "isLegacy"
+    }
+  ],
+  "messages": [],
+  "stdout": "column_name\nid\nuserId\nbusinessId\ntrainingName\ntopic\ntargetAiProvider\ntargetAiModel\ninfluencerAiProvider\ninfluencerAiModel\ntrainingPrompts\ntrainingContext\ntrainingGoal\niterations\nretryInterval\ncurrentProgress\nstatus\nerrorMessage\ncreatedAt\nupdatedAt\ncompletedAt\ntrainingPhase\nbaselineMentioned\nevaluationMentioned\ninfluenceScore\ntrainingIterationsCompleted\nisLegacy\n",
+  "stderr": "",
+  "execution_time_ms": 19579
+}

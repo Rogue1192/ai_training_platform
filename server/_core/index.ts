@@ -10,6 +10,7 @@ import { serveStatic, setupVite } from "./vite";
 import { trainingWorker } from "../trainingQueue";
 import { startTrainingWorkerV2 } from "../trainingQueueV2";
 import { startScheduler } from "../scheduler";
+import { createWebhookRouter } from "../webhookHandler";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -38,6 +39,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   // registerOAuthRoutes(app); // Disabled - using Supabase Auth
+  // Webhook routes (must be before tRPC to avoid conflicts)
+  app.use(createWebhookRouter());
   // tRPC API
   app.use(
     "/api/trpc",
