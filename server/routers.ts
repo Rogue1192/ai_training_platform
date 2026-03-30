@@ -1678,6 +1678,190 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         const wins = await detectWins(input.campaignId);
         return formatWinsForClient(wins);
       }),
+   }),
+
+  // ─── Email Router ──────────────────────────────────────────────────────────
+  email: router({
+    // Send a test email to verify integration
+    sendTest: protectedProcedure
+      .input(z.object({ toEmail: z.string().email() }))
+      .mutation(async ({ input }) => {
+        const { sendTestEmail } = await import("./emailService");
+        return sendTestEmail(input.toEmail);
+      }),
+
+    // Send win notification email for a campaign
+    sendWinNotification: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { detectWins } = await import("./winNotifications");
+        const { sendCampaignWinEmails } = await import("./emailService");
+        const { generateCampaignRankReport } = await import("./rankTrackingEngine");
+        
+        const wins = await detectWins(input.campaignId);
+        if (wins.length === 0) return { success: false, error: "No wins to report" };
+        
+        const report = await generateCampaignRankReport(input.campaignId);
+        const formattedWins = wins.map(w => ({
+          platform: w.platform === "ai_overview" ? "AI Overview" :
+                   w.platform === "chatgpt" ? "ChatGPT" :
+                   w.platform === "gemini" ? "Gemini" : w.platform,
+          query: w.query,
+          location: w.location,
+          message: w.description,
+          significance: w.significance,
+        }));
+        
+        return sendCampaignWinEmails(
+          input.campaignId,
+          formattedWins,
+          report.currentScore.overall,
+          report.previousScore?.overall ?? null
+        );
+      }),
+
+    // Send visibility report email for a campaign
+    sendVisibilityReport: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { generateCampaignRankReport } = await import("./rankTrackingEngine");
+        const { sendCampaignVisibilityReport } = await import("./emailService");
+        
+        const report = await generateCampaignRankReport(input.campaignId);
+        
+        const topWins = report.queryDetails
+          .filter(q => q.chatgptMentioned || q.geminiMentioned || q.aiOverviewMentioned)
+          .slice(0, 5)
+          .map(q => ({
+            query: q.searchQuery,
+            platform: q.chatgptMentioned ? "ChatGPT" : q.geminiMentioned ? "Gemini" : "AI Overview",
+            position: q.chatgptPosition || q.geminiPosition || q.aiOverviewPosition,
+          }));
+        
+        return sendCampaignVisibilityReport(input.campaignId, {
+          currentScore: report.currentScore.overall,
+          baselineScore: report.baselineScore?.overall ?? null,
+          previousScore: report.previousScore?.overall ?? null,
+          chatgptScore: report.currentScore.chatgpt,
+          geminiScore: report.currentScore.gemini,
+          aiOverviewScore: report.currentScore.aiOverview,
+          mentionedQueries: report.currentScore.mentionedQueries,
+          totalQueries: report.currentScore.totalQueries,
+          topWins,
+        });
+      }),
+
+    // Send welcome email for a campaign
+    sendWelcome: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        const { campaigns, businesses } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const { sendWelcomeEmail } = await import("./emailService");
+        
+        const [campaign] = await db!.select().from(campaigns).where(eq(campaigns.id, input.campaignId)).limit(1);
+        if (!campaign) return { success: false, error: "Campaign not found" };
+        
+        const [business] = await db!.select().from(businesses).where(eq(businesses.id, campaign.businessId)).limit(1);
+        if (!business?.contactEmail) return { success: false, error: "No contact email" };
+        
+        // Get dashboard URL if exists
+        const { clientDashboards } = await import("../drizzle/schema");
+        const [dashboard] = await db!.select().from(clientDashboards).where(eq(clientDashboards.campaignId, input.campaignId)).limit(1);
+        const dashboardUrl = dashboard?.isActive ? `https://aitrainhub-ln7nmkz9.manus.space/report/${dashboard.accessToken}` : undefined;
+        
+        return sendWelcomeEmail({
+          businessName: business.name,
+          contactName: business.contactName || business.name,
+          contactEmail: business.contactEmail,
+          packageName: campaign.campaignName || "AI Visibility",
+          dashboardUrl,
+        });
+      }),
+
+    // Send milestone email for a campaign
+    sendMilestone: protectedProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        milestone: z.string(),
+        milestoneDescription: z.string(),
+        nextStep: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        const { campaigns, businesses, clientDashboards } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const { sendMilestoneEmail } = await import("./emailService");
+        
+        const [campaign] = await db!.select().from(campaigns).where(eq(campaigns.id, input.campaignId)).limit(1);
+        if (!campaign) return { success: false, error: "Campaign not found" };
+        
+        const [business] = await db!.select().from(businesses).where(eq(businesses.id, campaign.businessId)).limit(1);
+        if (!business?.contactEmail) return { success: false, error: "No contact email" };
+        
+        const [dashboard] = await db!.select().from(clientDashboards).where(eq(clientDashboards.campaignId, input.campaignId)).limit(1);
+        const dashboardUrl = dashboard?.isActive ? `https://aitrainhub-ln7nmkz9.manus.space/report/${dashboard.accessToken}` : undefined;
+        
+        return sendMilestoneEmail({
+          businessName: business.name,
+          contactName: business.contactName || business.name,
+          contactEmail: business.contactEmail,
+          milestone: input.milestone,
+          milestoneDescription: input.milestoneDescription,
+          nextStep: input.nextStep,
+          dashboardUrl,
+        });
+      }),
+
+    // Preview email templates (returns HTML without sending)
+    previewWinEmail: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { previewWinEmail } = await import("./emailService");
+        return {
+          html: previewWinEmail({
+            businessName: "Sample Business",
+            contactName: "John",
+            contactEmail: "test@example.com",
+            totalWins: 3,
+            wins: [
+              { platform: "ChatGPT", query: "best hvac repair near me", location: "Dallas, TX", message: "Sample Business is now the #1 recommendation on ChatGPT!", significance: "breakthrough" },
+              { platform: "Gemini", query: "ac installation dallas", location: "Dallas, TX", message: "Sample Business is now mentioned by Gemini!", significance: "major" },
+              { platform: "AI Overview", query: "emergency hvac service", location: "Dallas, TX", message: "Improved from #5 to #2 on AI Overview", significance: "moderate" },
+            ],
+            currentScore: 72,
+            previousScore: 35,
+          }),
+        };
+      }),
+
+    previewVisibilityReport: protectedProcedure
+      .query(async () => {
+        const { previewVisibilityReportEmail } = await import("./emailService");
+        return {
+          html: previewVisibilityReportEmail({
+            businessName: "Sample Business",
+            contactName: "John",
+            contactEmail: "test@example.com",
+            currentScore: 65,
+            baselineScore: 8,
+            previousScore: 52,
+            chatgptScore: 72,
+            geminiScore: 58,
+            aiOverviewScore: 61,
+            mentionedQueries: 18,
+            totalQueries: 25,
+            topWins: [
+              { query: "best hvac repair near me", platform: "ChatGPT", position: 1 },
+              { query: "ac installation dallas", platform: "Gemini", position: 2 },
+            ],
+            reportPeriod: "March 2026",
+          }),
+        };
+      }),
   }),
 });
 

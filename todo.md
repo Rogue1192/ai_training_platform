@@ -113,9 +113,9 @@
 ## Sprint 9: Initial Visibility Report + Email
 - [x] Build visibility report generation (generateCampaignRankReport)
 - [x] Report includes: current score, baseline score, before/after comparison, recent wins, query details, trends
-- [ ] Set up Resend integration with ai-answer-forge.com domain (future sprint)
-- [ ] Build branded email template for visibility reports (future sprint)
-- [ ] Send initial report to client automatically after baseline check (future sprint)
+- [x] Set up Resend integration with my.aianswerforge.com domain
+- [x] Build branded email template for visibility reports
+- [x] Send visibility report to client via tRPC procedure
 
 ## Sprint 10: Client Dashboard (Iframe)
 - [x] Build private-link dashboard with unique non-guessable URL token (/report/:token)
@@ -166,8 +166,8 @@
 - [x] Client-friendly win formatting for dashboard display
 - [x] Celebration messages per significance level
 - [x] Add tRPC procedures (detectWins, getReport, checkAll, formatForClient)
-- [ ] Build branded win notification email template (needs Resend + domain setup)
-- [ ] Send win emails automatically when new rankings achieved (needs Resend)
+- [x] Build branded win notification email template (Resend + my.aianswerforge.com)
+- [x] Send win emails via tRPC procedure (sendCampaignWinEmails)
 - [x] All 271 tests passing across 22 test files
 
 ## Sprint 14: Admin Dashboard Overhaul
@@ -272,3 +272,21 @@
 - [x] tRPC procedures: lock, unlock, updateKeywords, updateLockThreshold, delete, refresh
 - [x] Write 18 tests for keyword cache management
 - [x] All 314 tests passing across 25 test files
+
+## Resend Email Integration (my.aianswerforge.com) — COMPLETED
+- [x] Install Resend SDK dependency (resend 6.9.4)
+- [x] Add RESEND_API_KEY secret (validated, my.aianswerforge.com verified)
+- [x] Build Resend email service module (server/emailService.ts)
+- [x] Build branded Win Notification email template (dark theme, score gauge, win cards, significance badges)
+- [x] Build branded Visibility Report email template (score, platform breakdown, before/after comparison)
+- [x] Build Welcome/Onboarding email template (5-step campaign process overview)
+- [x] Build Campaign Milestone email template (custom milestone + next step)
+- [x] Build test email function (sendTestEmail)
+- [x] Wire win notifications to auto-send emails (sendCampaignWinEmails)
+- [x] Wire visibility reports to auto-send emails (sendCampaignVisibilityReport)
+- [x] Add tRPC procedures: sendTest, sendWinNotification, sendVisibilityReport, sendWelcome, sendMilestone, previewWinEmail, previewVisibilityReport
+- [x] Build admin Email Management page (/emails) with send, preview, and test tabs
+- [x] Add Emails to sidebar navigation with Mail icon
+- [x] contactEmail field already exists on businesses table
+- [x] Write 13 tests for email service (mocked Resend, preview HTML, error handling)
+- [x] All 328 tests passing across 27 test files

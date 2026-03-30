@@ -19,6 +19,7 @@ import ClientDashboards from "./pages/ClientDashboards";
 import CampaignDetail from "./pages/CampaignDetail";
 import PromptTemplates from "./pages/PromptTemplates";
 import KeywordCache from "./pages/KeywordCache";
+import EmailManagement from "./pages/EmailManagement";
 import {
   LayoutDashboard,
   Building2,
@@ -30,6 +31,7 @@ import {
   Link2,
   FileText,
   Database,
+  Mail,
 } from "lucide-react";
 
 const navigationItems = [
@@ -42,6 +44,7 @@ const navigationItems = [
   { href: "/client-dashboards", label: "Client Links", icon: Link2 },
   { href: "/prompts", label: "Prompts", icon: FileText },
   { href: "/keyword-cache", label: "Keyword Cache", icon: Database },
+  { href: "/emails", label: "Emails", icon: Mail },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -104,6 +107,11 @@ function Router() {
       <Route path="/keyword-cache">
         <DashboardLayout navigationItems={navigationItems}>
           <KeywordCache />
+        </DashboardLayout>
+      </Route>
+      <Route path="/emails">
+        <DashboardLayout navigationItems={navigationItems}>
+          <EmailManagement />
         </DashboardLayout>
       </Route>
       <Route path="/404" component={NotFound} />
