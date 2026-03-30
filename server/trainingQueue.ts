@@ -6,7 +6,7 @@ import {
   getTrainingSessionById,
   updateTrainingSession,
   createTrainingConversation,
-  getApiKeyByUserAndProvider,
+  getApiKeyByProvider,
 } from "./db";
 
 // Redis connection configuration
@@ -167,12 +167,12 @@ async function executeTrainingIteration(job: TrainingIterationJob): Promise<void
   const safeBasePrompt = basePrompt || `Who is the best ${session.topic?.split('.')[0] || 'service provider'} in the area?`;
   const suggestivePrompt = generateSuggestivePrompt(safeBasePrompt, businessName, session.trainingContext || '');
 
-  // Get API keys (decrypt just-in-time)
-  const targetApiKeyRecord = await getApiKeyByUserAndProvider(userId, session.targetAiProvider as AIProvider);
-  const influencerApiKeyRecord = await getApiKeyByUserAndProvider(userId, session.influencerAiProvider as AIProvider);
+  // Get global API keys (decrypt just-in-time)
+  const targetApiKeyRecord = await getApiKeyByProvider(session.targetAiProvider as AIProvider);
+  const influencerApiKeyRecord = await getApiKeyByProvider(session.influencerAiProvider as AIProvider);
 
   if (!targetApiKeyRecord || !influencerApiKeyRecord) {
-    throw new Error("API keys not configured for the selected providers");
+    throw new Error("API keys not configured for the selected providers. Please add them in Settings.");
   }
 
   let targetApiKey = "";

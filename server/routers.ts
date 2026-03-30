@@ -125,7 +125,7 @@ export const appRouter = router({
 
   // API key management
   apiKey: router({
-    list: protectedProcedure.query(async ({ ctx }) => {
+    list: protectedProcedure.query(async () => {
       const { getAllApiKeys } = await import("./db");
       const keys = await getAllApiKeys();
       // Don't send encrypted keys to frontend
@@ -138,8 +138,8 @@ export const appRouter = router({
           apiKey: z.string().min(1),
         })
       )
-      .mutation(async ({ ctx, input }) => {
-        const { createApiKey, getApiKeyByUserAndProvider } = await import("./db");
+      .mutation(async ({ input }) => {
+        const { createApiKey, getApiKeyByProvider } = await import("./db");
         const { encrypt } = await import("./encryption");
         const { verifyApiKey } = await import("./aiProviders");
 
@@ -149,15 +149,14 @@ export const appRouter = router({
           throw new Error(verification.error || "Invalid API key or unable to connect to provider");
         }
 
-        // Check if key already exists
-        const existing = await getApiKeyByUserAndProvider(ctx.user.id, input.provider);
+        // Check if a global key already exists for this provider
+        const existing = await getApiKeyByProvider(input.provider);
         if (existing) {
           throw new Error("API key for this provider already exists. Please update or delete it first.");
         }
 
         const encryptedKey = encrypt(input.apiKey);
         const apiKey = await createApiKey({
-          userId: ctx.user.id,
           provider: input.provider,
           encryptedKey,
           status: "connected",
@@ -172,8 +171,8 @@ export const appRouter = router({
           apiKey: z.string().min(1),
         })
       )
-      .mutation(async ({ ctx, input }) => {
-        const { createApiKey, getApiKeyByUserAndProvider, updateApiKey } = await import("./db");
+      .mutation(async ({ input }) => {
+        const { createApiKey, getApiKeyByProvider, updateApiKey } = await import("./db");
         const { encrypt } = await import("./encryption");
         const { verifyApiKey } = await import("./aiProviders");
 
@@ -184,10 +183,10 @@ export const appRouter = router({
         }
 
         const encryptedKey = encrypt(input.apiKey);
-        const existing = await getApiKeyByUserAndProvider(ctx.user.id, input.provider);
+        const existing = await getApiKeyByProvider(input.provider);
         
         if (existing) {
-          // Update existing
+          // Update existing global key
           await updateApiKey(existing.id, {
             encryptedKey,
             status: "connected",
@@ -195,9 +194,8 @@ export const appRouter = router({
           });
           return { success: true, id: existing.id };
         } else {
-          // Create new
+          // Create new global key
           const apiKey = await createApiKey({
-            userId: ctx.user.id,
             provider: input.provider,
             encryptedKey,
             status: "connected",
@@ -213,8 +211,8 @@ export const appRouter = router({
           apiKey: z.string().min(1),
         })
       )
-      .mutation(async ({ ctx, input }) => {
-        const { getApiKeyByUserAndProvider, updateApiKey } = await import("./db");
+      .mutation(async ({ input }) => {
+        const { getApiKeyByProvider, updateApiKey } = await import("./db");
         const { encrypt } = await import("./encryption");
         const { verifyApiKey } = await import("./aiProviders");
 
@@ -224,7 +222,7 @@ export const appRouter = router({
           throw new Error(verification.error || "Invalid API key or unable to connect to provider");
         }
 
-        const existing = await getApiKeyByUserAndProvider(ctx.user.id, input.provider);
+        const existing = await getApiKeyByProvider(input.provider);
         if (!existing) {
           throw new Error("API key not found");
         }
@@ -237,9 +235,9 @@ export const appRouter = router({
         });
         return { success: true };
       }),
-    delete: protectedProcedure.input(z.object({ provider: z.enum(["openai", "anthropic", "google"]) })).mutation(async ({ ctx, input }) => {
-      const { getApiKeyByUserAndProvider, deleteApiKey } = await import("./db");
-      const existing = await getApiKeyByUserAndProvider(ctx.user.id, input.provider);
+    delete: protectedProcedure.input(z.object({ provider: z.enum(["openai", "anthropic", "google"]) })).mutation(async ({ input }) => {
+      const { getApiKeyByProvider, deleteApiKey } = await import("./db");
+      const existing = await getApiKeyByProvider(input.provider);
       if (existing) {
         await deleteApiKey(existing.id);
       }
@@ -247,12 +245,12 @@ export const appRouter = router({
     }),
     test: protectedProcedure
       .input(z.object({ provider: z.enum(["openai", "anthropic", "google"]) }))
-      .mutation(async ({ ctx, input }) => {
-        const { getApiKeyByUserAndProvider, updateApiKey } = await import("./db");
+      .mutation(async ({ input }) => {
+        const { getApiKeyByProvider, updateApiKey } = await import("./db");
         const { decrypt } = await import("./encryption");
         const { testApiKey } = await import("./aiProviders");
 
-        const existing = await getApiKeyByUserAndProvider(ctx.user.id, input.provider);
+        const existing = await getApiKeyByProvider(input.provider);
         if (!existing) {
           throw new Error("No API key found for this provider. Please add one first.");
         }
@@ -357,7 +355,6 @@ export const appRouter = router({
           }
           
           const validation = await validateApiKeysForTraining(
-            ctx.user.id,
             session.targetAiProvider as "openai" | "anthropic" | "google",
             session.influencerAiProvider as "openai" | "anthropic" | "google"
           );
@@ -567,7 +564,6 @@ export const appRouter = router({
               
               // Validate API keys
               const validation = await validateApiKeysForTraining(
-                ctx.user.id,
                 session.targetAiProvider as "openai" | "anthropic" | "google",
                 session.influencerAiProvider as "openai" | "anthropic" | "google"
               );

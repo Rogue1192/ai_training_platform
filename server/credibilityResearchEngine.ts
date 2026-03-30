@@ -10,7 +10,7 @@
 
 import { callAI, AIProvider, AIMessage } from "./aiProviders";
 import { decrypt } from "./encryption";
-import { getApiKeyByUserAndProvider } from "./db";
+import { getApiKeyByProvider } from "./db";
 import { getDb } from "./db";
 import { credibilityData, businesses, campaigns } from "../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
@@ -235,10 +235,10 @@ export async function runCredibilityResearch(params: {
 }): Promise<CredibilityResearchResult> {
   const { userId, businessId, campaignId, businessName, websiteUrl, industry, location, existingCredibilityData } = params;
   
-  // Get the user's Anthropic API key
-  const apiKeyRecord = await getApiKeyByUserAndProvider(userId, "anthropic");
+  // Get the global Anthropic API key
+  const apiKeyRecord = await getApiKeyByProvider("anthropic");
   if (!apiKeyRecord) {
-    throw new Error("Anthropic API key not found. Please add your Anthropic API key in Settings.");
+    throw new Error("Anthropic API key not found. Please add it in Settings.");
   }
   
   const apiKey = decrypt(apiKeyRecord.encryptedKey);

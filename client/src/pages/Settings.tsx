@@ -130,7 +130,7 @@ export default function Settings() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Settings</h1>
-        <p className="text-muted-foreground mt-2">Manage your AI provider API keys and configuration</p>
+        <p className="text-muted-foreground mt-2">Manage global AI provider API keys — entered once and used for all clients and campaigns</p>
       </div>
 
       <div className="grid gap-6">
@@ -376,11 +376,12 @@ export default function Settings() {
         </CardHeader>
         <CardContent>
           <ul className="space-y-2 text-sm text-muted-foreground">
-            <li>• All API keys are encrypted using AES-256 encryption</li>
+            <li>• API keys are global — one key per provider, shared across all clients and campaigns</li>
+            <li>• All API keys are encrypted at rest using AES-256-GCM encryption</li>
             <li>• Keys are verified upon submission to ensure they work correctly</li>
             <li>• API keys are never exposed in logs or error messages</li>
-            <li>• You can update or delete your keys at any time</li>
-            <li>• Use the Test button to verify your API key has the required permissions</li>
+            <li>• You can update or delete any key at any time</li>
+            <li>• Use the Test button to verify a key has the required permissions</li>
           </ul>
         </CardContent>
       </Card>

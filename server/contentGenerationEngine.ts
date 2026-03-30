@@ -13,7 +13,7 @@
 
 import { callAI, AIProvider, AIMessage } from "./aiProviders";
 import { decrypt } from "./encryption";
-import { getApiKeyByUserAndProvider } from "./db";
+import { getApiKeyByProvider } from "./db";
 import { getDb } from "./db";
 import { contentPages, campaigns } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
@@ -401,10 +401,10 @@ export async function generateAllContentPages(params: {
 }): Promise<ContentGenerationResult> {
   const { userId, businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult } = params;
   
-  // Get the user's Anthropic API key
-  const apiKeyRecord = await getApiKeyByUserAndProvider(userId, "anthropic");
+  // Get the global Anthropic API key
+  const apiKeyRecord = await getApiKeyByProvider("anthropic");
   if (!apiKeyRecord) {
-    throw new Error("Anthropic API key not found. Please add your Anthropic API key in Settings.");
+    throw new Error("Anthropic API key not found. Please add it in Settings.");
   }
   
   const apiKey = decrypt(apiKeyRecord.encryptedKey);
@@ -574,9 +574,9 @@ export async function regenerateContentPage(params: {
   const existingPage = existingPages[0];
   if (!existingPage) throw new Error("Content page not found");
   
-  // Get the user's Anthropic API key
-  const apiKeyRecord = await getApiKeyByUserAndProvider(userId, "anthropic");
-  if (!apiKeyRecord) throw new Error("Anthropic API key not found");
+  // Get the global Anthropic API key
+  const apiKeyRecord = await getApiKeyByProvider("anthropic");
+  if (!apiKeyRecord) throw new Error("Anthropic API key not found. Please add it in Settings.");
   
   const apiKey = decrypt(apiKeyRecord.encryptedKey);
   

@@ -187,23 +187,16 @@ export async function deleteBusiness(id: number): Promise<void> {
 
 // ============= API Key Operations =============
 
+/** Create a new global API key record */
 export async function createApiKey(apiKey: InsertApiKey): Promise<ApiKey> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   const result = await db.insert(apiKeys).values(apiKey).returning();
-  const inserted = result;
-  return inserted[0]!;
+  return result[0]!;
 }
 
-export async function getApiKeysByUserId(userId: number): Promise<ApiKey[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  return db.select().from(apiKeys).where(eq(apiKeys.userId, userId));
-}
-
-/** Team-wide: return ALL API keys (internal tool — all employees share access) */
+/** Return all global API keys (one per provider) */
 export async function getAllApiKeys(): Promise<ApiKey[]> {
   const db = await getDb();
   if (!db) return [];
@@ -211,39 +204,37 @@ export async function getAllApiKeys(): Promise<ApiKey[]> {
   return db.select().from(apiKeys);
 }
 
-export async function getApiKeyByUserAndProvider(userId: number, provider: "openai" | "anthropic" | "google"): Promise<ApiKey | undefined> {
+/** Look up the single global API key for a given provider */
+export async function getApiKeyByProvider(provider: "openai" | "anthropic" | "google"): Promise<ApiKey | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
   const result = await db
     .select()
     .from(apiKeys)
-    .where(and(eq(apiKeys.userId, userId), eq(apiKeys.provider, provider)))
+    .where(eq(apiKeys.provider, provider))
     .limit(1);
 
   return result[0];
 }
 
 /**
- * Validate that all required API keys exist for a training session
- * Returns an object with validation result and missing providers
+ * Validate that all required global API keys exist for a training session.
+ * No userId needed — keys are shared across the whole team.
  */
 export async function validateApiKeysForTraining(
-  userId: number,
   targetProvider: "openai" | "anthropic" | "google",
   influencerProvider: "openai" | "anthropic" | "google"
 ): Promise<{ valid: boolean; missingProviders: string[] }> {
   const missingProviders: string[] = [];
 
-  // Check target AI provider key
-  const targetKey = await getApiKeyByUserAndProvider(userId, targetProvider);
+  const targetKey = await getApiKeyByProvider(targetProvider);
   if (!targetKey) {
     missingProviders.push(targetProvider);
   }
 
-  // Check influencer AI provider key (only if different from target)
   if (influencerProvider !== targetProvider) {
-    const influencerKey = await getApiKeyByUserAndProvider(userId, influencerProvider);
+    const influencerKey = await getApiKeyByProvider(influencerProvider);
     if (!influencerKey) {
       missingProviders.push(influencerProvider);
     }

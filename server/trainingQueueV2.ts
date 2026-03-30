@@ -18,7 +18,7 @@ import {
   getTrainingSessionById,
   updateTrainingSession,
   createTrainingConversation,
-  getApiKeyByUserAndProvider,
+  getApiKeyByProvider,
   getBusinessById,
   getActiveRunBySessionId,
   updateScheduledJobRun,
@@ -150,15 +150,15 @@ async function executeBaselineTest(sessionId: number, userId: number): Promise<v
   };
   
   // Get API keys
-  const targetApiKeyRecord = await getApiKeyByUserAndProvider(userId, session.targetAiProvider as AIProvider);
-  if (!targetApiKeyRecord) throw new Error("Target API key not configured");
-  
+  const targetApiKeyRecord = await getApiKeyByProvider(session.targetAiProvider as AIProvider);
+  if (!targetApiKeyRecord) throw new Error("Target API key not configured. Please add it in Settings.");
+
   let targetApiKey = "";
-  
+
   try {
     targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
-    
-    // Select a random prompt and generate CLEAN version
+
+    // Use suggestive promptsm prompt and generate CLEAN version
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
     const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo, session.userId);
     
@@ -259,15 +259,15 @@ async function executeTrainingIteration(
     description: session.topic,
   };
   
-  const targetApiKeyRecord = await getApiKeyByUserAndProvider(userId, session.targetAiProvider as AIProvider);
-  if (!targetApiKeyRecord) throw new Error("Target API key not configured");
-  
+  const targetApiKeyRecord = await getApiKeyByProvider(session.targetAiProvider as AIProvider);
+  if (!targetApiKeyRecord) throw new Error("Target API key not configured. Please add it in Settings.");
+
   let targetApiKey = "";
-  
+
   try {
     targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
-    
-    // Select a random prompt and generate SUGGESTIVE version
+
+    // Build clean prompts for evaluation generate SUGGESTIVE version
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
     const { prompt: suggestivePrompt } = await generateSuggestivePromptAsync(basePrompt, businessInfo, session.userId);
     
@@ -430,16 +430,15 @@ async function executeEvaluationTest(sessionId: number, userId: number): Promise
     location: business?.location,
     description: session.topic,
   };
-  
-  const targetApiKeyRecord = await getApiKeyByUserAndProvider(userId, session.targetAiProvider as AIProvider);
-  if (!targetApiKeyRecord) throw new Error("Target API key not configured");
-  
+  const targetApiKeyRecord = await getApiKeyByProvider(session.targetAiProvider as AIProvider);
+  if (!targetApiKeyRecord) throw new Error("Target API key not configured. Please add it in Settings.");
+
   let targetApiKey = "";
   
   try {
     targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
-    
-    // Select a random prompt and generate CLEAN version (same as baseline)
+
+    // Build clean promptsandom prompt and generate CLEAN version (same as baseline)
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
     const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo, session.userId);
     

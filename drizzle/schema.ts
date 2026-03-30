@@ -97,13 +97,10 @@ export const businesses = pgTable("businesses", {
 export type Business = typeof businesses.$inferSelect;
 export type InsertBusiness = typeof businesses.$inferInsert;
 
-// API Keys table
+// API Keys table — global keys shared across all employees and businesses
 export const apiKeys = pgTable("apiKeys", {
   id: serial("id").primaryKey(),
-  userId: integer("userId")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  provider: aiProviderEnum("provider").notNull(),
+  provider: aiProviderEnum("provider").notNull().unique(),
   encryptedKey: text("encryptedKey").notNull(),
   status: apiKeyStatusEnum("status").default("connected").notNull(),
   lastVerified: timestamp("lastVerified"),
