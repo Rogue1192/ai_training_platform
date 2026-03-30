@@ -14,6 +14,8 @@ import Campaigns from "./pages/Campaigns";
 import PackageTiers from "./pages/PackageTiers";
 import Login from "./pages/Login";
 import TwoFactorVerify from "./pages/TwoFactorVerify";
+import ClientDashboard from "./pages/ClientDashboard";
+import ClientDashboards from "./pages/ClientDashboards";
 import {
   LayoutDashboard,
   Building2,
@@ -22,6 +24,7 @@ import {
   Settings as SettingsIcon,
   Rocket,
   Package,
+  Link2,
 } from "lucide-react";
 
 const navigationItems = [
@@ -31,6 +34,7 @@ const navigationItems = [
   { href: "/training", label: "Training", icon: Brain },
   { href: "/schedule", label: "Schedule", icon: Calendar },
   { href: "/packages", label: "Packages", icon: Package },
+  { href: "/client-dashboards", label: "Client Links", icon: Link2 },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -39,6 +43,7 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/2fa-verify" component={TwoFactorVerify} />
+      <Route path="/report/:token" component={ClientDashboard} />
       <Route path="/">
         <DashboardLayout navigationItems={navigationItems}>
           <Dashboard />
@@ -72,6 +77,11 @@ function Router() {
       <Route path="/settings">
         <DashboardLayout navigationItems={navigationItems}>
           <Settings />
+        </DashboardLayout>
+      </Route>
+      <Route path="/client-dashboards">
+        <DashboardLayout navigationItems={navigationItems}>
+          <ClientDashboards />
         </DashboardLayout>
       </Route>
       <Route path="/404" component={NotFound} />

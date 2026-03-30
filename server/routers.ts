@@ -1332,6 +1332,143 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         });
       }),
   }),
+
+  // ============= AI ANSWER FORGE — Rank Tracking (Sprint 8) =============
+  rankTracking: router({
+    runCheck: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { runScheduledRankCheck } = await import("./rankTrackingEngine");
+        return runScheduledRankCheck(input.campaignId);
+      }),
+    getReport: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { generateCampaignRankReport } = await import("./rankTrackingEngine");
+        return generateCampaignRankReport(input.campaignId);
+      }),
+    getTrends: protectedProcedure
+      .input(z.object({ campaignId: z.number(), days: z.number().optional() }))
+      .query(async ({ input }) => {
+        const { getVisibilityTrends } = await import("./rankTrackingEngine");
+        return getVisibilityTrends(input.campaignId, { days: input.days });
+      }),
+  }),
+
+  // ============= AI ANSWER FORGE — Client Dashboard (Sprint 10) =============
+  clientDashboard: router({
+    // Public endpoint — no auth required, uses access token
+    getByToken: publicProcedure
+      .input(z.object({ token: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const { clientDashboards, businesses, campaigns } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+        const { generateCampaignRankReport } = await import("./rankTrackingEngine");
+
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const dashboard = (await db.select().from(clientDashboards)
+          .where(and(
+            eq(clientDashboards.accessToken, input.token),
+            eq(clientDashboards.isActive, true)
+          )).limit(1))[0];
+
+        if (!dashboard) return null;
+
+        // Update access tracking
+        await db.update(clientDashboards)
+          .set({
+            lastAccessedAt: new Date(),
+            accessCount: (dashboard.accessCount || 0) + 1,
+          })
+          .where(eq(clientDashboards.id, dashboard.id));
+
+        // Get business info
+        const business = (await db.select().from(businesses)
+          .where(eq(businesses.id, dashboard.businessId)).limit(1))[0];
+
+        if (!dashboard.campaignId) return { dashboard, business, report: null };
+
+        // Generate the rank report
+        try {
+          const report = await generateCampaignRankReport(dashboard.campaignId);
+          return { dashboard, business, report };
+        } catch {
+          return { dashboard, business, report: null };
+        }
+      }),
+    // Admin: create a client dashboard
+    create: protectedProcedure
+      .input(z.object({
+        businessId: z.number(),
+        campaignId: z.number().optional(),
+        dashboardTitle: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const { clientDashboards } = await import("../drizzle/schema");
+        const crypto = await import("crypto");
+
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const accessToken = crypto.randomBytes(32).toString("hex");
+
+        const result = await db.insert(clientDashboards).values({
+          businessId: input.businessId,
+          campaignId: input.campaignId || null,
+          accessToken,
+          dashboardTitle: input.dashboardTitle || null,
+          isActive: true,
+        }).returning();
+
+        return result[0];
+      }),
+    // Admin: list all dashboards
+    list: protectedProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const { clientDashboards, businesses } = await import("../drizzle/schema");
+      const { eq, desc } = await import("drizzle-orm");
+
+      const db = await getDb();
+      if (!db) return [];
+
+      return db.select({
+        id: clientDashboards.id,
+        businessId: clientDashboards.businessId,
+        campaignId: clientDashboards.campaignId,
+        accessToken: clientDashboards.accessToken,
+        dashboardTitle: clientDashboards.dashboardTitle,
+        isActive: clientDashboards.isActive,
+        lastAccessedAt: clientDashboards.lastAccessedAt,
+        accessCount: clientDashboards.accessCount,
+        createdAt: clientDashboards.createdAt,
+        businessName: businesses.name,
+      })
+        .from(clientDashboards)
+        .leftJoin(businesses, eq(clientDashboards.businessId, businesses.id))
+        .orderBy(desc(clientDashboards.createdAt));
+    }),
+    // Admin: toggle dashboard active status
+    toggleActive: protectedProcedure
+      .input(z.object({ id: z.number(), isActive: z.boolean() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const { clientDashboards } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        await db.update(clientDashboards)
+          .set({ isActive: input.isActive })
+          .where(eq(clientDashboards.id, input.id));
+
+        return { success: true };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

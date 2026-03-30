@@ -99,25 +99,40 @@
 - [x] All 231 tests passing across 20 test files
 
 ## Sprint 8: Rank Tracking Engine
-- [ ] Integrate DataForSEO LLM Mentions API
-- [ ] Integrate DataForSEO LLM Responses API (ChatGPT + Gemini)
-- [ ] Integrate DataForSEO Google AI Mode SERP API
-- [ ] Build comprehensive rank check across all query×location combos
-- [ ] Store rank snapshots with historical data
+- [x] Integrate DataForSEO LLM Mentions API (already in dataforseoService.ts)
+- [x] Integrate DataForSEO LLM Responses API (ChatGPT + Gemini)
+- [x] Integrate DataForSEO Google AI Mode SERP API
+- [x] Build comprehensive rank check across all query×location combos
+- [x] Store rank snapshots with historical data
+- [x] Build visibility scoring system (ChatGPT 40%, Gemini 30%, AI Overview 30%)
+- [x] Position-weighted scoring (pos 1 = 100, pos 2 = 85, pos 3 = 75, etc.)
+- [x] Trend analysis with historical comparison
+- [x] Win detection (new mentions, improved positions)
+- [x] Add tRPC procedures (runCheck, getReport, getTrends)
 
 ## Sprint 9: Initial Visibility Report + Email
-- [ ] Set up Resend integration with ai-answer-forge.com domain
-- [ ] Build Initial Visibility Report generation
-- [ ] Build branded email template for visibility reports
-- [ ] Send initial report to client automatically after baseline check
+- [x] Build visibility report generation (generateCampaignRankReport)
+- [x] Report includes: current score, baseline score, before/after comparison, recent wins, query details, trends
+- [ ] Set up Resend integration with ai-answer-forge.com domain (future sprint)
+- [ ] Build branded email template for visibility reports (future sprint)
+- [ ] Send initial report to client automatically after baseline check (future sprint)
 
 ## Sprint 10: Client Dashboard (Iframe)
-- [ ] Build private-link dashboard with unique non-guessable URL token
-- [ ] Show current rankings across all query×location combos
-- [ ] Show historical trend data and recent wins
-- [ ] Show overall visibility score
-- [ ] Make dashboard iframe-embeddable (no login, no chrome)
-- [ ] Hide all training machinery from client view
+- [x] Build private-link dashboard with unique non-guessable URL token (/report/:token)
+- [x] Show current rankings across all query×location combos (query details table)
+- [x] Show historical trend data and recent wins (trend chart + win cards)
+- [x] Show overall visibility score (animated gauge with glow effects)
+- [x] Make dashboard iframe-embeddable (no login, no chrome, standalone page)
+- [x] Hide all training machinery from client view
+- [x] Red-to-green gradient scoring (invisible → barely visible → emerging → growing → strong → dominating)
+- [x] Animated visibility gauge with score counter animation
+- [x] Before/after comparison cards with progress bars
+- [x] Platform breakdown radial chart (ChatGPT, Gemini, AI Overview)
+- [x] Area chart with trend lines per platform
+- [x] Win celebration cards with platform icons
+- [x] Responsive dark theme design
+- [x] Admin management page (create/toggle/copy links, view access stats)
+- [x] clientDashboards table with access tracking
 
 ## Sprint 11: Enhanced Training Engine
 - [ ] Enrich training prompts with credibility data and content URLs
@@ -185,3 +200,18 @@
 
 ## Deployment Reminder
 - [ ] When everything is built and ready: walk Casey through Railway deployment (set DATABASE_URL/SUPABASE_DATABASE_URL, run pnpm db:push, set all env vars)
+
+## Sprint 8-10 Enhanced Requirements (Client-Facing Visual Excellence)
+- [x] Sprint 8: Build comprehensive rank tracking using DataForSEO LLM Mentions + LLM Responses + Google AI Mode SERP
+- [x] Sprint 8: Store rank snapshots with full historical data for trend analysis
+- [x] Sprint 9: Build visibility report generation with dramatic before/after visual contrast
+- [x] Sprint 9: Red-to-green gradient rank cards showing the improvement journey
+- [x] Sprint 9: Animated visibility score gauges
+- [x] Sprint 9: Sparkline trend charts per query showing rank progression
+- [x] Sprint 9: "Wins" callouts with celebration styling
+- [x] Sprint 9: Before/after comparison panels with maximum visual contrast
+- [x] Sprint 10: Build client dashboard (iframe-embeddable, no login required)
+- [x] Sprint 10: Overall visibility score — dim/barely-visible when low, bright/glowing when high
+- [x] Sprint 10: Historical trend data with animated charts
+- [x] Sprint 10: Make dashboard visually stunning to minimize churn in first 1-2 months
+- [x] All 249 tests passing across 21 test files
