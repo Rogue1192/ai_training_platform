@@ -1469,6 +1469,134 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         return { success: true };
       }),
   }),
+
+  // ─── Sprint 11: Training Context Enrichment ────────────────────────────────
+  trainingContext: router({
+    // Get enrichment status for a business
+    getEnrichmentStatus: protectedProcedure
+      .input(z.object({ businessId: z.number() }))
+      .query(async ({ input }) => {
+        const { buildTrainingContext, summarizeTrainingContext } = await import("./trainingContextEnricher");
+        const context = await buildTrainingContext(input.businessId);
+        return summarizeTrainingContext(context);
+      }),
+    // Get full training context for a business
+    getFullContext: protectedProcedure
+      .input(z.object({ businessId: z.number() }))
+      .query(async ({ input }) => {
+        const { buildTrainingContext } = await import("./trainingContextEnricher");
+        return buildTrainingContext(input.businessId);
+      }),
+    // Get enriched system message preview
+    getEnrichedSystemMessage: protectedProcedure
+      .input(z.object({ businessId: z.number() }))
+      .query(async ({ input }) => {
+        const { buildTrainingContext, buildEnrichedSystemMessage } = await import("./trainingContextEnricher");
+        const context = await buildTrainingContext(input.businessId);
+        if (!context) return { message: null, hasContext: false };
+        return { message: buildEnrichedSystemMessage(context), hasContext: true };
+      }),
+    // Get source citation block preview
+    getSourceCitationBlock: protectedProcedure
+      .input(z.object({ businessId: z.number() }))
+      .query(async ({ input }) => {
+        const { buildTrainingContext, buildSourceCitationBlock } = await import("./trainingContextEnricher");
+        const context = await buildTrainingContext(input.businessId);
+        if (!context) return { block: null, hasContext: false };
+        return { block: buildSourceCitationBlock(context), hasContext: true };
+      }),
+  }),
+
+  // ─── Sprint 12: Smart Scheduling ───────────────────────────────────────────
+  smartScheduler: router({
+    // Get schedule config for a mode
+    getConfig: protectedProcedure
+      .input(z.object({ mode: z.enum(["aggressive", "moderate", "maintenance"]) }))
+      .query(async ({ input }) => {
+        const { getScheduleConfig } = await import("./smartScheduler");
+        return getScheduleConfig(input.mode);
+      }),
+    // Get all schedule configs
+    getAllConfigs: protectedProcedure.query(async () => {
+      const { getAllScheduleConfigs } = await import("./smartScheduler");
+      return getAllScheduleConfigs();
+    }),
+    // Get campaign schedule status
+    getCampaignStatus: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { getCampaignScheduleStatus } = await import("./smartScheduler");
+        return getCampaignScheduleStatus(input.campaignId);
+      }),
+    // Get all campaign schedule statuses
+    getAllStatuses: protectedProcedure.query(async () => {
+      const { getAllCampaignScheduleStatuses } = await import("./smartScheduler");
+      return getAllCampaignScheduleStatuses();
+    }),
+    // Get mode recommendation for a campaign
+    getRecommendation: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { recommendMode } = await import("./smartScheduler");
+        return recommendMode(input.campaignId);
+      }),
+    // Apply mode change to a campaign
+    applyModeChange: protectedProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        mode: z.enum(["aggressive", "moderate", "maintenance"]),
+        reason: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { applyCampaignModeChange } = await import("./smartScheduler");
+        return applyCampaignModeChange(
+          input.campaignId,
+          input.mode,
+          input.reason || `Manual mode change to ${input.mode}`
+        );
+      }),
+    // Run auto-recovery check on all campaigns
+    checkAutoRecovery: protectedProcedure.mutation(async () => {
+      const { checkAutoRecovery } = await import("./smartScheduler");
+      return checkAutoRecovery();
+    }),
+    // Evaluate all campaigns and apply recommended mode changes
+    evaluateAll: protectedProcedure.mutation(async () => {
+      const { evaluateAndApplyModeChanges } = await import("./smartScheduler");
+      return evaluateAndApplyModeChanges();
+    }),
+  }),
+
+  // ─── Sprint 13: Win Notifications ──────────────────────────────────────────
+  wins: router({
+    // Detect wins for a specific campaign
+    detectWins: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { detectWins } = await import("./winNotifications");
+        return detectWins(input.campaignId);
+      }),
+    // Generate full win report for a campaign
+    getReport: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { generateWinReport } = await import("./winNotifications");
+        return generateWinReport(input.campaignId);
+      }),
+    // Check all campaigns for wins and send notifications
+    checkAll: protectedProcedure.mutation(async () => {
+      const { checkAllCampaignsForWins } = await import("./winNotifications");
+      return checkAllCampaignsForWins();
+    }),
+    // Format wins for client dashboard display
+    formatForClient: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { detectWins, formatWinsForClient } = await import("./winNotifications");
+        const wins = await detectWins(input.campaignId);
+        return formatWinsForClient(wins);
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

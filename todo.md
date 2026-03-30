@@ -134,22 +134,41 @@
 - [x] Admin management page (create/toggle/copy links, view access stats)
 - [x] clientDashboards table with access tracking
 
-## Sprint 11: Enhanced Training Engine
-- [ ] Enrich training prompts with credibility data and content URLs
-- [ ] Point training to real verifiable URLs as sources
-- [ ] Integrate content page URLs into training context
+## Sprint 11: Enhanced Training Engine (ADDITIVE ONLY — existing prompts untouched)
+- [x] Build trainingContextEnricher.ts — pure additive module, does NOT modify existing prompts
+- [x] Enrich training context with credibility data (verified facts, confidence levels, source URLs)
+- [x] Point training to real verifiable URLs as sources (published content pages)
+- [x] Integrate content page URLs into training context
+- [x] Build enriched system message with business info + credibility facts + published pages
+- [x] Build source citation block for appending to suggestive prompts
+- [x] Enrichment level detection (none → basic → moderate → full)
+- [x] Campaign-level and session-level context retrieval
+- [x] Add tRPC procedures (getEnrichmentStatus, getFullContext, getEnrichedSystemMessage, getSourceCitationBlock)
 
 ## Sprint 12: Smart Scheduling + Auto-Recovery
-- [ ] Build aggressive → maintenance mode transition
-- [ ] Build auto-recovery (detect ranking drop → re-trigger training)
-- [ ] Add configurable aggressiveness settings per campaign
-- [ ] Add global default settings with per-campaign override
+- [x] Build aggressive → moderate → maintenance mode transition
+- [x] Build auto-recovery (detect ranking drop ≥15 points → escalate to aggressive)
+- [x] Build sustained decline detection (3+ consecutive drops → auto-recovery)
+- [x] Configurable aggressiveness per campaign (aggressive: 3/day, moderate: 1/day, maintenance: 1/week)
+- [x] Mode recommendation engine with scoring thresholds (30 → moderate, 60 → maintenance)
+- [x] Minimum day requirements before mode transitions (14 days → moderate, 30 days → maintenance)
+- [x] Batch evaluation for all active campaigns
+- [x] Trend analysis from rank snapshot history (improving/stable/declining)
+- [x] Add tRPC procedures (getConfig, getAllConfigs, getCampaignStatus, getAllStatuses, getRecommendation, applyModeChange, checkAutoRecovery, evaluateAll)
 
 ## Sprint 13: Win Notifications
-- [ ] Build win detection (compare weekly rank checks to previous)
-- [ ] Build branded win notification email template
-- [ ] Send win emails automatically when new rankings achieved
-- [ ] Update client dashboard with new wins
+- [x] Build win detection (compare latest rank snapshots to previous per query-location)
+- [x] Win types: new_mention, position_improvement, multi_platform, first_position
+- [x] Significance levels: minor, moderate, major, breakthrough
+- [x] Win report generation with summary and top wins
+- [x] Admin notification via built-in notifyOwner system
+- [x] Batch win check across all active campaigns
+- [x] Client-friendly win formatting for dashboard display
+- [x] Celebration messages per significance level
+- [x] Add tRPC procedures (detectWins, getReport, checkAll, formatForClient)
+- [ ] Build branded win notification email template (needs Resend + domain setup)
+- [ ] Send win emails automatically when new rankings achieved (needs Resend)
+- [x] All 271 tests passing across 22 test files
 
 ## Sprint 14: Admin Dashboard Overhaul
 - [ ] Campaign pipeline view (which phase each campaign is in)
@@ -215,3 +234,9 @@
 - [x] Sprint 10: Historical trend data with animated charts
 - [x] Sprint 10: Make dashboard visually stunning to minimize churn in first 1-2 months
 - [x] All 249 tests passing across 21 test files
+
+## CRITICAL CONSTRAINT
+- [x] DO NOT modify existing prompt generation (generateCleanPromptAsync, generateSuggestivePromptAsync, generateFollowUpPromptAsync, selectRandomPrompt)
+- [x] DO NOT modify existing V2 training queue logic (trainingQueueV2.ts)
+- [x] DO NOT modify existing training engine router (trainingEngine.ts)
+- [x] Sprint 11 is ADDITIVE ONLY — enrich context, don't rewrite prompts
