@@ -1289,19 +1289,20 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { businesses } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
         const { decrypt } = await import("./encryption");
-        const { testWPConnection } = await import("./wordpressPublisher");
+        const { testSiteConnection } = await import("./contentPublisher");
         
         const db = await getDb();
         if (!db) throw new Error("Database not available");
         const biz = (await db.select().from(businesses).where(eq(businesses.id, input.businessId)).limit(1))[0];
         if (!biz) throw new Error("Business not found");
         if (!biz.wpAdminUrl || !biz.wpUsername || !biz.wpPasswordEncrypted) {
-          throw new Error("WordPress credentials not configured for this business");
+          throw new Error("Site credentials not configured for this business");
         }
-        return testWPConnection({
-          siteUrl: biz.wpAdminUrl,
+        return testSiteConnection({
+          siteUrl: biz.wpAdminUrl.replace(/\/wp-admin.*$/, ""),
+          adminUrl: biz.wpAdminUrl,
           username: biz.wpUsername,
-          appPassword: decrypt(biz.wpPasswordEncrypted),
+          password: decrypt(biz.wpPasswordEncrypted),
         });
       }),
     storeCredentials: protectedProcedure
@@ -1312,26 +1313,26 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         wpAppPassword: z.string().min(1),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { storeWPCredentials } = await import("./wordpressPublisher");
-        await storeWPCredentials(input.businessId, input.wpAdminUrl, input.wpUsername, input.wpAppPassword);
+        const { storeSiteCredentials } = await import("./contentPublisher");
+        await storeSiteCredentials(input.businessId, input.wpAdminUrl, input.wpUsername, input.wpAppPassword);
         return { success: true };
       }),
     publishCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number(), businessId: z.number(), dryRun: z.boolean().optional() }))
       .mutation(async ({ ctx, input }) => {
-        const { publishCampaignContent } = await import("./wordpressPublisher");
+        const { publishCampaignContent } = await import("./contentPublisher");
         return publishCampaignContent(input);
       }),
     publishLlmTxt: protectedProcedure
       .input(z.object({ campaignId: z.number(), businessId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { publishLlmTxt } = await import("./wordpressPublisher");
+        const { publishLlmTxt } = await import("./contentPublisher");
         return publishLlmTxt(input);
       }),
     getPublishedUrls: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { getPublishedUrls } = await import("./wordpressPublisher");
+        const { getPublishedUrls } = await import("./contentPublisher");
         return getPublishedUrls(input.campaignId);
       }),
   }),

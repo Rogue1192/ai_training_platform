@@ -226,7 +226,7 @@ export async function runPipelineStep(
             nextStep: "indexing",
           };
         } else {
-          const { publishCampaignContent, publishLlmTxt } = await import("./wordpressPublisher");
+          const { publishCampaignContent, publishLlmTxt } = await import("./contentPublisher");
           const pubResult = await publishCampaignContent({
             campaignId,
             businessId: campaign.businessId,
