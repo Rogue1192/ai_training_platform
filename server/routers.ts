@@ -1214,6 +1214,124 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       return seedDefaultPromptTemplates(ctx.user.id);
     }),
   }),
+
+  // ============= AI ANSWER FORGE — WordPress Publisher (Sprint 6) =============
+  wpPublisher: router({
+    testConnection: protectedProcedure
+      .input(z.object({ businessId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const { businesses } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const { decrypt } = await import("./encryption");
+        const { testWPConnection } = await import("./wordpressPublisher");
+        
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const biz = (await db.select().from(businesses).where(eq(businesses.id, input.businessId)).limit(1))[0];
+        if (!biz) throw new Error("Business not found");
+        if (!biz.wpAdminUrl || !biz.wpUsername || !biz.wpPasswordEncrypted) {
+          throw new Error("WordPress credentials not configured for this business");
+        }
+        return testWPConnection({
+          siteUrl: biz.wpAdminUrl,
+          username: biz.wpUsername,
+          appPassword: decrypt(biz.wpPasswordEncrypted),
+        });
+      }),
+    storeCredentials: protectedProcedure
+      .input(z.object({
+        businessId: z.number(),
+        wpAdminUrl: z.string().url(),
+        wpUsername: z.string().min(1),
+        wpAppPassword: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        const { storeWPCredentials } = await import("./wordpressPublisher");
+        await storeWPCredentials(input.businessId, input.wpAdminUrl, input.wpUsername, input.wpAppPassword);
+        return { success: true };
+      }),
+    publishCampaign: protectedProcedure
+      .input(z.object({ campaignId: z.number(), businessId: z.number(), dryRun: z.boolean().optional() }))
+      .mutation(async ({ input }) => {
+        const { publishCampaignContent } = await import("./wordpressPublisher");
+        return publishCampaignContent(input);
+      }),
+    publishLlmTxt: protectedProcedure
+      .input(z.object({ campaignId: z.number(), businessId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { publishLlmTxt } = await import("./wordpressPublisher");
+        return publishLlmTxt(input);
+      }),
+    getPublishedUrls: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { getPublishedUrls } = await import("./wordpressPublisher");
+        return getPublishedUrls(input.campaignId);
+      }),
+  }),
+
+  // ============= AI ANSWER FORGE — SinByte Indexing (Sprint 7) =============
+  indexing: router({
+    submitCampaign: protectedProcedure
+      .input(z.object({ campaignId: z.number(), businessName: z.string() }))
+      .mutation(async ({ input }) => {
+        const { submitCampaignForIndexing } = await import("./sinbyteIndexing");
+        return submitCampaignForIndexing(input);
+      }),
+    verifyCampaign: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { verifyCampaignIndexing } = await import("./sinbyteIndexing");
+        return verifyCampaignIndexing(input.campaignId);
+      }),
+    getHistory: protectedProcedure
+      .query(async () => {
+        const { getIndexingHistory } = await import("./sinbyteIndexing");
+        return getIndexingHistory();
+      }),
+    getTaskStatus: protectedProcedure
+      .input(z.object({ taskId: z.union([z.string(), z.number()]) }))
+      .query(async ({ input }) => {
+        const { getTaskStatus } = await import("./sinbyteIndexing");
+        return getTaskStatus(input.taskId);
+      }),
+  }),
+
+  // ============= AI ANSWER FORGE — Pipeline Orchestrator =============
+  pipeline: router({
+    getStatus: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { getPipelineStatus } = await import("./pipelineOrchestrator");
+        return getPipelineStatus(input.campaignId);
+      }),
+    getStepLabels: protectedProcedure
+      .query(async () => {
+        const { getPipelineStepLabels } = await import("./pipelineOrchestrator");
+        return getPipelineStepLabels();
+      }),
+    runStep: protectedProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        step: z.enum(["keyword_research", "credibility_research", "content_generation", "publishing", "indexing", "indexing_verification", "baseline_check", "training"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { runPipelineStep } = await import("./pipelineOrchestrator");
+        return runPipelineStep(input.campaignId, input.step, ctx.user.id);
+      }),
+    runFull: protectedProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        stopAfterStep: z.enum(["keyword_research", "credibility_research", "content_generation", "publishing", "indexing", "indexing_verification", "baseline_check", "training"]).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { runFullPipeline } = await import("./pipelineOrchestrator");
+        return runFullPipeline(input.campaignId, ctx.user.id, {
+          stopAfterStep: input.stopAfterStep,
+        });
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
