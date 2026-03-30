@@ -1,4 +1,13 @@
-import { ENV } from "./env";
+/**
+ * LLM helper — standalone wrapper around aiProviders.ts
+ * 
+ * This module provides an OpenAI-compatible invokeLLM() interface
+ * that delegates to the app's own aiProviders.ts (which calls
+ * OpenAI, Anthropic, and Google APIs directly with user-provided keys).
+ * 
+ * If you need LLM calls in server code, prefer importing callAI() 
+ * from "../aiProviders" directly — this file exists for compatibility.
+ */
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -19,7 +28,7 @@ export type FileContent = {
   type: "file_url";
   file_url: {
     url: string;
-    mime_type?: "audio/mpeg" | "audio/wav" | "application/pdf" | "audio/mp4" | "video/mp4" ;
+    mime_type?: "audio/mpeg" | "audio/wav" | "application/pdf" | "audio/mp4" | "video/mp4";
   };
 };
 
@@ -110,213 +119,90 @@ export type ResponseFormat =
   | { type: "json_object" }
   | { type: "json_schema"; json_schema: JsonSchema };
 
-const ensureArray = (
-  value: MessageContent | MessageContent[]
-): MessageContent[] => (Array.isArray(value) ? value : [value]);
-
-const normalizeContentPart = (
-  part: MessageContent
-): TextContent | ImageContent | FileContent => {
-  if (typeof part === "string") {
-    return { type: "text", text: part };
-  }
-
-  if (part.type === "text") {
-    return part;
-  }
-
-  if (part.type === "image_url") {
-    return part;
-  }
-
-  if (part.type === "file_url") {
-    return part;
-  }
-
-  throw new Error("Unsupported message content part");
-};
-
-const normalizeMessage = (message: Message) => {
-  const { role, name, tool_call_id } = message;
-
-  if (role === "tool" || role === "function") {
-    const content = ensureArray(message.content)
-      .map(part => (typeof part === "string" ? part : JSON.stringify(part)))
-      .join("\n");
-
-    return {
-      role,
-      name,
-      tool_call_id,
-      content,
-    };
-  }
-
-  const contentParts = ensureArray(message.content).map(normalizeContentPart);
-
-  // If there's only text content, collapse to a single string for compatibility
-  if (contentParts.length === 1 && contentParts[0].type === "text") {
-    return {
-      role,
-      name,
-      content: contentParts[0].text,
-    };
-  }
-
-  return {
-    role,
-    name,
-    content: contentParts,
-  };
-};
-
-const normalizeToolChoice = (
-  toolChoice: ToolChoice | undefined,
-  tools: Tool[] | undefined
-): "none" | "auto" | ToolChoiceExplicit | undefined => {
-  if (!toolChoice) return undefined;
-
-  if (toolChoice === "none" || toolChoice === "auto") {
-    return toolChoice;
-  }
-
-  if (toolChoice === "required") {
-    if (!tools || tools.length === 0) {
-      throw new Error(
-        "tool_choice 'required' was provided but no tools were configured"
-      );
-    }
-
-    if (tools.length > 1) {
-      throw new Error(
-        "tool_choice 'required' needs a single tool or specify the tool name explicitly"
-      );
-    }
-
-    return {
-      type: "function",
-      function: { name: tools[0].function.name },
-    };
-  }
-
-  if ("name" in toolChoice) {
-    return {
-      type: "function",
-      function: { name: toolChoice.name },
-    };
-  }
-
-  return toolChoice;
-};
-
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
-
-const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
-  }
-};
-
-const normalizeResponseFormat = ({
-  responseFormat,
-  response_format,
-  outputSchema,
-  output_schema,
-}: {
-  responseFormat?: ResponseFormat;
-  response_format?: ResponseFormat;
-  outputSchema?: OutputSchema;
-  output_schema?: OutputSchema;
-}):
-  | { type: "json_schema"; json_schema: JsonSchema }
-  | { type: "text" }
-  | { type: "json_object" }
-  | undefined => {
-  const explicitFormat = responseFormat || response_format;
-  if (explicitFormat) {
-    if (
-      explicitFormat.type === "json_schema" &&
-      !explicitFormat.json_schema?.schema
-    ) {
-      throw new Error(
-        "responseFormat json_schema requires a defined schema object"
-      );
-    }
-    return explicitFormat;
-  }
-
-  const schema = outputSchema || output_schema;
-  if (!schema) return undefined;
-
-  if (!schema.name || !schema.schema) {
-    throw new Error("outputSchema requires both name and schema");
-  }
-
-  return {
-    type: "json_schema",
-    json_schema: {
-      name: schema.name,
-      schema: schema.schema,
-      ...(typeof schema.strict === "boolean" ? { strict: schema.strict } : {}),
-    },
-  };
-};
-
+/**
+ * Invoke an LLM using the app's own API key infrastructure.
+ * 
+ * This is a standalone implementation that calls OpenAI directly
+ * using the OPENAI_API_KEY environment variable. No Manus proxy involved.
+ * 
+ * For training/conversation features, use callAI() from aiProviders.ts instead,
+ * which supports OpenAI, Anthropic, and Google with user-provided keys.
+ */
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "OPENAI_API_KEY is not configured. Set it as an environment variable."
+    );
+  }
 
-  const {
-    messages,
-    tools,
-    toolChoice,
-    tool_choice,
-    outputSchema,
-    output_schema,
-    responseFormat,
-    response_format,
-  } = params;
+  const { messages, tools, toolChoice, tool_choice } = params;
+
+  // Normalize messages to OpenAI format
+  const normalizedMessages = messages.map((msg) => {
+    const content = msg.content;
+    if (typeof content === "string") {
+      return { role: msg.role, content, ...(msg.name ? { name: msg.name } : {}), ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}) };
+    }
+    const parts = Array.isArray(content) ? content : [content];
+    if (parts.length === 1 && typeof parts[0] !== "string" && parts[0].type === "text") {
+      return { role: msg.role, content: parts[0].text, ...(msg.name ? { name: msg.name } : {}) };
+    }
+    return {
+      role: msg.role,
+      content: parts.map((p) => {
+        if (typeof p === "string") return { type: "text" as const, text: p };
+        return p;
+      }),
+      ...(msg.name ? { name: msg.name } : {}),
+    };
+  });
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
-    messages: messages.map(normalizeMessage),
+    model: "gpt-4o",
+    messages: normalizedMessages,
   };
 
   if (tools && tools.length > 0) {
     payload.tools = tools;
   }
 
-  const normalizedToolChoice = normalizeToolChoice(
-    toolChoice || tool_choice,
-    tools
-  );
-  if (normalizedToolChoice) {
-    payload.tool_choice = normalizedToolChoice;
+  const resolvedToolChoice = toolChoice || tool_choice;
+  if (resolvedToolChoice) {
+    if (resolvedToolChoice === "required" && tools && tools.length === 1) {
+      payload.tool_choice = { type: "function", function: { name: tools[0].function.name } };
+    } else if (typeof resolvedToolChoice === "object" && "name" in resolvedToolChoice) {
+      payload.tool_choice = { type: "function", function: { name: resolvedToolChoice.name } };
+    } else {
+      payload.tool_choice = resolvedToolChoice;
+    }
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
+  const maxTokens = params.maxTokens || params.max_tokens;
+  if (maxTokens) {
+    payload.max_tokens = maxTokens;
   }
 
-  const normalizedResponseFormat = normalizeResponseFormat({
-    responseFormat,
-    response_format,
-    outputSchema,
-    output_schema,
-  });
-
-  if (normalizedResponseFormat) {
-    payload.response_format = normalizedResponseFormat;
+  const responseFormat = params.responseFormat || params.response_format;
+  const outputSchema = params.outputSchema || params.output_schema;
+  if (responseFormat) {
+    payload.response_format = responseFormat;
+  } else if (outputSchema) {
+    payload.response_format = {
+      type: "json_schema",
+      json_schema: {
+        name: outputSchema.name,
+        schema: outputSchema.schema,
+        ...(typeof outputSchema.strict === "boolean" ? { strict: outputSchema.strict } : {}),
+      },
+    };
   }
 
-  const response = await fetch(resolveApiUrl(), {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(payload),
   });

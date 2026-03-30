@@ -124,9 +124,19 @@ export async function recommendMode(campaignId: number): Promise<{
   autoRecoveryNeeded: boolean;
 }> {
   const db = await getDb();
+  if (!db) {
+    return {
+      recommendedMode: "aggressive" as AggressivenessMode,
+      reason: "Database not available — defaulting to aggressive",
+      currentScore: null,
+      previousScore: null,
+      trend: "unknown" as const,
+      autoRecoveryNeeded: false,
+    };
+  }
   
   // Get campaign info
-  const [campaign] = await db!.select()
+  const [campaign] = await db.select()
     .from(campaigns)
     .where(eq(campaigns.id, campaignId))
     .limit(1);
@@ -148,7 +158,7 @@ export async function recommendMode(campaignId: number): Promise<{
   );
   
   // Get recent rank snapshots for this campaign
-  const recentSnapshots = await db!.select()
+  const recentSnapshots = await db.select()
     .from(rankSnapshots)
     .where(eq(rankSnapshots.campaignId, campaignId))
     .orderBy(desc(rankSnapshots.checkedAt))
@@ -349,8 +359,9 @@ export async function applyCampaignModeChange(
   reason: string
 ): Promise<{ success: boolean; config: ScheduleConfig; previousMode: string }> {
   const db = await getDb();
+  if (!db) throw new Error("Database not available");
   
-  const [campaign] = await db!.select()
+  const [campaign] = await db.select()
     .from(campaigns)
     .where(eq(campaigns.id, campaignId))
     .limit(1);
@@ -363,7 +374,7 @@ export async function applyCampaignModeChange(
   const config = getScheduleConfig(newMode);
   
   // Update campaign
-  await db!.update(campaigns)
+  await db.update(campaigns)
     .set({
       trainingAggressiveness: newMode,
       rankCheckFrequency: config.rankCheckFrequency,
@@ -387,15 +398,16 @@ export async function applyCampaignModeChange(
  */
 export async function getCampaignScheduleStatus(campaignId: number): Promise<CampaignScheduleStatus | null> {
   const db = await getDb();
+  if (!db) return null;
   
-  const [campaign] = await db!.select()
+  const [campaign] = await db.select()
     .from(campaigns)
     .where(eq(campaigns.id, campaignId))
     .limit(1);
   
   if (!campaign) return null;
   
-  const [business] = await db!.select()
+  const [business] = await db.select()
     .from(businesses)
     .where(eq(businesses.id, campaign.businessId))
     .limit(1);
@@ -439,8 +451,9 @@ export async function getCampaignScheduleStatus(campaignId: number): Promise<Cam
  */
 export async function getAllCampaignScheduleStatuses(): Promise<CampaignScheduleStatus[]> {
   const db = await getDb();
+  if (!db) return [];
   
-  const activeCampaigns = await db!.select({ id: campaigns.id })
+  const activeCampaigns = await db.select({ id: campaigns.id })
     .from(campaigns)
     .where(
       sql`${campaigns.status} IN ('training', 'monitoring')`
@@ -465,8 +478,9 @@ export async function getAllCampaignScheduleStatuses(): Promise<CampaignSchedule
  */
 export async function checkAutoRecovery(): Promise<AutoRecoveryEvent[]> {
   const db = await getDb();
+  if (!db) return [];
   
-  const activeCampaigns = await db!.select()
+  const activeCampaigns = await db.select()
     .from(campaigns)
     .where(
       sql`${campaigns.status} IN ('training', 'monitoring')`
@@ -525,8 +539,9 @@ export async function evaluateAndApplyModeChanges(): Promise<{
   }>;
 }> {
   const db = await getDb();
+  if (!db) return { evaluated: 0, changed: 0, recoveries: 0, changes: [] };
   
-  const activeCampaigns = await db!.select()
+  const activeCampaigns = await db.select()
     .from(campaigns)
     .where(
       sql`${campaigns.status} IN ('training', 'monitoring')`

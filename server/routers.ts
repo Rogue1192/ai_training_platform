@@ -75,8 +75,8 @@ export const appRouter = router({
   // Business management
   business: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      const { getBusinessesByUserId } = await import("./db");
-      return getBusinessesByUserId(ctx.user.id);
+      const { getAllBusinesses } = await import("./db");
+      return getAllBusinesses();
     }),
     create: protectedProcedure
       .input(
@@ -126,8 +126,8 @@ export const appRouter = router({
   // API key management
   apiKey: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      const { getApiKeysByUserId } = await import("./db");
-      const keys = await getApiKeysByUserId(ctx.user.id);
+      const { getAllApiKeys } = await import("./db");
+      const keys = await getAllApiKeys();
       // Don't send encrypted keys to frontend
       return keys.map((k) => ({ ...k, encryptedKey: "********" }));
     }),
@@ -282,9 +282,9 @@ export const appRouter = router({
   // Training session management
   training: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      console.log('[training.list] Called for user:', ctx.user.id);
-      const { getTrainingSessionsByUserId } = await import("./db");
-      const sessions = await getTrainingSessionsByUserId(ctx.user.id);
+      console.log('[training.list] Called');
+      const { getAllTrainingSessions } = await import("./db");
+      const sessions = await getAllTrainingSessions();
       console.log('[training.list] Found', sessions.length, 'sessions');
       return sessions;
     }),
@@ -408,9 +408,7 @@ export const appRouter = router({
         if (!session) {
           throw new Error("Training session not found");
         }
-        if (session.userId !== ctx.user.id) {
-          throw new Error("Access denied: You don't own this training session");
-        }
+        // All employees share access — no ownership check needed
         
         // Only allow editing paused or error sessions
         if (session.status !== "paused" && session.status !== "error") {
@@ -445,9 +443,7 @@ export const appRouter = router({
           throw new Error("Training session not found");
         }
         
-        if (originalSession.userId !== ctx.user.id) {
-          throw new Error("Access denied");
-        }
+        // All employees share access — no ownership check needed
         
         if (originalSession.status !== "completed" && originalSession.status !== "error") {
           throw new Error("Can only restart completed or error sessions");
@@ -490,7 +486,6 @@ export const appRouter = router({
           .from(trainingSessions)
           .where(
             and(
-              eq(trainingSessions.userId, ctx.user.id),
               eq(trainingSessions.status, "in_progress"),
               lt(trainingSessions.updatedAt, oneHourAgo)
             )
@@ -536,15 +531,12 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new Error("Database not initialized");
         
-        // Find all error sessions for this user
+        // Find all error sessions (team-wide)
         const errorSessions = await db
           .select()
           .from(trainingSessions)
           .where(
-            and(
-              eq(trainingSessions.userId, ctx.user.id),
-              eq(trainingSessions.status, "error")
-            )
+            eq(trainingSessions.status, "error")
           );
         
         if (errorSessions.length === 0) {
@@ -630,10 +622,7 @@ export const appRouter = router({
           .select({ count: count() })
           .from(trainingSessions)
           .where(
-            and(
-              eq(trainingSessions.userId, ctx.user.id),
-              eq(trainingSessions.status, "error")
-            )
+            eq(trainingSessions.status, "error")
           );
         
         return { count: result[0]?.count || 0 };
@@ -653,7 +642,6 @@ export const appRouter = router({
           .from(trainingSessions)
           .where(
             and(
-              eq(trainingSessions.userId, ctx.user.id),
               eq(trainingSessions.status, "in_progress"),
               lt(trainingSessions.updatedAt, oneHourAgo)
             )
@@ -666,16 +654,16 @@ export const appRouter = router({
   // Dashboard metrics
   dashboard: router({
     metrics: protectedProcedure.query(async ({ ctx }) => {
-      const { getTodayMetrics } = await import("./db");
-      return getTodayMetrics(ctx.user.id);
+      const { getAllTodayMetrics } = await import("./db");
+      return getAllTodayMetrics();
     }),
   }),
 
   // Scheduled jobs
   schedule: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      const { getScheduledJobsByUserId } = await import("./db");
-      return getScheduledJobsByUserId(ctx.user.id);
+      const { getAllScheduledJobs } = await import("./db");
+      return getAllScheduledJobs();
     }),
     create: protectedProcedure
       .input(
@@ -695,8 +683,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         const { calculateNextRun } = await import("./scheduler");
         
         const session = await getTrainingSessionById(input.trainingSessionId);
-        if (!session || session.userId !== ctx.user.id) {
-          throw new Error("Training session not found or access denied");
+        if (!session) {
+          throw new Error("Training session not found");
         }
         
         const nextRun = calculateNextRun(input.scheduleType, {
@@ -744,8 +732,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         const { eq } = await import("drizzle-orm");
         const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, id)).limit(1);
         const job = jobs[0];
-        if (!job || job.userId !== ctx.user.id) {
-          throw new Error("Scheduled job not found or access denied");
+        if (!job) {
+          throw new Error("Scheduled job not found");
         }
         
         // If schedule changed, recalculate next run
@@ -772,8 +760,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       const { scheduledJobs } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, input.id)).limit(1);
-      if (!jobs[0] || jobs[0].userId !== ctx.user.id) {
-        throw new Error("Scheduled job not found or access denied");
+      if (!jobs[0]) {
+        throw new Error("Scheduled job not found");
       }
       await deleteScheduledJob(input.id);
       return { success: true };
@@ -786,8 +774,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       const { scheduledJobs } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, input.id)).limit(1);
-      if (!jobs[0] || jobs[0].userId !== ctx.user.id) {
-        throw new Error("Scheduled job not found or access denied");
+      if (!jobs[0]) {
+        throw new Error("Scheduled job not found");
       }
       const { runJobNow } = await import("./scheduler");
       return runJobNow(input.id);
@@ -804,13 +792,13 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
           const { scheduledJobs } = await import("../drizzle/schema");
           const { eq } = await import("drizzle-orm");
           const jobs = await db.select().from(scheduledJobs).where(eq(scheduledJobs.id, input.jobId)).limit(1);
-          if (!jobs[0] || jobs[0].userId !== ctx.user.id) {
-            throw new Error("Scheduled job not found or access denied");
+          if (!jobs[0]) {
+            throw new Error("Scheduled job not found");
           }
           return getScheduledJobRunsByJobId(input.jobId);
         } else {
-          const { getScheduledJobRunsByUserId } = await import("./db");
-          return getScheduledJobRunsByUserId(ctx.user.id);
+          const { getAllScheduledJobRuns } = await import("./db");
+          return getAllScheduledJobRuns();
         }
       }),
   }),
@@ -881,21 +869,21 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
 
   // ============= AI ANSWER FORGE — Campaigns =============
   campaign: router({
-    list: protectedProcedure.query(async ({ ctx }) => {
-      const { getCampaignsWithBusinessInfo } = await import("./dbCampaigns");
-      return getCampaignsWithBusinessInfo(ctx.user.id);
+    list: protectedProcedure.query(async () => {
+      const { getAllCampaignsWithBusinessInfo } = await import("./dbCampaigns");
+      return getAllCampaignsWithBusinessInfo();
     }),
-    stats: protectedProcedure.query(async ({ ctx }) => {
-      const { getCampaignStats } = await import("./dbCampaigns");
-      return getCampaignStats(ctx.user.id);
+    stats: protectedProcedure.query(async () => {
+      const { getAllCampaignStats } = await import("./dbCampaigns");
+      return getAllCampaignStats();
     }),
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
         const { getCampaignById, getQueryLocationsByCampaignId } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.id);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         const queryLocations = await getQueryLocationsByCampaignId(input.id);
         return { ...campaign, queryLocations };
@@ -916,8 +904,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .mutation(async ({ ctx, input }) => {
         const { getCampaignById, updateCampaign } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.id);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         const { id, ...updates } = input;
         return updateCampaign(id, updates);
@@ -928,8 +916,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .query(async ({ ctx, input }) => {
         const { getCampaignById, getQueryLocationsByCampaignId } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.campaignId);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         return getQueryLocationsByCampaignId(input.campaignId);
       }),
@@ -949,8 +937,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .mutation(async ({ ctx, input }) => {
         const { getCampaignById, createCampaignQueryLocations } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.campaignId);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         return createCampaignQueryLocations(
           input.entries.map((e) => ({ ...e, campaignId: input.campaignId }))
@@ -962,8 +950,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .mutation(async ({ ctx, input }) => {
         const { getCampaignById } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.campaignId);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         const { runCampaignKeywordResearch } = await import("./keywordResearchPipeline");
         return runCampaignKeywordResearch(input.campaignId);
@@ -974,8 +962,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .mutation(async ({ ctx, input }) => {
         const { getCampaignById } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.campaignId);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         const { runCampaignBaselineCheck } = await import("./keywordResearchPipeline");
         return runCampaignBaselineCheck(input.campaignId);
@@ -986,8 +974,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .query(async ({ ctx, input }) => {
         const { getCampaignById, getRankSnapshotsByCampaign } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.campaignId);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         return getRankSnapshotsByCampaign(input.campaignId, input.limit);
       }),
@@ -997,8 +985,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .mutation(async ({ ctx, input }) => {
         const { getCampaignById } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.campaignId);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         // Get the business info
         const { getBusinessById } = await import("./db");
@@ -1021,8 +1009,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .query(async ({ ctx, input }) => {
         const { getCampaignById } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.campaignId);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         const { getCredibilityDataForCampaign } = await import("./credibilityResearchEngine");
         return getCredibilityDataForCampaign(input.campaignId);
@@ -1033,8 +1021,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .mutation(async ({ ctx, input }) => {
         const { getCampaignById } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.campaignId);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         // Get the business info
         const { getBusinessById } = await import("./db");
@@ -1065,8 +1053,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .query(async ({ ctx, input }) => {
         const { getCampaignById } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.campaignId);
-        if (!campaign || campaign.userId !== ctx.user.id) {
-          throw new Error("Campaign not found or access denied");
+        if (!campaign) {
+          throw new Error("Campaign not found");
         }
         const { getContentPagesForCampaign } = await import("./contentGenerationEngine");
         return getContentPagesForCampaign(input.campaignId);
@@ -1205,15 +1193,15 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     list: protectedProcedure
       .input(z.object({ templateType: z.enum(["clean", "suggestive", "follow_up", "category_based"]).optional() }).optional())
       .query(async ({ ctx, input }) => {
-        const { getPromptTemplates, seedDefaultPromptTemplates, hasPromptTemplates } = await import("./db");
+        const { getAllPromptTemplates, hasAnyPromptTemplates, seedDefaultPromptTemplates } = await import("./db");
         
-        // Seed defaults if user has no templates
-        const hasTemplates = await hasPromptTemplates(ctx.user.id);
+        // Seed defaults if no templates exist at all
+        const hasTemplates = await hasAnyPromptTemplates();
         if (!hasTemplates) {
           await seedDefaultPromptTemplates(ctx.user.id);
         }
         
-        return getPromptTemplates(ctx.user.id, input?.templateType as any);
+        return getAllPromptTemplates(input?.templateType as any);
       }),
 
     // Get a single template by ID
@@ -1223,10 +1211,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         const { getPromptTemplateById } = await import("./db");
         const template = await getPromptTemplateById(input.id);
         
-        // Verify ownership
-        if (template && template.userId !== ctx.user.id) {
-          throw new Error("Not authorized to view this template");
-        }
+        // All employees share access — no ownership check needed
         
         return template;
       }),
@@ -1260,10 +1245,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .mutation(async ({ ctx, input }) => {
         const { getPromptTemplateById, updatePromptTemplate } = await import("./db");
         
-        // Verify ownership
         const existing = await getPromptTemplateById(input.id);
-        if (!existing || existing.userId !== ctx.user.id) {
-          throw new Error("Not authorized to update this template");
+        if (!existing) {
+          throw new Error("Template not found");
         }
         
         const { id, ...updateData } = input;
@@ -1276,10 +1260,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       .mutation(async ({ ctx, input }) => {
         const { getPromptTemplateById, deletePromptTemplate } = await import("./db");
         
-        // Verify ownership
         const existing = await getPromptTemplateById(input.id);
-        if (!existing || existing.userId !== ctx.user.id) {
-          throw new Error("Not authorized to delete this template");
+        if (!existing) {
+          throw new Error("Template not found");
         }
         
         return deletePromptTemplate(input.id);
@@ -1302,9 +1285,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     testConnection: protectedProcedure
       .input(z.object({ businessId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyBusinessOwnership } = await import("./ownershipChecks");
-        await verifyBusinessOwnership(input.businessId, ctx.user.id);
-        
         const { getDb } = await import("./db");
         const { businesses } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
@@ -1332,8 +1312,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         wpAppPassword: z.string().min(1),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyBusinessOwnership } = await import("./ownershipChecks");
-        await verifyBusinessOwnership(input.businessId, ctx.user.id);
         const { storeWPCredentials } = await import("./wordpressPublisher");
         await storeWPCredentials(input.businessId, input.wpAdminUrl, input.wpUsername, input.wpAppPassword);
         return { success: true };
@@ -1341,24 +1319,18 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     publishCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number(), businessId: z.number(), dryRun: z.boolean().optional() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { publishCampaignContent } = await import("./wordpressPublisher");
         return publishCampaignContent(input);
       }),
     publishLlmTxt: protectedProcedure
       .input(z.object({ campaignId: z.number(), businessId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { publishLlmTxt } = await import("./wordpressPublisher");
         return publishLlmTxt(input);
       }),
     getPublishedUrls: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getPublishedUrls } = await import("./wordpressPublisher");
         return getPublishedUrls(input.campaignId);
       }),
@@ -1369,16 +1341,12 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     submitCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number(), businessName: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { submitCampaignForIndexing } = await import("./sinbyteIndexing");
         return submitCampaignForIndexing(input);
       }),
     verifyCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { verifyCampaignIndexing } = await import("./sinbyteIndexing");
         return verifyCampaignIndexing(input.campaignId);
       }),
@@ -1404,8 +1372,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     getStatus: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getPipelineStatus } = await import("./pipelineOrchestrator");
         return getPipelineStatus(input.campaignId);
       }),
@@ -1441,24 +1407,18 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     runCheck: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { runScheduledRankCheck } = await import("./rankTrackingEngine");
         return runScheduledRankCheck(input.campaignId);
       }),
     getReport: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { generateCampaignRankReport } = await import("./rankTrackingEngine");
         return generateCampaignRankReport(input.campaignId);
       }),
     getTrends: protectedProcedure
       .input(z.object({ campaignId: z.number(), days: z.number().optional() }))
       .query(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getVisibilityTrends } = await import("./rankTrackingEngine");
         return getVisibilityTrends(input.campaignId, { days: input.days });
       }),
@@ -1516,12 +1476,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         dashboardTitle: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyBusinessOwnership } = await import("./ownershipChecks");
-        await verifyBusinessOwnership(input.businessId, ctx.user.id);
-        if (input.campaignId) {
-          const { verifyCampaignOwnership } = await import("./ownershipChecks");
-          await verifyCampaignOwnership(input.campaignId, ctx.user.id);
-        }
         const { getDb } = await import("./db");
         const { clientDashboards } = await import("../drizzle/schema");
         const crypto = await import("crypto");
@@ -1541,7 +1495,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
 
         return result[0];
       }),
-    // Admin: list all dashboards (filtered by user's businesses)
+    // List all dashboards (all employees see everything)
     list: protectedProcedure.query(async ({ ctx }) => {
       const { getDb } = await import("./db");
       const { clientDashboards, businesses } = await import("../drizzle/schema");
@@ -1564,16 +1518,12 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
       })
         .from(clientDashboards)
         .innerJoin(businesses, eq(clientDashboards.businessId, businesses.id))
-        .where(eq(businesses.userId, ctx.user.id))
         .orderBy(desc(clientDashboards.createdAt));
     }),
     // Admin: toggle dashboard active status
     toggleActive: protectedProcedure
       .input(z.object({ id: z.number(), isActive: z.boolean() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyDashboardOwnership } = await import("./ownershipChecks");
-        await verifyDashboardOwnership(input.id, ctx.user.id);
-
         const { getDb } = await import("./db");
         const { clientDashboards } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
@@ -1595,8 +1545,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     getEnrichmentStatus: protectedProcedure
       .input(z.object({ businessId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyBusinessOwnership } = await import("./ownershipChecks");
-        await verifyBusinessOwnership(input.businessId, ctx.user.id);
         const { buildTrainingContext, summarizeTrainingContext } = await import("./trainingContextEnricher");
         const context = await buildTrainingContext(input.businessId);
         return summarizeTrainingContext(context);
@@ -1605,8 +1553,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     getFullContext: protectedProcedure
       .input(z.object({ businessId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyBusinessOwnership } = await import("./ownershipChecks");
-        await verifyBusinessOwnership(input.businessId, ctx.user.id);
         const { buildTrainingContext } = await import("./trainingContextEnricher");
         return buildTrainingContext(input.businessId);
       }),
@@ -1614,8 +1560,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     getEnrichedSystemMessage: protectedProcedure
       .input(z.object({ businessId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyBusinessOwnership } = await import("./ownershipChecks");
-        await verifyBusinessOwnership(input.businessId, ctx.user.id);
         const { buildTrainingContext, buildEnrichedSystemMessage } = await import("./trainingContextEnricher");
         const context = await buildTrainingContext(input.businessId);
         if (!context) return { message: null, hasContext: false };
@@ -1625,8 +1569,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     getSourceCitationBlock: protectedProcedure
       .input(z.object({ businessId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyBusinessOwnership } = await import("./ownershipChecks");
-        await verifyBusinessOwnership(input.businessId, ctx.user.id);
         const { buildTrainingContext, buildSourceCitationBlock } = await import("./trainingContextEnricher");
         const context = await buildTrainingContext(input.businessId);
         if (!context) return { block: null, hasContext: false };
@@ -1652,8 +1594,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     getCampaignStatus: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getCampaignScheduleStatus } = await import("./smartScheduler");
         return getCampaignScheduleStatus(input.campaignId);
       }),
@@ -1666,8 +1606,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     getRecommendation: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { recommendMode } = await import("./smartScheduler");
         return recommendMode(input.campaignId);
       }),
@@ -1679,8 +1617,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         reason: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { applyCampaignModeChange } = await import("./smartScheduler");
         return applyCampaignModeChange(
           input.campaignId,
@@ -1706,8 +1642,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     detectWins: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { detectWins } = await import("./winNotifications");
         return detectWins(input.campaignId);
       }),
@@ -1715,8 +1649,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     getReport: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { generateWinReport } = await import("./winNotifications");
         return generateWinReport(input.campaignId);
       }),
@@ -1731,8 +1663,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     formatForClient: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { detectWins, formatWinsForClient } = await import("./winNotifications");
         const wins = await detectWins(input.campaignId);
         return formatWinsForClient(wins);
@@ -1753,8 +1683,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     sendWinNotification: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { detectWins } = await import("./winNotifications");
         const { sendCampaignWinEmails } = await import("./emailService");
         const { generateCampaignRankReport } = await import("./rankTrackingEngine");
@@ -1785,8 +1713,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     sendVisibilityReport: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { generateCampaignRankReport } = await import("./rankTrackingEngine");
         const { sendCampaignVisibilityReport } = await import("./emailService");
         
@@ -1818,8 +1744,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     sendWelcome: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getDb } = await import("./db");
         const db = await getDb();
         const { campaigns, businesses } = await import("../drizzle/schema");
@@ -1856,8 +1780,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         nextStep: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignOwnership } = await import("./ownershipChecks");
-        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getDb } = await import("./db");
         const db = await getDb();
         const { campaigns, businesses, clientDashboards } = await import("../drizzle/schema");

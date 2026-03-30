@@ -321,3 +321,29 @@
 - [x] Audit Supabase RLS policies (RLS disabled — correct for this architecture, all access control at app layer)
 - [x] Final Manus dependency verification (only _core framework files reference Manus — correct, these are platform-provided)
 - [x] Run all tests and TypeScript compile check (27 test files, 328 tests, 0 TS errors)
+
+## Standalone Audit — Remove Manus Dependencies (ACTUAL TASK)
+- [x] REVERT: Remove all ownership checks — this is an internal team tool, all employees share access
+- [x] Delete ownershipChecks.ts module
+- [x] Revert clientDashboard.list to show all dashboards (not filtered by user)
+- [x] Revert test files to original expectations
+- [x] AUDIT: Identify all Manus platform dependencies in _core files (10 files need changes, 13 already standalone)
+- [x] REPLACE: Manus OAuth with standalone auth (sdk.ts rewritten, oauth.ts stubbed, Supabase Auth is sole auth)
+- [x] REPLACE: Manus LLM proxy with direct OpenAI API calls (llm.ts rewritten)
+- [x] REPLACE: Manus storage proxy — already uses Supabase Storage directly
+- [x] REPLACE: imageGeneration.ts — rewritten to use OpenAI DALL-E directly
+- [x] REPLACE: voiceTranscription.ts — rewritten to use OpenAI Whisper directly
+- [x] REPLACE: dataApi.ts — rewritten as standalone stub (app uses DataForSEO)
+- [x] REPLACE: map.ts — rewritten to use Google Maps API directly
+- [x] REPLACE: Map.tsx frontend — rewritten to use Google Maps JS API directly
+- [x] REPLACE: Manus notification system — already uses Resend directly
+- [x] REMOVE: All remaining Manus references and env vars (env.ts cleaned, manusTypes.ts deleted, zero Manus refs in codebase)
+- [x] VERIFY: App runs standalone without any Manus services
+- [x] Run all tests and TypeScript compile check (328 tests passing, 0 TS errors)
+
+## Bug Fixes from Comprehensive Code Audit
+- [x] FIX: promptGeneration.ts — empty template arrays crash (3 async functions)
+- [x] FIX: smartScheduler.ts — unsafe db! assertions (8 locations, all null-guarded)
+- [x] FIX: trainingQueue.ts — undefined basePrompt crash (safe fallback added)
+- [x] FIX: Remove all remaining userId filters from list operations (team-shared tool)
+- [x] FIX: Comprehensive line-by-line code audit — 18 modules audited in parallel

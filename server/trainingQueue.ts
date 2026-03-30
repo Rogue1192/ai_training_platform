@@ -164,7 +164,8 @@ async function executeTrainingIteration(job: TrainingIterationJob): Promise<void
   console.log(`[Training Queue] Extracted business name: "${businessName}" from topic: "${session.topic.substring(0, 50)}..."`);
   
   // Generate suggestive prompt that naturally introduces the business
-  const suggestivePrompt = generateSuggestivePrompt(basePrompt!, businessName, session.trainingContext || '');
+  const safeBasePrompt = basePrompt || `Who is the best ${session.topic?.split('.')[0] || 'service provider'} in the area?`;
+  const suggestivePrompt = generateSuggestivePrompt(safeBasePrompt, businessName, session.trainingContext || '');
 
   // Get API keys (decrypt just-in-time)
   const targetApiKeyRecord = await getApiKeyByUserAndProvider(userId, session.targetAiProvider as AIProvider);

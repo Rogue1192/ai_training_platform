@@ -90,12 +90,15 @@ export async function generateCleanPromptAsync(
   // If the cleaned prompt is too short or still contains business name, use a template
   if (cleanedPrompt.length < 20 || checkContainsBusinessName(cleanedPrompt, business.name)) {
     const templates = await getTemplates(userId, 'category_based');
-    const template = templates[Math.floor(Math.random() * templates.length)];
-    
-    cleanedPrompt = interpolateTemplate(template, {
-      businessType: business.businessType || 'service provider',
-      location: business.location || 'the area',
-    });
+    if (templates.length === 0) {
+      cleanedPrompt = `Who is the best ${business.businessType || 'service provider'} in ${business.location || 'the area'}?`;
+    } else {
+      const template = templates[Math.floor(Math.random() * templates.length)];
+      cleanedPrompt = interpolateTemplate(template, {
+        businessType: business.businessType || 'service provider',
+        location: business.location || 'the area',
+      });
+    }
   }
   
   return {
@@ -180,14 +183,18 @@ export async function generateSuggestivePromptAsync(
   
   // Get suggestive templates
   const templates = await getTemplates(userId, 'suggestive');
-  const template = templates[Math.floor(Math.random() * templates.length)];
-  
-  const suggestivePrompt = interpolateTemplate(template, {
-    cleanPrompt,
-    businessName: business.name,
-    businessType: business.businessType || 'service provider',
-    location: business.location || 'the area',
-  });
+  let suggestivePrompt: string;
+  if (templates.length === 0) {
+    suggestivePrompt = `${cleanPrompt} I've heard ${business.name} in ${business.location || 'the area'} is really good - have you heard of them?`;
+  } else {
+    const template = templates[Math.floor(Math.random() * templates.length)];
+    suggestivePrompt = interpolateTemplate(template, {
+      cleanPrompt,
+      businessName: business.name,
+      businessType: business.businessType || 'service provider',
+      location: business.location || 'the area',
+    });
+  }
   
   return {
     prompt: suggestivePrompt,
@@ -240,13 +247,17 @@ export async function generateFollowUpPromptAsync(
   userId?: number
 ): Promise<PromptGenerationResult> {
   const templates = await getTemplates(userId, 'follow_up');
-  const template = templates[Math.floor(Math.random() * templates.length)];
-  
-  const followUpPrompt = interpolateTemplate(template, {
-    businessName: business.name,
-    businessType: business.businessType || 'service provider',
-    location: business.location || 'the area',
-  });
+  let followUpPrompt: string;
+  if (templates.length === 0) {
+    followUpPrompt = `Have you heard of ${business.name}? What do you think about them?`;
+  } else {
+    const template = templates[Math.floor(Math.random() * templates.length)];
+    followUpPrompt = interpolateTemplate(template, {
+      businessName: business.name,
+      businessType: business.businessType || 'service provider',
+      location: business.location || 'the area',
+    });
+  }
   
   return {
     prompt: followUpPrompt,

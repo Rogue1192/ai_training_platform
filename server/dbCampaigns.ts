@@ -574,6 +574,68 @@ export async function getCampaignsWithBusinessInfo(userId: number): Promise<
   return result as any;
 }
 
+// ============= All Campaigns (no user filter — internal team tool) =============
+
+export async function getAllCampaignsWithBusinessInfo(): Promise<
+  (Campaign & { businessName: string; businessType: string | null; website: string | null })[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const result = await db
+    .select({
+      id: campaigns.id,
+      userId: campaigns.userId,
+      businessId: campaigns.businessId,
+      packageTierId: campaigns.packageTierId,
+      campaignName: campaigns.campaignName,
+      status: campaigns.status,
+      clientType: campaigns.clientType,
+      keywordResearchCompletedAt: campaigns.keywordResearchCompletedAt,
+      credibilityResearchCompletedAt: campaigns.credibilityResearchCompletedAt,
+      contentGenerationCompletedAt: campaigns.contentGenerationCompletedAt,
+      publishingCompletedAt: campaigns.publishingCompletedAt,
+      indexingSubmittedAt: campaigns.indexingSubmittedAt,
+      indexingVerifiedAt: campaigns.indexingVerifiedAt,
+      baselineCheckCompletedAt: campaigns.baselineCheckCompletedAt,
+      trainingStartedAt: campaigns.trainingStartedAt,
+      trainingAggressiveness: campaigns.trainingAggressiveness,
+      rankCheckFrequency: campaigns.rankCheckFrequency,
+      lastError: campaigns.lastError,
+      errorCount: campaigns.errorCount,
+      sourceWebhookId: campaigns.sourceWebhookId,
+      createdAt: campaigns.createdAt,
+      updatedAt: campaigns.updatedAt,
+      businessName: businesses.name,
+      businessType: businesses.businessType,
+      website: businesses.website,
+    })
+    .from(campaigns)
+    .innerJoin(businesses, eq(campaigns.businessId, businesses.id))
+    .orderBy(desc(campaigns.createdAt));
+
+  return result as any;
+}
+
+export async function getAllCampaignStats(): Promise<Record<string, number>> {
+  const db = await getDb();
+  if (!db) return {};
+
+  const result = await db
+    .select({
+      status: campaigns.status,
+      count: sql<number>`count(*)`,
+    })
+    .from(campaigns)
+    .groupBy(campaigns.status);
+
+  const stats: Record<string, number> = {};
+  for (const row of result) {
+    stats[row.status] = Number(row.count);
+  }
+  return stats;
+}
+
 // ============= Seed Default Package Tiers =============
 
 const DEFAULT_PACKAGE_TIERS = [

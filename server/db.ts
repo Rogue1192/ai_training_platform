@@ -155,6 +155,14 @@ export async function getBusinessesByUserId(userId: number): Promise<Business[]>
   return db.select().from(businesses).where(eq(businesses.userId, userId)).orderBy(desc(businesses.createdAt));
 }
 
+/** Team-wide: return ALL businesses (internal tool — all employees share access) */
+export async function getAllBusinesses(): Promise<Business[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(businesses).orderBy(desc(businesses.createdAt));
+}
+
 export async function getBusinessById(id: number): Promise<Business | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -193,6 +201,14 @@ export async function getApiKeysByUserId(userId: number): Promise<ApiKey[]> {
   if (!db) return [];
 
   return db.select().from(apiKeys).where(eq(apiKeys.userId, userId));
+}
+
+/** Team-wide: return ALL API keys (internal tool — all employees share access) */
+export async function getAllApiKeys(): Promise<ApiKey[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(apiKeys);
 }
 
 export async function getApiKeyByUserAndProvider(userId: number, provider: "openai" | "anthropic" | "google"): Promise<ApiKey | undefined> {
@@ -344,6 +360,14 @@ export async function getScheduledJobsByUserId(userId: number): Promise<Schedule
   return db.select().from(scheduledJobs).where(eq(scheduledJobs.userId, userId)).orderBy(desc(scheduledJobs.createdAt));
 }
 
+/** Team-wide: return ALL scheduled jobs (internal tool — all employees share access) */
+export async function getAllScheduledJobs(): Promise<ScheduledJob[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(scheduledJobs).orderBy(desc(scheduledJobs.createdAt));
+}
+
 export async function updateScheduledJob(id: number, updates: Partial<InsertScheduledJob>): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -380,6 +404,28 @@ export async function getScheduledJobRunsByJobId(jobId: number, limit = 50): Pro
     .where(eq(scheduledJobRuns.scheduledJobId, jobId))
     .orderBy(desc(scheduledJobRuns.startedAt))
     .limit(limit);
+}
+
+/** Team-wide: return ALL scheduled job runs (internal tool — all employees share access) */
+export async function getAllScheduledJobRuns(limit = 100): Promise<(ScheduledJobRun & { jobName?: string })[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const runs = await db.select({
+    id: scheduledJobRuns.id,
+    scheduledJobId: scheduledJobRuns.scheduledJobId,
+    trainingSessionId: scheduledJobRuns.trainingSessionId,
+    status: scheduledJobRuns.status,
+    startedAt: scheduledJobRuns.startedAt,
+    completedAt: scheduledJobRuns.completedAt,
+    errorMessage: scheduledJobRuns.errorMessage,
+    iterationsCompleted: scheduledJobRuns.iterationsCompleted,
+    jobName: scheduledJobs.jobName,
+  })
+    .from(scheduledJobRuns)
+    .leftJoin(scheduledJobs, eq(scheduledJobRuns.scheduledJobId, scheduledJobs.id))
+    .orderBy(desc(scheduledJobRuns.startedAt))
+    .limit(limit);
+  return runs as any;
 }
 
 export async function getScheduledJobRunsByUserId(userId: number, limit = 100): Promise<(ScheduledJobRun & { jobName?: string })[]> {
@@ -428,6 +474,55 @@ export async function getActiveRunBySessionId(trainingSessionId: number): Promis
 }
 
 // ============= Platform Metrics Operations =============
+
+/** Team-wide: return ALL training sessions (internal tool — all employees share access) */
+export async function getAllTrainingSessions(): Promise<TrainingSession[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(trainingSessions).orderBy(desc(trainingSessions.createdAt));
+}
+
+export async function getAllTodayMetrics(): Promise<{
+  activeTrainings: number;
+  completedGoals: number;
+  apiCallsToday: number;
+  avgResponseTime: number;
+}> {
+  const db = await getDb();
+  if (!db) {
+    return { activeTrainings: 0, completedGoals: 0, apiCallsToday: 0, avgResponseTime: 0 };
+  }
+
+  const activeResult = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(trainingSessions)
+    .where(eq(trainingSessions.status, "in_progress"));
+  const activeTrainings = Number(activeResult[0]?.count ?? 0);
+
+  const completedResult = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(trainingSessions)
+    .where(eq(trainingSessions.status, "completed"));
+  const completedGoals = Number(completedResult[0]?.count ?? 0);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayIso = today.toISOString();
+
+  const conversationsResult = await db
+    .select({
+      count: sql<number>`count(*)`,
+      avgTime: sql<number>`avg(${trainingConversations.responseTime})`,
+    })
+    .from(trainingConversations)
+    .where(gte(trainingConversations.createdAt, new Date(todayIso)));
+
+  const apiCallsToday = Number(conversationsResult[0]?.count ?? 0);
+  const avgResponseTime = Number(conversationsResult[0]?.avgTime ?? 0);
+
+  return { activeTrainings, completedGoals, apiCallsToday, avgResponseTime };
+}
 
 export async function getTodayMetrics(userId: number): Promise<{
   activeTrainings: number;
@@ -512,6 +607,34 @@ export async function getPromptTemplates(
     .from(promptTemplates)
     .where(and(...conditions))
     .orderBy(promptTemplates.sortOrder, promptTemplates.createdAt);
+}
+
+/** Team-wide: return ALL prompt templates (internal tool — all employees share access) */
+export async function getAllPromptTemplates(
+  templateType?: PromptTemplateType
+): Promise<PromptTemplate[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = templateType ? [eq(promptTemplates.templateType, templateType)] : [];
+
+  return db
+    .select()
+    .from(promptTemplates)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(promptTemplates.sortOrder, promptTemplates.createdAt);
+}
+
+/** Team-wide: check if ANY prompt templates exist */
+export async function hasAnyPromptTemplates(): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const result = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(promptTemplates);
+
+  return Number(result[0]?.count ?? 0) > 0;
 }
 
 /**

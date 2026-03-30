@@ -15,11 +15,9 @@ export const ENV = {
   // Encryption
   encryptionKey: process.env.ENCRYPTION_KEY ?? "",
 
-  // Legacy compatibility — these are no longer used but kept to prevent import errors
-  // in unused _core template files (imageGeneration.ts, dataApi.ts, map.ts, voiceTranscription.ts, sdk.ts, oauth.ts)
-  // The app uses Supabase Auth (supabaseAuth.ts) — NOT the legacy OAuth (sdk.ts/oauth.ts)
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
-  appId: process.env.VITE_APP_ID ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
+  // OpenAI (for LLM, image generation, voice transcription)
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+
+  // Google Maps
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
 };
