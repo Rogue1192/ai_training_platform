@@ -579,25 +579,13 @@ export async function getTodayMetrics(userId: number): Promise<{
 export type PromptTemplateType = 'clean' | 'suggestive' | 'follow_up' | 'category_based';
 
 /**
- * Get all prompt templates for a user, optionally filtered by type
+ * Get all prompt templates, optionally filtered by type.
+ * Team-wide — no userId filtering (internal tool, all employees share access).
  */
 export async function getPromptTemplates(
-  userId: number,
   templateType?: PromptTemplateType
 ): Promise<PromptTemplate[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  const conditions = [eq(promptTemplates.userId, userId)];
-  if (templateType) {
-    conditions.push(eq(promptTemplates.templateType, templateType));
-  }
-
-  return db
-    .select()
-    .from(promptTemplates)
-    .where(and(...conditions))
-    .orderBy(promptTemplates.sortOrder, promptTemplates.createdAt);
+  return getAllPromptTemplates(templateType);
 }
 
 /** Team-wide: return ALL prompt templates (internal tool — all employees share access) */
@@ -629,10 +617,10 @@ export async function hasAnyPromptTemplates(): Promise<boolean> {
 }
 
 /**
- * Get active prompt templates for a user by type
+ * Get active prompt templates by type.
+ * Team-wide — no userId filtering (internal tool, all employees share access).
  */
 export async function getActivePromptTemplates(
-  userId: number,
   templateType: PromptTemplateType
 ): Promise<PromptTemplate[]> {
   const db = await getDb();
@@ -643,7 +631,6 @@ export async function getActivePromptTemplates(
     .from(promptTemplates)
     .where(
       and(
-        eq(promptTemplates.userId, userId),
         eq(promptTemplates.templateType, templateType),
         eq(promptTemplates.isActive, true)
       )
@@ -740,25 +727,17 @@ export async function deleteAllPromptTemplates(_userId?: number): Promise<number
 }
 
 /**
- * Check if user has any prompt templates
+ * Check if any prompt templates exist (team-wide).
  */
-export async function hasPromptTemplates(userId: number): Promise<boolean> {
-  const db = await getDb();
-  if (!db) return false;
-
-  const result = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(promptTemplates)
-    .where(eq(promptTemplates.userId, userId));
-
-  return Number(result[0]?.count ?? 0) > 0;
+export async function hasPromptTemplates(): Promise<boolean> {
+  return hasAnyPromptTemplates();
 }
 
 /**
  * Default prompt templates to seed for new users
  * Based on Influenx AI Training Prompts structure
  */
-export const DEFAULT_PROMPT_TEMPLATES: Omit<InsertPromptTemplate, 'id' | 'userId' | 'createdAt' | 'updatedAt'>[] = [
+export const DEFAULT_PROMPT_TEMPLATES: Omit<InsertPromptTemplate, 'id' | 'createdAt' | 'updatedAt'>[] = [
   // ============================================================================
   // CLEAN PROMPTS (Initial prompts sent directly to Target AI)
   // These are user-configured variations that rotate through training sessions
@@ -924,9 +903,10 @@ export const DEFAULT_PROMPT_TEMPLATES: Omit<InsertPromptTemplate, 'id' | 'userId
 ];
 
 /**
- * Seed default prompt templates (team-wide — shared by all employees)
+ * Seed default prompt templates (team-wide — no userId, shared by all employees).
+ * Safe to call on every startup: no-ops if templates already exist.
  */
-export async function seedDefaultPromptTemplates(userId: number): Promise<PromptTemplate[]> {
+export async function seedDefaultPromptTemplates(): Promise<PromptTemplate[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -936,13 +916,10 @@ export async function seedDefaultPromptTemplates(userId: number): Promise<Prompt
     return getAllPromptTemplates();
   }
 
-  // Insert all default templates
+  // Insert all default templates — no userId
   const templates: PromptTemplate[] = [];
   for (const template of DEFAULT_PROMPT_TEMPLATES) {
-    const created = await createPromptTemplate({
-      ...template,
-      userId,
-    });
+    const created = await createPromptTemplate(template);
     templates.push(created);
   }
 

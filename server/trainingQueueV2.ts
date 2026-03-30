@@ -160,7 +160,7 @@ async function executeBaselineTest(sessionId: number, userId: number): Promise<v
 
     // Use suggestive promptsm prompt and generate CLEAN version
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
-    const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo, session.userId);
+    const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo);
     
     console.log(`[Training V2] Baseline clean prompt: "${cleanPrompt}"`);
     
@@ -269,7 +269,7 @@ async function executeTrainingIteration(
 
     // Build clean prompts for evaluation generate SUGGESTIVE version
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
-    const { prompt: suggestivePrompt } = await generateSuggestivePromptAsync(basePrompt, businessInfo, session.userId);
+    const { prompt: suggestivePrompt } = await generateSuggestivePromptAsync(basePrompt, businessInfo);
     
     console.log(`[Training V2] Training suggestive prompt: "${suggestivePrompt.substring(0, 100)}..."`);
     
@@ -311,7 +311,7 @@ async function executeTrainingIteration(
     
     // If not mentioned, send follow-up to reinforce
     if (!firstMention.mentioned) {
-      const { prompt: followUp } = await generateFollowUpPromptAsync(businessInfo, response.content, session.userId);
+      const { prompt: followUp } = await generateFollowUpPromptAsync(businessInfo, response.content);
       
       const followUpMessages: AIMessage[] = [
         ...messages,
@@ -440,7 +440,7 @@ async function executeEvaluationTest(sessionId: number, userId: number): Promise
 
     // Build clean promptsandom prompt and generate CLEAN version (same as baseline)
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
-    const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo, session.userId);
+    const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo);
     
     console.log(`[Training V2] Evaluation clean prompt: "${cleanPrompt}"`);
     

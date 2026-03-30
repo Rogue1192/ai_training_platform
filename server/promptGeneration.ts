@@ -41,22 +41,14 @@ function interpolateTemplate(
 }
 
 /**
- * Get templates from database or fall back to defaults
+ * Get templates from database or fall back to defaults.
+ * Team-wide — no userId filtering.
  */
 async function getTemplates(
-  userId: number | undefined,
   templateType: PromptTemplateType
 ): Promise<string[]> {
-  // If no userId, use defaults
-  if (!userId) {
-    return DEFAULT_PROMPT_TEMPLATES
-      .filter(t => t.templateType === templateType && t.isActive)
-      .map(t => t.templateContent);
-  }
-
   try {
-    const dbTemplates = await getActivePromptTemplates(userId, templateType);
-    
+    const dbTemplates = await getActivePromptTemplates(templateType);
     if (dbTemplates.length > 0) {
       return dbTemplates.map(t => t.templateContent);
     }
@@ -64,7 +56,7 @@ async function getTemplates(
     console.warn(`[PromptGeneration] Failed to fetch templates from DB, using defaults:`, error);
   }
 
-  // Fall back to defaults
+  // Fall back to in-memory defaults
   return DEFAULT_PROMPT_TEMPLATES
     .filter(t => t.templateType === templateType && t.isActive)
     .map(t => t.templateContent);
@@ -76,20 +68,18 @@ async function getTemplates(
  * 
  * @param basePrompt - The original prompt template (from session)
  * @param business - Business information (used for category/location context only)
- * @param userId - Optional user ID to fetch custom templates
  * @returns A clean prompt without any business name references
  */
 export async function generateCleanPromptAsync(
   basePrompt: string,
-  business: BusinessInfo,
-  userId?: number
+  business: BusinessInfo
 ): Promise<PromptGenerationResult> {
   // First try to clean the base prompt
   let cleanedPrompt = cleanBasePrompt(basePrompt, business);
   
   // If the cleaned prompt is too short or still contains business name, use a template
   if (cleanedPrompt.length < 20 || checkContainsBusinessName(cleanedPrompt, business.name)) {
-    const templates = await getTemplates(userId, 'category_based');
+    const templates = await getTemplates('category_based');
     if (templates.length === 0) {
       cleanedPrompt = `Who is the best ${business.businessType || 'service provider'} in ${business.location || 'the area'}?`;
     } else {
@@ -170,19 +160,17 @@ function cleanBasePrompt(basePrompt: string, business: BusinessInfo): string {
  * 
  * @param basePrompt - The original prompt template
  * @param business - Business information
- * @param userId - Optional user ID to fetch custom templates
  * @returns A suggestive prompt with positive business mentions
  */
 export async function generateSuggestivePromptAsync(
   basePrompt: string,
-  business: BusinessInfo,
-  userId?: number
+  business: BusinessInfo
 ): Promise<PromptGenerationResult> {
   // First, get a clean version of the prompt
-  const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, business, userId);
+  const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, business);
   
   // Get suggestive templates
-  const templates = await getTemplates(userId, 'suggestive');
+  const templates = await getTemplates('suggestive');
   let suggestivePrompt: string;
   if (templates.length === 0) {
     suggestivePrompt = `${cleanPrompt} I've heard ${business.name} in ${business.location || 'the area'} is really good - have you heard of them?`;
@@ -238,15 +226,13 @@ export function generateSuggestivePrompt(
  * 
  * @param business - Business information
  * @param previousResponse - The AI's previous response (unused but kept for API compatibility)
- * @param userId - Optional user ID to fetch custom templates
  * @returns A follow-up prompt that asks about the business specifically
  */
 export async function generateFollowUpPromptAsync(
   business: BusinessInfo,
-  previousResponse: string,
-  userId?: number
+  previousResponse: string
 ): Promise<PromptGenerationResult> {
-  const templates = await getTemplates(userId, 'follow_up');
+  const templates = await getTemplates('follow_up');
   let followUpPrompt: string;
   if (templates.length === 0) {
     followUpPrompt = `Have you heard of ${business.name}? What do you think about them?`;

@@ -1198,7 +1198,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         // Seed defaults if no templates exist at all
         const hasTemplates = await hasAnyPromptTemplates();
         if (!hasTemplates) {
-          await seedDefaultPromptTemplates(ctx.user.id);
+          await seedDefaultPromptTemplates();
         }
         
         return getAllPromptTemplates(input?.templateType as any);
@@ -1273,10 +1273,10 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       const { deleteAllPromptTemplates, seedDefaultPromptTemplates } = await import("./db");
       
       // Delete all existing templates
-      await deleteAllPromptTemplates(ctx.user.id);
+      await deleteAllPromptTemplates();
       
       // Seed defaults
-      return seedDefaultPromptTemplates(ctx.user.id);
+      return seedDefaultPromptTemplates();
     }),
   }),
 
