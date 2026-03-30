@@ -233,9 +233,10 @@ export type InsertScheduledJobRun = typeof scheduledJobRuns.$inferInsert;
 // Platform Metrics table
 export const platformMetrics = pgTable("platformMetrics", {
   id: serial("id").primaryKey(),
+  // Nullable — metrics belong to the team, not an individual employee.
+  // onDelete: set null so deleting an employee does NOT destroy historical metrics.
   userId: integer("userId")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+    .references(() => users.id, { onDelete: "set null" }),
   date: timestamp("date").notNull(),
   activeTrainings: integer("activeTrainings").default(0).notNull(),
   completedGoals: integer("completedGoals").default(0).notNull(),
@@ -289,9 +290,10 @@ export type InsertPackageTier = typeof packageTiers.$inferInsert;
 // Campaigns — the core automation unit, one per client onboarding
 export const campaigns = pgTable("campaigns", {
   id: serial("id").primaryKey(),
+  // Nullable — campaigns belong to the business/company, not an individual employee.
+  // onDelete: set null so deleting an employee does NOT destroy client campaigns.
   userId: integer("userId")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+    .references(() => users.id, { onDelete: "set null" }),
   businessId: integer("businessId")
     .notNull()
     .references(() => businesses.id, { onDelete: "cascade" }),

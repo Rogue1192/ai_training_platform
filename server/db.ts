@@ -599,7 +599,7 @@ export async function deletePromptTemplate(id: number): Promise<boolean> {
 /**
  * Delete ALL prompt templates (team-wide reset)
  */
-export async function deleteAllPromptTemplates(_userId?: number): Promise<number> {
+export async function deleteAllPromptTemplates(): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
