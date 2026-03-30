@@ -253,3 +253,22 @@
 - [x] DO NOT modify existing V2 training queue logic (trainingQueueV2.ts)
 - [x] DO NOT modify existing training engine router (trainingEngine.ts)
 - [x] Sprint 11 is ADDITIVE ONLY — enrich context, don't rewrite prompts
+
+## Industry Keyword Cache Management UI
+- [x] Build Industry Keyword Cache management page (/keyword-cache)
+- [x] View all cached industries with keyword counts, client counts, and lock progress
+- [x] View cached keywords per industry with AI search volume, search volume, intent, and frequency
+- [x] Lock/unlock golden templates per industry (with auto-select top keywords)
+- [x] Override/edit cached keywords (add, remove, reorder) with edit mode
+- [x] Toggle between All Keywords and Golden Template view
+- [x] Refresh/reset cache for an industry (clears golden template, resets client count)
+- [x] Delete cache entirely for an industry
+- [x] Configurable lock threshold (2, 3, 5, 10 clients)
+- [x] Sortable keyword table (by keyword name, AI volume, frequency)
+- [x] Summary stats cards (industries cached, golden templates, total keywords, total clients)
+- [x] Detail view stats (total keywords, golden keywords, total AI volume, clients/threshold, avg frequency)
+- [x] Search/filter industries
+- [x] Add Keyword Cache to sidebar navigation with Database icon
+- [x] tRPC procedures: lock, unlock, updateKeywords, updateLockThreshold, delete, refresh
+- [x] Write 18 tests for keyword cache management
+- [x] All 314 tests passing across 25 test files

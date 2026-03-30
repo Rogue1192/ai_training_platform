@@ -1115,6 +1115,88 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         const { getIndustryKeywordCache } = await import("./dbCampaigns");
         return getIndustryKeywordCache(input.industry);
       }),
+    lock: protectedProcedure
+      .input(z.object({ industry: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const { getIndustryKeywordCache, upsertIndustryKeywordCache } = await import("./dbCampaigns");
+        const cache = await getIndustryKeywordCache(input.industry);
+        if (!cache) throw new Error(`Cache not found for industry: ${input.industry}`);
+        // If no golden template keywords yet, use top keywords from the full list
+        const goldenKeywords = cache.goldenTemplateKeywords || 
+          (cache.keywords as any[]).sort((a: any, b: any) => (b.aiSearchVolume || 0) - (a.aiSearchVolume || 0)).slice(0, 20);
+        await upsertIndustryKeywordCache(input.industry, {
+          isLocked: true,
+          goldenTemplateKeywords: goldenKeywords,
+        });
+        return { success: true, message: `Golden template locked for ${input.industry}` };
+      }),
+    unlock: protectedProcedure
+      .input(z.object({ industry: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const { upsertIndustryKeywordCache } = await import("./dbCampaigns");
+        await upsertIndustryKeywordCache(input.industry, {
+          isLocked: false,
+        });
+        return { success: true, message: `Golden template unlocked for ${input.industry}` };
+      }),
+    updateKeywords: protectedProcedure
+      .input(z.object({
+        industry: z.string().min(1),
+        keywords: z.array(z.object({
+          keyword: z.string(),
+          aiSearchVolume: z.number().optional(),
+          searchVolume: z.number().optional(),
+          searchIntent: z.string().optional(),
+          category: z.string().optional(),
+          frequency: z.number().optional(),
+        })),
+        updateGolden: z.boolean().default(false),
+      }))
+      .mutation(async ({ input }) => {
+        const { upsertIndustryKeywordCache } = await import("./dbCampaigns");
+        const updateData: any = { keywords: input.keywords };
+        if (input.updateGolden) {
+          updateData.goldenTemplateKeywords = input.keywords;
+        }
+        await upsertIndustryKeywordCache(input.industry, updateData);
+        return { success: true, message: `Keywords updated for ${input.industry}` };
+      }),
+    updateLockThreshold: protectedProcedure
+      .input(z.object({
+        industry: z.string().min(1),
+        lockThreshold: z.number().min(1).max(20),
+      }))
+      .mutation(async ({ input }) => {
+        const { upsertIndustryKeywordCache } = await import("./dbCampaigns");
+        await upsertIndustryKeywordCache(input.industry, {
+          lockThreshold: input.lockThreshold,
+        });
+        return { success: true, message: `Lock threshold updated to ${input.lockThreshold}` };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ industry: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const { industryKeywordCache } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        await db.delete(industryKeywordCache).where(eq(industryKeywordCache.industry, input.industry.toLowerCase().trim()));
+        return { success: true, message: `Cache deleted for ${input.industry}` };
+      }),
+    refresh: protectedProcedure
+      .input(z.object({ industry: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const { upsertIndustryKeywordCache } = await import("./dbCampaigns");
+        // Reset the cache — unlock it and clear golden template so next research run rebuilds it
+        await upsertIndustryKeywordCache(input.industry, {
+          isLocked: false,
+          goldenTemplateKeywords: null as any,
+          clientCount: 0,
+          lastRefreshedAt: new Date(),
+        });
+        return { success: true, message: `Cache reset for ${input.industry}. Next keyword research run will rebuild it.` };
+      }),
   }),
 
   // Prompt template management

@@ -18,6 +18,7 @@ import ClientDashboard from "./pages/ClientDashboard";
 import ClientDashboards from "./pages/ClientDashboards";
 import CampaignDetail from "./pages/CampaignDetail";
 import PromptTemplates from "./pages/PromptTemplates";
+import KeywordCache from "./pages/KeywordCache";
 import {
   LayoutDashboard,
   Building2,
@@ -28,6 +29,7 @@ import {
   Package,
   Link2,
   FileText,
+  Database,
 } from "lucide-react";
 
 const navigationItems = [
@@ -39,6 +41,7 @@ const navigationItems = [
   { href: "/packages", label: "Packages", icon: Package },
   { href: "/client-dashboards", label: "Client Links", icon: Link2 },
   { href: "/prompts", label: "Prompts", icon: FileText },
+  { href: "/keyword-cache", label: "Keyword Cache", icon: Database },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -96,6 +99,11 @@ function Router() {
       <Route path="/prompts">
         <DashboardLayout navigationItems={navigationItems}>
           <PromptTemplates />
+        </DashboardLayout>
+      </Route>
+      <Route path="/keyword-cache">
+        <DashboardLayout navigationItems={navigationItems}>
+          <KeywordCache />
         </DashboardLayout>
       </Route>
       <Route path="/404" component={NotFound} />
