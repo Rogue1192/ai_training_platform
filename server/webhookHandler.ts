@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import crypto from "crypto";
+import { encrypt } from "./encryption";
 import {
   createWebhookLog,
   updateWebhookLog,
@@ -95,24 +96,11 @@ function verifyWebhookAuth(req: Request): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-// ============= WordPress Credential Encryption =============
-
-function encryptWpCredentials(value: string): string {
-  const key = process.env.ENCRYPTION_KEY;
-  if (!key) return value; // Fallback: store unencrypted if no key (dev only)
-  try {
-    const iv = crypto.randomBytes(16);
-    const keyBuffer = Buffer.from(key.padEnd(32, "0").slice(0, 32));
-    const cipher = crypto.createCipheriv("aes-256-cbc", keyBuffer, iv);
-    let encrypted = cipher.update(value, "utf8", "hex");
-    encrypted += cipher.final("hex");
-    return `enc:${iv.toString("hex")}:${encrypted}`;
-  } catch {
-    return value;
-  }
-}
-
 // ============= Webhook Router =============
+// NOTE: wpUsername is stored PLAINTEXT (not a secret).
+// wpPassword is encrypted using the canonical AES-256-GCM encrypt() from encryption.ts.
+// The old local encryptWpCredentials() (AES-256-CBC) has been removed — it was
+// incompatible with the app's decrypt() function and caused WordPress publish failures.
 
 export function createWebhookRouter(): Router {
   const router = Router();
@@ -235,8 +223,10 @@ export function createWebhookRouter(): Router {
         if (payload.locations.length > 0) updateFields.location = payload.locations.join(", ");
         // ISSUE-010 FIX: Store WP credentials (encrypted)
         if (payload.wpAdminUrl) updateFields.wpAdminUrl = payload.wpAdminUrl;
-        if (payload.wpUsername) updateFields.wpUsername = encryptWpCredentials(payload.wpUsername);
-        if (payload.wpPassword) updateFields.wpPasswordEncrypted = encryptWpCredentials(payload.wpPassword);
+        // wpUsername stored plaintext — it is not a secret
+        if (payload.wpUsername) updateFields.wpUsername = payload.wpUsername;
+        // wpPassword encrypted with canonical AES-256-GCM encrypt() from encryption.ts
+        if (payload.wpPassword) updateFields.wpPasswordEncrypted = encrypt(payload.wpPassword);
 
         await db.update(businesses).set(updateFields).where(eq(businesses.id, businessId));
       } else {
@@ -260,10 +250,10 @@ export function createWebhookRouter(): Router {
             certifications: payload.certifications?.join(", ") || null,
             awards: payload.awards?.join(", ") || null,
             bbbRating: payload.bbbRating || null,
-            // ISSUE-010 FIX: Store WP credentials (encrypted) on business creation
+            // wpUsername stored plaintext; wpPassword encrypted with canonical encrypt()
             wpAdminUrl: payload.wpAdminUrl || null,
-            wpUsername: payload.wpUsername ? encryptWpCredentials(payload.wpUsername) : null,
-            wpPasswordEncrypted: payload.wpPassword ? encryptWpCredentials(payload.wpPassword) : null,
+            wpUsername: payload.wpUsername || null,
+            wpPasswordEncrypted: payload.wpPassword ? encrypt(payload.wpPassword) : null,
             createdAt: new Date(),
             updatedAt: new Date(),
           })
