@@ -322,6 +322,10 @@ Your task is to evaluate whether the target AI's response positively mentions or
       promptUsed: suggestivePrompt,
       goalAchieved,
       responseTime,
+      conversationType: 'training',
+      promptType: 'suggestive',
+      businessMentionedUnprompted: goalAchieved,
+      mentionConfidence: goalAchieved ? 80 : null,
     });
 
     // Update session progress

@@ -347,3 +347,12 @@
 - [x] FIX: trainingQueue.ts — undefined basePrompt crash (safe fallback added)
 - [x] FIX: Remove all remaining userId filters from list operations (team-shared tool)
 - [x] FIX: Comprehensive line-by-line code audit — 18 modules audited in parallel
+
+## Database-to-Code Audit (Schema vs Code Consistency)
+- [x] Read full schema and build column/table reference map
+- [x] Cross-reference every db.ts query against schema columns (all clean)
+- [x] Cross-reference every dbCampaigns.ts query against schema columns (all clean)
+- [x] Cross-reference every router procedure against schema and db helpers
+- [x] Cross-reference all service modules against schema (12 modules audited in parallel)
+- [x] Fix all mismatches found (3 real bugs fixed: scheduleType enum, trainingQueue missing fields, credibilityEngine dead fields)
+- [x] Run tests and compile check (328 tests passing, 0 TS errors)

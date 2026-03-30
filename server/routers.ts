@@ -670,7 +670,7 @@ export const appRouter = router({
         z.object({
           trainingSessionId: z.number(),
           jobName: z.string().min(1),
-scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
+scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
            timeOfDay: z.string().regex(/^\d{2}:\d{2}$/), // "HH:mm"
            dayOfWeek: z.number().min(0).max(6).optional(), // 0=Sun, 6=Sat
           dayOfMonth: z.number().min(1).max(31).optional(),
@@ -711,7 +711,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
           jobName: z.string().min(1).optional(),
           trainingSessionId: z.number().optional(),
           isActive: z.boolean().optional(),
-          scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]).optional(),
+          scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]).optional(),
           timeOfDay: z.string().regex(/^\d{2}:\d{2}$/).optional(),
           dayOfWeek: z.number().min(0).max(6).optional().nullable(),
           dayOfMonth: z.number().min(1).max(31).optional().nullable(),

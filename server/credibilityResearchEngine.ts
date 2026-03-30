@@ -127,10 +127,10 @@ Location: ${location}
     if (existingData.yearsInBusiness) dataPoints.push(`Years in business: ${existingData.yearsInBusiness}`);
     if (existingData.certifications) dataPoints.push(`Known certifications: ${existingData.certifications}`);
     if (existingData.bbbRating) dataPoints.push(`BBB Rating: ${existingData.bbbRating}`);
-    if (existingData.googleRating) dataPoints.push(`Google Rating: ${existingData.googleRating}`);
-    if (existingData.reviewCount) dataPoints.push(`Review Count: ${existingData.reviewCount}`);
     if (existingData.awards) dataPoints.push(`Known awards: ${existingData.awards}`);
-    if (existingData.insuranceBonded) dataPoints.push(`Insurance/Bonded: ${existingData.insuranceBonded}`);
+    if (existingData.licenses) dataPoints.push(`Licenses: ${existingData.licenses}`);
+    if (existingData.warranties) dataPoints.push(`Warranties: ${existingData.warranties}`);
+    if (existingData.differentiators) dataPoints.push(`Differentiators: ${existingData.differentiators}`);
     
     if (dataPoints.length > 0) {
       prompt += `\nExisting data we already have (verify and expand on these):\n${dataPoints.join("\n")}\n`;
