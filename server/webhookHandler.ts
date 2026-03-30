@@ -89,7 +89,13 @@ function verifyWebhookAuth(req: Request): { valid: boolean; error?: string } {
     return { valid: false, error: "Missing webhook secret. Provide x-webhook-secret header or webhookSecret in body." };
   }
 
-  if (providedSecret !== configuredSecret) {
+  // BUG-007 fix: use timing-safe comparison to prevent timing attacks
+  const provided = Buffer.from(providedSecret);
+  const expected = Buffer.from(configuredSecret);
+  const isValid =
+    provided.length === expected.length &&
+    crypto.timingSafeEqual(provided, expected);
+  if (!isValid) {
     return { valid: false, error: "Invalid webhook secret." };
   }
 

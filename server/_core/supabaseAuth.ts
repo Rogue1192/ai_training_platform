@@ -3,50 +3,40 @@ import { supabase, isSupabaseConfigured } from "./supabase";
 import { upsertUser, getUserByOpenId } from "../db";
 
 /**
- * Extract Supabase user from Authorization header
+ * Extract Supabase user from Authorization header.
+ * BUG-010 fix: removed verbose console.log statements that leaked user emails and IDs
+ * to production logs on every single API request.
  */
 export async function getSupabaseUser(req: Request) {
   const authHeader = req.headers.authorization;
-  
-  console.log("[Supabase Auth] Checking authorization header:", authHeader ? "Present" : "Missing");
-  console.log("[Supabase Auth] Supabase configured:", isSupabaseConfigured);
-  
+
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    console.log("[Supabase Auth] No valid Bearer token in header");
     return null;
   }
 
   const token = authHeader.substring(7);
-  console.log("[Supabase Auth] Token length:", token.length);
 
   if (!isSupabaseConfigured) {
-    console.error("[Supabase Auth] Supabase is not configured - cannot verify token");
+    console.error("[Auth] Supabase is not configured — cannot verify token");
     return null;
   }
 
   try {
-    console.log("[Supabase Auth] Verifying token with Supabase...");
     const {
       data: { user },
       error,
     } = await supabase.auth.getUser(token);
 
-    console.log("[Supabase Auth] Supabase response - user:", user ? user.id : "null", "error:", error?.message || "none");
-
     if (error) {
-      console.error("[Supabase Auth] Token verification error:", error.message);
-      return null;
-    }
-    
-    if (!user) {
-      console.log("[Supabase Auth] No user returned from Supabase");
+      console.error("[Auth] Token verification error:", error.message);
       return null;
     }
 
-    console.log("[Supabase Auth] User verified:", user.id, user.email);
+    if (!user) {
+      return null;
+    }
 
     // Sync user to our database
-    console.log("[Supabase Auth] Upserting user to database...");
     try {
       await upsertUser({
         openId: user.id,
@@ -55,20 +45,15 @@ export async function getSupabaseUser(req: Request) {
         loginMethod: "supabase",
         lastSignedIn: new Date(),
       });
-      console.log("[Supabase Auth] User upserted successfully");
     } catch (upsertError) {
-      console.error("[Supabase Auth] Failed to upsert user:", upsertError);
-      // Continue anyway - we can still return the user info
+      // Non-fatal — continue with auth even if sync fails
+      console.error("[Auth] Failed to sync user to database:", upsertError);
     }
 
-    // Get full user record from our database
-    console.log("[Supabase Auth] Getting user from database...");
-    const dbUser = await getUserByOpenId(user.id);
-    console.log("[Supabase Auth] Database user:", dbUser ? `id=${dbUser.id}` : "null");
-    
-    return dbUser;
+    // Return full user record from our database
+    return await getUserByOpenId(user.id);
   } catch (error) {
-    console.error("[Supabase Auth] Error verifying token:", error);
+    console.error("[Auth] Error verifying token:", error);
     return null;
   }
 }
