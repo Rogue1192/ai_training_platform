@@ -1,7 +1,7 @@
 import { defineConfig } from "drizzle-kit";
 
-// Prioritize SUPABASE_DATABASE_URL (PostgreSQL) for Manus dev environment,
-// fall back to DATABASE_URL for other environments
+// Prioritize SUPABASE_DATABASE_URL (PostgreSQL),
+// fall back to DATABASE_URL for Railway or other environments
 const connectionString = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
 if (!connectionString) {
   throw new Error("SUPABASE_DATABASE_URL or DATABASE_URL is required to run drizzle commands");

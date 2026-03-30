@@ -34,8 +34,8 @@ let _db: ReturnType<typeof drizzle> | null = null;
 let _client: ReturnType<typeof postgres> | null = null;
 
 export async function getDb() {
-  // Prioritize SUPABASE_DATABASE_URL for Manus dev environment,
-  // fall back to DATABASE_URL for Railway/production
+  // Prioritize SUPABASE_DATABASE_URL (PostgreSQL),
+  // fall back to DATABASE_URL for Railway or other environments
   const databaseUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
   
   if (!_db && databaseUrl) {

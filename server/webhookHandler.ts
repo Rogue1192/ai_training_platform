@@ -10,6 +10,11 @@ import {
   createCampaignQueryLocations,
   createClientDashboard,
   seedDefaultPackageTiers,
+  getCampaignById,
+  updateCampaign,
+  getContentPagesByCampaignId,
+  updateContentPage,
+  getCampaignsByBusinessId,
 } from "./dbCampaigns";
 import { getDb } from "./db";
 import { businesses, users } from "../drizzle/schema";
@@ -54,9 +59,58 @@ const onboardingPayloadSchema = z.object({
   bbbRating: z.string().optional(),
   googleReviewCount: z.number().optional(),
   googleRating: z.number().optional(),
+
+  // Optional: webhook secret for authentication
+  webhookSecret: z.string().optional(),
 });
 
 export type OnboardingPayload = z.infer<typeof onboardingPayloadSchema>;
+
+// ============= Webhook Authentication =============
+
+/**
+ * Verify webhook secret if configured.
+ * Checks x-webhook-secret header against WEBHOOK_SECRET env var.
+ * If WEBHOOK_SECRET is not set, authentication is skipped (open mode).
+ */
+function verifyWebhookAuth(req: Request): { valid: boolean; error?: string } {
+  const configuredSecret = process.env.WEBHOOK_SECRET;
+  if (!configuredSecret) {
+    // No secret configured — open mode (acceptable for development)
+    return { valid: true };
+  }
+
+  const headerSecret = req.headers["x-webhook-secret"] as string;
+  const bodySecret = req.body?.webhookSecret;
+  const providedSecret = headerSecret || bodySecret;
+
+  if (!providedSecret) {
+    return { valid: false, error: "Missing webhook secret. Provide x-webhook-secret header or webhookSecret in body." };
+  }
+
+  if (providedSecret !== configuredSecret) {
+    return { valid: false, error: "Invalid webhook secret." };
+  }
+
+  return { valid: true };
+}
+
+// ============= WordPress Credential Encryption =============
+
+function encryptWpCredentials(value: string): string {
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key) return value; // Fallback: store unencrypted if no key (dev only)
+  try {
+    const iv = crypto.randomBytes(16);
+    const keyBuffer = Buffer.from(key.padEnd(32, "0").slice(0, 32));
+    const cipher = crypto.createCipheriv("aes-256-cbc", keyBuffer, iv);
+    let encrypted = cipher.update(value, "utf8", "hex");
+    encrypted += cipher.final("hex");
+    return `enc:${iv.toString("hex")}:${encrypted}`;
+  } catch {
+    return value;
+  }
+}
 
 // ============= Webhook Router =============
 
@@ -88,6 +142,17 @@ export function createWebhookRouter(): Router {
     }
 
     try {
+      // ISSUE-008 FIX: Verify webhook authentication
+      const authResult = verifyWebhookAuth(req);
+      if (!authResult.valid) {
+        await updateWebhookLog(webhookLog.id, {
+          status: "failed",
+          errorMessage: `Auth failed: ${authResult.error}`,
+        });
+        res.status(401).json({ error: authResult.error });
+        return;
+      }
+
       // Update status to processing
       await updateWebhookLog(webhookLog.id, { status: "processing" });
 
@@ -141,7 +206,7 @@ export function createWebhookRouter(): Router {
 
       const ownerId = ownerUsers[0]!.id;
 
-      // Check if business already exists (by name + website)
+      // Check if business already exists (by website URL)
       const existingBusinesses = await db
         .select()
         .from(businesses)
@@ -152,16 +217,28 @@ export function createWebhookRouter(): Router {
 
       if (existingBusinesses.length > 0) {
         businessId = existingBusinesses[0]!.id;
-        // Update business with any new info from the webhook
-        await db
-          .update(businesses)
-          .set({
-            businessType: payload.industry,
-            contactEmail: payload.contactEmail,
-            ...(payload.contactPhone ? { phone: payload.contactPhone } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(businesses.id, businessId));
+        // ISSUE-011 FIX: Update ALL fields from the webhook, not just a few
+        const updateFields: Record<string, any> = {
+          businessType: payload.industry,
+          contactEmail: payload.contactEmail,
+          updatedAt: new Date(),
+        };
+        if (payload.contactName) updateFields.contactName = payload.contactName;
+        if (payload.contactPhone) updateFields.phone = payload.contactPhone;
+        if (payload.competitors) updateFields.competitors = payload.competitors;
+        if (payload.yearsFounded) updateFields.yearsInBusiness = payload.yearsFounded;
+        if (payload.certifications) updateFields.certifications = payload.certifications.join(", ");
+        if (payload.awards) updateFields.awards = payload.awards.join(", ");
+        if (payload.bbbRating) updateFields.bbbRating = payload.bbbRating;
+        if (payload.clientType) updateFields.clientType = payload.clientType;
+        // ISSUE-014 FIX: Store ALL locations as comma-separated string
+        if (payload.locations.length > 0) updateFields.location = payload.locations.join(", ");
+        // ISSUE-010 FIX: Store WP credentials (encrypted)
+        if (payload.wpAdminUrl) updateFields.wpAdminUrl = payload.wpAdminUrl;
+        if (payload.wpUsername) updateFields.wpUsername = encryptWpCredentials(payload.wpUsername);
+        if (payload.wpPassword) updateFields.wpPasswordEncrypted = encryptWpCredentials(payload.wpPassword);
+
+        await db.update(businesses).set(updateFields).where(eq(businesses.id, businessId));
       } else {
         // Create new business record
         const newBusiness = await db
@@ -174,7 +251,8 @@ export function createWebhookRouter(): Router {
             contactEmail: payload.contactEmail,
             contactName: payload.contactName || null,
             phone: payload.contactPhone || null,
-            location: payload.locations[0] || null,
+            // ISSUE-014 FIX: Store ALL locations as comma-separated string
+            location: payload.locations.join(", "),
             description: null,
             clientType: payload.clientType,
             competitors: payload.competitors || null,
@@ -182,11 +260,52 @@ export function createWebhookRouter(): Router {
             certifications: payload.certifications?.join(", ") || null,
             awards: payload.awards?.join(", ") || null,
             bbbRating: payload.bbbRating || null,
+            // ISSUE-010 FIX: Store WP credentials (encrypted) on business creation
+            wpAdminUrl: payload.wpAdminUrl || null,
+            wpUsername: payload.wpUsername ? encryptWpCredentials(payload.wpUsername) : null,
+            wpPasswordEncrypted: payload.wpPassword ? encryptWpCredentials(payload.wpPassword) : null,
             createdAt: new Date(),
             updatedAt: new Date(),
           })
           .returning();
         businessId = newBusiness[0]!.id;
+      }
+
+      // ISSUE-012 FIX: Check for existing active campaign before creating a new one
+      const existingCampaigns = await getCampaignsByBusinessId(businessId);
+      const activeCampaign = existingCampaigns.find(
+        (c) => c.status !== "monitoring" && c.status !== "error" && c.status !== "paused"
+      );
+
+      if (activeCampaign) {
+        // Return the existing campaign instead of creating a duplicate
+        await updateWebhookLog(webhookLog.id, {
+          status: "completed",
+          businessId,
+          campaignId: activeCampaign.id,
+          processedAt: new Date(),
+        });
+
+        // Get existing dashboard token
+        const { getClientDashboardsByCampaignId } = await import("./dbCampaigns");
+        const dashboards = await getClientDashboardsByCampaignId(activeCampaign.id);
+        const existingToken = dashboards.find((d) => d.isActive)?.accessToken || "";
+
+        console.log(
+          `[Webhook] Existing active campaign found: ${activeCampaign.campaignName} (ID: ${activeCampaign.id}) for business ${payload.businessName}`
+        );
+
+        res.status(200).json({
+          success: true,
+          campaignId: activeCampaign.id,
+          businessId,
+          dashboardToken: existingToken,
+          // ISSUE-006 FIX: Use correct route path /report/ instead of /dashboard/
+          dashboardUrl: `${req.protocol}://${req.get("host")}/report/${existingToken}`,
+          message: `Active campaign already exists: "${activeCampaign.campaignName}". No duplicate created.`,
+          existing: true,
+        });
+        return;
       }
 
       // Create the campaign
@@ -249,20 +368,29 @@ export function createWebhookRouter(): Router {
       );
 
       // Return success with campaign details
+      // ISSUE-006 FIX: Use correct route path /report/ instead of /dashboard/
       res.status(201).json({
         success: true,
         campaignId: campaign.id,
         businessId,
         dashboardToken: accessToken,
-        dashboardUrl: `${req.protocol}://${req.get("host")}/dashboard/${accessToken}`,
+        dashboardUrl: `${req.protocol}://${req.get("host")}/report/${accessToken}`,
         message: `Campaign "${campaign.campaignName}" created successfully. Pipeline will begin automatically.`,
       });
 
-      // TODO: In Sprint 3+, kick off the automated pipeline here:
-      // 1. Trigger keyword research (if no queries provided)
-      // 2. Trigger credibility research
-      // 3. Trigger content generation
-      // etc.
+      // ISSUE-009 FIX: Auto-kick off the pipeline after campaign creation
+      // Run asynchronously so the webhook response isn't delayed
+      setImmediate(async () => {
+        try {
+          const { runFullPipeline } = await import("./pipelineOrchestrator");
+          console.log(`[Webhook] Auto-starting pipeline for campaign ${campaign.id}...`);
+          const result = await runFullPipeline(campaign.id, ownerId);
+          console.log(`[Webhook] Pipeline auto-run completed for campaign ${campaign.id}:`, result.reason);
+        } catch (pipelineErr: any) {
+          console.error(`[Webhook] Pipeline auto-run failed for campaign ${campaign.id}:`, pipelineErr.message);
+          // Don't throw — the campaign is created, pipeline can be retried from the admin UI
+        }
+      });
 
     } catch (err: any) {
       console.error("[Webhook] Error processing onboarding webhook:", err);
@@ -277,6 +405,7 @@ export function createWebhookRouter(): Router {
   });
 
   // SiteForge Ultra callback webhook (for Scenario C — when website build is complete)
+  // ISSUE-007 FIX: Implement the SiteForge callback instead of leaving it as a stub
   router.post("/api/webhooks/siteforge-callback", async (req: Request, res: Response) => {
     const ipAddress = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "";
 
@@ -295,6 +424,17 @@ export function createWebhookRouter(): Router {
     }
 
     try {
+      // Verify webhook auth
+      const authResult = verifyWebhookAuth(req);
+      if (!authResult.valid) {
+        await updateWebhookLog(webhookLog.id, {
+          status: "failed",
+          errorMessage: `Auth failed: ${authResult.error}`,
+        });
+        res.status(401).json({ error: authResult.error });
+        return;
+      }
+
       await updateWebhookLog(webhookLog.id, { status: "processing" });
 
       const { campaignId, publishedUrls, llmTxtUrl, schemaMarkup } = req.body;
@@ -308,11 +448,39 @@ export function createWebhookRouter(): Router {
         return;
       }
 
-      // TODO: In Sprint 6+, process the SiteForge callback:
-      // 1. Update content pages with published URLs
-      // 2. Update llm.txt record
-      // 3. Update schema markup record
-      // 4. Advance campaign to indexing phase
+      // Verify the campaign exists
+      const campaign = await getCampaignById(campaignId);
+      if (!campaign) {
+        await updateWebhookLog(webhookLog.id, {
+          status: "failed",
+          errorMessage: `Campaign ${campaignId} not found`,
+        });
+        res.status(404).json({ error: `Campaign ${campaignId} not found` });
+        return;
+      }
+
+      // Update content pages with published URLs
+      if (publishedUrls && Array.isArray(publishedUrls)) {
+        const contentPages = await getContentPagesByCampaignId(campaignId);
+        for (const urlInfo of publishedUrls) {
+          const { slug, url } = urlInfo;
+          const matchingPage = contentPages.find(
+            (p) => p.pageSlug === slug || p.pageType === slug
+          );
+          if (matchingPage) {
+            await updateContentPage(matchingPage.id, {
+              publishedUrl: url,
+              status: "published",
+            });
+          }
+        }
+      }
+
+      // Advance campaign to publishing_completed → indexing phase
+      await updateCampaign(campaignId, {
+        status: "indexing",
+        publishingCompletedAt: new Date(),
+      } as any);
 
       await updateWebhookLog(webhookLog.id, {
         status: "completed",
@@ -320,10 +488,28 @@ export function createWebhookRouter(): Router {
         processedAt: new Date(),
       });
 
+      console.log(`[Webhook] SiteForge callback processed for campaign ${campaignId}. Advancing to indexing phase.`);
+
       res.status(200).json({
         success: true,
-        message: "SiteForge callback received. Campaign will advance to indexing phase.",
+        message: "SiteForge callback processed. Campaign advancing to indexing phase.",
       });
+
+      // Auto-continue the pipeline from the indexing step
+      setImmediate(async () => {
+        try {
+          const { runPipelineStep } = await import("./pipelineOrchestrator");
+          console.log(`[Webhook] Auto-starting indexing for campaign ${campaignId}...`);
+          // Use ownerId from the campaign
+          const camp = await getCampaignById(campaignId);
+          if (camp) {
+            await runPipelineStep(campaignId, "indexing", camp.userId);
+          }
+        } catch (err: any) {
+          console.error(`[Webhook] Auto-indexing failed for campaign ${campaignId}:`, err.message);
+        }
+      });
+
     } catch (err: any) {
       console.error("[Webhook] Error processing SiteForge callback:", err);
       if (webhookLog) {

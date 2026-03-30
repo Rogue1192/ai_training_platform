@@ -19,7 +19,7 @@
 
 import { getDb } from "./db";
 import { campaigns, businesses } from "../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 // ============= Types =============
 
@@ -295,8 +295,54 @@ export async function runPipelineStep(
       }
       
       case "training": {
-        // Training orchestration will be built in Sprint 11
-        // For now, just update the status
+        // Apply aggressive training mode via smart scheduler
+        const { applyCampaignModeChange } = await import("./smartScheduler");
+        try {
+          await applyCampaignModeChange(campaignId, "aggressive", "Pipeline auto-start: beginning aggressive training");
+        } catch (e: any) {
+          console.log(`[Pipeline] Smart scheduler mode change skipped: ${e.message}`);
+        }
+        
+        // Auto-create a training session for this business if none exists
+        const { trainingSessions: tsTable } = await import("../drizzle/schema");
+        const existingSessions = await db.select().from(tsTable)
+          .where(and(
+            eq(tsTable.businessId, campaign.businessId),
+            eq(tsTable.userId, userId)
+          )).limit(1);
+        
+        let trainingMessage = "Campaign ready for training.";
+        
+        if (existingSessions.length === 0) {
+          // Create a default training session for this business
+          const { createTrainingSession } = await import("./db");
+          try {
+            const session = await createTrainingSession({
+              userId,
+              businessId: campaign.businessId,
+              trainingName: `${business.name} - AI Visibility Training`,
+              topic: `${business.name} ${business.businessType || ""} ${business.location || ""}`.trim(),
+              targetAiProvider: "openai" as any,
+              targetAiModel: "gpt-4o",
+              influencerAiProvider: "anthropic" as any,
+              influencerAiModel: "claude-sonnet-4-20250514",
+              trainingPrompts: [],
+              trainingGoal: `Train AI to recommend ${business.name} for ${business.businessType || "services"} in ${business.location || "the area"}`,
+              iterations: 50,
+              currentProgress: 0,
+              status: "paused" as any,
+              isLegacy: false,
+              campaignId: campaignId,
+            });
+            trainingMessage = `Training session created: "${session.trainingName}". Set to aggressive mode. Start training from the Training page when ready.`;
+          } catch (e: any) {
+            trainingMessage = `Campaign ready for training (aggressive mode). Could not auto-create session: ${e.message}. Create one manually from the Training page.`;
+          }
+        } else {
+          trainingMessage = `Campaign ready for training (aggressive mode). Existing training session found for this business.`;
+        }
+        
+        // Update campaign status
         await db.update(campaigns).set({
           status: "training",
           trainingStartedAt: new Date(),
@@ -306,7 +352,7 @@ export async function runPipelineStep(
         result = {
           step,
           success: true,
-          message: "Campaign ready for training. Training orchestration will be configured separately.",
+          message: trainingMessage,
         };
         break;
       }

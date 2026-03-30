@@ -14,7 +14,7 @@ const ITERATIONS = 100000; // PBKDF2 iterations for key derivation
  * Falls back to JWT_SECRET only for backward-compatible decryption attempts.
  * 
  * IMPORTANT: ENCRYPTION_KEY must be the SAME value in all environments
- * (Manus dev, Manus published, Railway) to ensure encrypted data is portable.
+ * (development, staging, production/Railway) to ensure encrypted data is portable.
  */
 function getEncryptionSecret(): string {
   const encryptionKey = process.env.ENCRYPTION_KEY;

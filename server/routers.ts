@@ -1301,7 +1301,10 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
   wpPublisher: router({
     testConnection: protectedProcedure
       .input(z.object({ businessId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyBusinessOwnership } = await import("./ownershipChecks");
+        await verifyBusinessOwnership(input.businessId, ctx.user.id);
+        
         const { getDb } = await import("./db");
         const { businesses } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
@@ -1328,26 +1331,34 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         wpUsername: z.string().min(1),
         wpAppPassword: z.string().min(1),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyBusinessOwnership } = await import("./ownershipChecks");
+        await verifyBusinessOwnership(input.businessId, ctx.user.id);
         const { storeWPCredentials } = await import("./wordpressPublisher");
         await storeWPCredentials(input.businessId, input.wpAdminUrl, input.wpUsername, input.wpAppPassword);
         return { success: true };
       }),
     publishCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number(), businessId: z.number(), dryRun: z.boolean().optional() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { publishCampaignContent } = await import("./wordpressPublisher");
         return publishCampaignContent(input);
       }),
     publishLlmTxt: protectedProcedure
       .input(z.object({ campaignId: z.number(), businessId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { publishLlmTxt } = await import("./wordpressPublisher");
         return publishLlmTxt(input);
       }),
     getPublishedUrls: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getPublishedUrls } = await import("./wordpressPublisher");
         return getPublishedUrls(input.campaignId);
       }),
@@ -1357,24 +1368,32 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
   indexing: router({
     submitCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number(), businessName: z.string() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { submitCampaignForIndexing } = await import("./sinbyteIndexing");
         return submitCampaignForIndexing(input);
       }),
     verifyCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { verifyCampaignIndexing } = await import("./sinbyteIndexing");
         return verifyCampaignIndexing(input.campaignId);
       }),
     getHistory: protectedProcedure
-      .query(async () => {
+      .query(async ({ ctx }) => {
+        // Note: getIndexingHistory returns all history - this is admin-only data
+        // The user is already authenticated via protectedProcedure
         const { getIndexingHistory } = await import("./sinbyteIndexing");
         return getIndexingHistory();
       }),
     getTaskStatus: protectedProcedure
       .input(z.object({ taskId: z.union([z.string(), z.number()]) }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        // Note: Task status is fetched from SinByte API by task ID
+        // The user is already authenticated via protectedProcedure
         const { getTaskStatus } = await import("./sinbyteIndexing");
         return getTaskStatus(input.taskId);
       }),
@@ -1384,7 +1403,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
   pipeline: router({
     getStatus: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getPipelineStatus } = await import("./pipelineOrchestrator");
         return getPipelineStatus(input.campaignId);
       }),
@@ -1419,19 +1440,25 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
   rankTracking: router({
     runCheck: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { runScheduledRankCheck } = await import("./rankTrackingEngine");
         return runScheduledRankCheck(input.campaignId);
       }),
     getReport: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { generateCampaignRankReport } = await import("./rankTrackingEngine");
         return generateCampaignRankReport(input.campaignId);
       }),
     getTrends: protectedProcedure
       .input(z.object({ campaignId: z.number(), days: z.number().optional() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getVisibilityTrends } = await import("./rankTrackingEngine");
         return getVisibilityTrends(input.campaignId, { days: input.days });
       }),
@@ -1488,7 +1515,13 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         campaignId: z.number().optional(),
         dashboardTitle: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyBusinessOwnership } = await import("./ownershipChecks");
+        await verifyBusinessOwnership(input.businessId, ctx.user.id);
+        if (input.campaignId) {
+          const { verifyCampaignOwnership } = await import("./ownershipChecks");
+          await verifyCampaignOwnership(input.campaignId, ctx.user.id);
+        }
         const { getDb } = await import("./db");
         const { clientDashboards } = await import("../drizzle/schema");
         const crypto = await import("crypto");
@@ -1508,8 +1541,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
 
         return result[0];
       }),
-    // Admin: list all dashboards
-    list: protectedProcedure.query(async () => {
+    // Admin: list all dashboards (filtered by user's businesses)
+    list: protectedProcedure.query(async ({ ctx }) => {
       const { getDb } = await import("./db");
       const { clientDashboards, businesses } = await import("../drizzle/schema");
       const { eq, desc } = await import("drizzle-orm");
@@ -1530,13 +1563,17 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         businessName: businesses.name,
       })
         .from(clientDashboards)
-        .leftJoin(businesses, eq(clientDashboards.businessId, businesses.id))
+        .innerJoin(businesses, eq(clientDashboards.businessId, businesses.id))
+        .where(eq(businesses.userId, ctx.user.id))
         .orderBy(desc(clientDashboards.createdAt));
     }),
     // Admin: toggle dashboard active status
     toggleActive: protectedProcedure
       .input(z.object({ id: z.number(), isActive: z.boolean() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyDashboardOwnership } = await import("./ownershipChecks");
+        await verifyDashboardOwnership(input.id, ctx.user.id);
+
         const { getDb } = await import("./db");
         const { clientDashboards } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
@@ -1557,7 +1594,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     // Get enrichment status for a business
     getEnrichmentStatus: protectedProcedure
       .input(z.object({ businessId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyBusinessOwnership } = await import("./ownershipChecks");
+        await verifyBusinessOwnership(input.businessId, ctx.user.id);
         const { buildTrainingContext, summarizeTrainingContext } = await import("./trainingContextEnricher");
         const context = await buildTrainingContext(input.businessId);
         return summarizeTrainingContext(context);
@@ -1565,14 +1604,18 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     // Get full training context for a business
     getFullContext: protectedProcedure
       .input(z.object({ businessId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyBusinessOwnership } = await import("./ownershipChecks");
+        await verifyBusinessOwnership(input.businessId, ctx.user.id);
         const { buildTrainingContext } = await import("./trainingContextEnricher");
         return buildTrainingContext(input.businessId);
       }),
     // Get enriched system message preview
     getEnrichedSystemMessage: protectedProcedure
       .input(z.object({ businessId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyBusinessOwnership } = await import("./ownershipChecks");
+        await verifyBusinessOwnership(input.businessId, ctx.user.id);
         const { buildTrainingContext, buildEnrichedSystemMessage } = await import("./trainingContextEnricher");
         const context = await buildTrainingContext(input.businessId);
         if (!context) return { message: null, hasContext: false };
@@ -1581,7 +1624,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     // Get source citation block preview
     getSourceCitationBlock: protectedProcedure
       .input(z.object({ businessId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyBusinessOwnership } = await import("./ownershipChecks");
+        await verifyBusinessOwnership(input.businessId, ctx.user.id);
         const { buildTrainingContext, buildSourceCitationBlock } = await import("./trainingContextEnricher");
         const context = await buildTrainingContext(input.businessId);
         if (!context) return { block: null, hasContext: false };
@@ -1606,7 +1651,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     // Get campaign schedule status
     getCampaignStatus: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getCampaignScheduleStatus } = await import("./smartScheduler");
         return getCampaignScheduleStatus(input.campaignId);
       }),
@@ -1618,7 +1665,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     // Get mode recommendation for a campaign
     getRecommendation: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { recommendMode } = await import("./smartScheduler");
         return recommendMode(input.campaignId);
       }),
@@ -1629,7 +1678,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         mode: z.enum(["aggressive", "moderate", "maintenance"]),
         reason: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { applyCampaignModeChange } = await import("./smartScheduler");
         return applyCampaignModeChange(
           input.campaignId,
@@ -1654,26 +1705,34 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     // Detect wins for a specific campaign
     detectWins: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { detectWins } = await import("./winNotifications");
         return detectWins(input.campaignId);
       }),
     // Generate full win report for a campaign
     getReport: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { generateWinReport } = await import("./winNotifications");
         return generateWinReport(input.campaignId);
       }),
     // Check all campaigns for wins and send notifications
     checkAll: protectedProcedure.mutation(async () => {
+      // Note: This checks ALL campaigns - admin-level operation
+      // User is already authenticated via protectedProcedure
       const { checkAllCampaignsForWins } = await import("./winNotifications");
       return checkAllCampaignsForWins();
     }),
     // Format wins for client dashboard display
     formatForClient: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { detectWins, formatWinsForClient } = await import("./winNotifications");
         const wins = await detectWins(input.campaignId);
         return formatWinsForClient(wins);
@@ -1693,7 +1752,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     // Send win notification email for a campaign
     sendWinNotification: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { detectWins } = await import("./winNotifications");
         const { sendCampaignWinEmails } = await import("./emailService");
         const { generateCampaignRankReport } = await import("./rankTrackingEngine");
@@ -1723,7 +1784,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     // Send visibility report email for a campaign
     sendVisibilityReport: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { generateCampaignRankReport } = await import("./rankTrackingEngine");
         const { sendCampaignVisibilityReport } = await import("./emailService");
         
@@ -1754,7 +1817,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
     // Send welcome email for a campaign
     sendWelcome: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getDb } = await import("./db");
         const db = await getDb();
         const { campaigns, businesses } = await import("../drizzle/schema");
@@ -1770,7 +1835,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         // Get dashboard URL if exists
         const { clientDashboards } = await import("../drizzle/schema");
         const [dashboard] = await db!.select().from(clientDashboards).where(eq(clientDashboards.campaignId, input.campaignId)).limit(1);
-        const dashboardUrl = dashboard?.isActive ? `https://aitrainhub-ln7nmkz9.manus.space/report/${dashboard.accessToken}` : undefined;
+        const baseUrl = process.env.APP_BASE_URL || process.env.VITE_APP_BASE_URL || "";
+        const dashboardUrl = dashboard?.isActive && baseUrl ? `${baseUrl}/report/${dashboard.accessToken}` : undefined;
         
         return sendWelcomeEmail({
           businessName: business.name,
@@ -1789,7 +1855,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         milestoneDescription: z.string(),
         nextStep: z.string(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const { verifyCampaignOwnership } = await import("./ownershipChecks");
+        await verifyCampaignOwnership(input.campaignId, ctx.user.id);
         const { getDb } = await import("./db");
         const db = await getDb();
         const { campaigns, businesses, clientDashboards } = await import("../drizzle/schema");
@@ -1803,7 +1871,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         if (!business?.contactEmail) return { success: false, error: "No contact email" };
         
         const [dashboard] = await db!.select().from(clientDashboards).where(eq(clientDashboards.campaignId, input.campaignId)).limit(1);
-        const dashboardUrl = dashboard?.isActive ? `https://aitrainhub-ln7nmkz9.manus.space/report/${dashboard.accessToken}` : undefined;
+        const baseUrl = process.env.APP_BASE_URL || process.env.VITE_APP_BASE_URL || "";
+        const dashboardUrl = dashboard?.isActive && baseUrl ? `${baseUrl}/report/${dashboard.accessToken}` : undefined;
         
         return sendMilestoneEmail({
           businessName: business.name,

@@ -20,7 +20,7 @@ describe("Redis Connection", () => {
       expect(pingResult).toBe("PONG");
       
       // Test set/get
-      const testKey = `manus-test-${Date.now()}`;
+      const testKey = `aaf-test-${Date.now()}`;
       await redis.set(testKey, "test-value", "EX", 60);
       const value = await redis.get(testKey);
       expect(value).toBe("test-value");

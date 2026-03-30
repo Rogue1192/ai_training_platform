@@ -401,7 +401,7 @@ describe("tRPC Router - New Sprint 6/7/Pipeline Procedures", () => {
     expect(labels[0].step).toBe("keyword_research");
   });
 
-  it("should return null for pipeline.getStatus with non-existent campaign", async () => {
+  it("should throw NOT_FOUND for pipeline.getStatus with non-existent campaign", async () => {
     const { appRouter } = await import("./routers");
     const caller = appRouter.createCaller({
       user: { id: 1, name: "Test", role: "admin", openId: "test" },
@@ -409,7 +409,7 @@ describe("tRPC Router - New Sprint 6/7/Pipeline Procedures", () => {
       res: {} as any,
     });
     
-    const status = await caller.pipeline.getStatus({ campaignId: 999999 });
-    expect(status).toBeNull();
+    await expect(caller.pipeline.getStatus({ campaignId: 999999 }))
+      .rejects.toThrow("Campaign not found");
   });
 });

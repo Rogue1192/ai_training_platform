@@ -13,7 +13,7 @@ import { decrypt } from "./encryption";
 import { getApiKeyByUserAndProvider } from "./db";
 import { getDb } from "./db";
 import { credibilityData, businesses, campaigns } from "../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 // ============= Types =============
 
@@ -338,7 +338,7 @@ export async function getCredibilityDataForBusiness(businessId: number) {
   
   const results = await db.select().from(credibilityData)
     .where(eq(credibilityData.businessId, businessId))
-    .orderBy(credibilityData.createdAt)
+    .orderBy(desc(credibilityData.createdAt))
     .limit(1);
   
   return results[0] || null;
@@ -353,7 +353,7 @@ export async function getCredibilityDataForCampaign(campaignId: number) {
   
   const results = await db.select().from(credibilityData)
     .where(eq(credibilityData.campaignId, campaignId))
-    .orderBy(credibilityData.createdAt)
+    .orderBy(desc(credibilityData.createdAt))
     .limit(1);
   
   return results[0] || null;
