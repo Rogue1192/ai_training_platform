@@ -26,11 +26,16 @@
 - [x] All 152 tests passing
 
 ## Sprint 3: DataForSEO Keyword Research + Industry Cache
-- [ ] Integrate DataForSEO Keywords For Site API
-- [ ] Integrate DataForSEO Keyword Suggestions API
-- [ ] Integrate DataForSEO AI Keyword Search Volume API
-- [ ] Build industry keyword cache system (store, analyze overlap, lock golden templates)
-- [ ] Build keyword research pipeline (check cache → run API → save to cache → select top queries)
+- [x] Integrate DataForSEO Keywords For Site API
+- [x] Integrate DataForSEO Keyword Suggestions API (via Keywords For Site)
+- [x] Integrate DataForSEO AI Keyword Search Volume API
+- [x] Integrate DataForSEO LLM Mentions API (for rank tracking)
+- [x] Build industry keyword cache system (store, analyze overlap, lock golden templates)
+- [x] Build keyword research pipeline (check cache → run API → save to cache → select top queries)
+- [x] Build baseline rank check pipeline
+- [x] Add tRPC procedures for keyword research and baseline check triggers
+- [x] Fix AI Keyword Search Volume response parsing (nested items structure)
+- [x] Write vitest tests for DataForSEO integration (all 162 tests passing)
 - [ ] Build admin UI for industry cache management (view, refresh, override)
 - [ ] Add backend controls for query cap per package tier
 
@@ -138,3 +143,16 @@
 - [x] Logout fix
 - [x] Model migration (deprecated models)
 - [x] 2FA support
+
+## Critical Fix: Database Tables
+- [x] Verify all new tables exist in the actual database (not just in schema.ts)
+- [x] Fix any missing tables by running proper migration
+- [x] Confirm all 21 tables are accessible in Supabase Postgres
+- [x] NOTE: webdev_execute_sql connects to TiDB (Manus managed DB), app uses Supabase Postgres — tables confirmed in correct DB
+
+## DataForSEO Integration
+- [x] Save DataForSEO API credentials (Basic Auth: email:password)
+- [x] Verify DataForSEO API access works (both auth and Labs endpoints confirmed)
+
+## Deployment Reminder
+- [ ] When everything is built and ready: walk Casey through Railway deployment (set DATABASE_URL/SUPABASE_DATABASE_URL, run pnpm db:push, set all env vars)

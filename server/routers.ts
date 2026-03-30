@@ -956,6 +956,41 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
           input.entries.map((e) => ({ ...e, campaignId: input.campaignId }))
         );
       }),
+    // Trigger keyword research for a campaign
+    runKeywordResearch: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { getCampaignById } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        const { runCampaignKeywordResearch } = await import("./keywordResearchPipeline");
+        return runCampaignKeywordResearch(input.campaignId);
+      }),
+    // Trigger baseline rank check for a campaign
+    runBaselineCheck: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { getCampaignById } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        const { runCampaignBaselineCheck } = await import("./keywordResearchPipeline");
+        return runCampaignBaselineCheck(input.campaignId);
+      }),
+    // Get rank snapshots for a campaign
+    getRankSnapshots: protectedProcedure
+      .input(z.object({ campaignId: z.number(), limit: z.number().min(1).max(500).default(100) }))
+      .query(async ({ ctx, input }) => {
+        const { getCampaignById, getRankSnapshotsByCampaign } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        return getRankSnapshotsByCampaign(input.campaignId, input.limit);
+      }),
   }),
 
   // ============= AI ANSWER FORGE — Webhook Logs =============
