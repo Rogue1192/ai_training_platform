@@ -991,6 +991,106 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly"]),
         }
         return getRankSnapshotsByCampaign(input.campaignId, input.limit);
       }),
+    // ============= CREDIBILITY RESEARCH (Sprint 4) =============
+    runCredibilityResearch: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { getCampaignById } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        // Get the business info
+        const { getBusinessById } = await import("./db");
+        const business = await getBusinessById(campaign.businessId);
+        if (!business) throw new Error("Business not found for this campaign");
+        
+        const { runCredibilityResearch } = await import("./credibilityResearchEngine");
+        return runCredibilityResearch({
+          userId: ctx.user.id,
+          businessId: campaign.businessId,
+          campaignId: input.campaignId,
+          businessName: business.name,
+          websiteUrl: business.website || "",
+          industry: business.businessType || "",
+          location: business.location || "",
+        });
+      }),
+    getCredibilityData: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const { getCampaignById } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        const { getCredibilityDataForCampaign } = await import("./credibilityResearchEngine");
+        return getCredibilityDataForCampaign(input.campaignId);
+      }),
+    // ============= CONTENT GENERATION (Sprint 5) =============
+    runContentGeneration: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { getCampaignById } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        // Get the business info
+        const { getBusinessById } = await import("./db");
+        const business = await getBusinessById(campaign.businessId);
+        if (!business) throw new Error("Business not found for this campaign");
+        
+        // Get credibility data (required before content generation)
+        const { getCredibilityDataForCampaign } = await import("./credibilityResearchEngine");
+        const credData = await getCredibilityDataForCampaign(input.campaignId);
+        if (!credData) {
+          throw new Error("Credibility research must be completed before content generation. Run credibility research first.");
+        }
+        
+        const { generateAllContentPages } = await import("./contentGenerationEngine");
+        return generateAllContentPages({
+          userId: ctx.user.id,
+          businessId: campaign.businessId,
+          campaignId: input.campaignId,
+          businessName: business.name,
+          websiteUrl: business.website || "",
+          industry: business.businessType || "",
+          location: business.location || "",
+          credibilityResult: credData.researchResults as any,
+        });
+      }),
+    getContentPages: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const { getCampaignById } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign || campaign.userId !== ctx.user.id) {
+          throw new Error("Campaign not found or access denied");
+        }
+        const { getContentPagesForCampaign } = await import("./contentGenerationEngine");
+        return getContentPagesForCampaign(input.campaignId);
+      }),
+    regenerateContentPage: protectedProcedure
+      .input(z.object({ pageId: z.number(), customPrompt: z.string().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const { regenerateContentPage } = await import("./contentGenerationEngine");
+        return regenerateContentPage({
+          userId: ctx.user.id,
+          pageId: input.pageId,
+          customPrompt: input.customPrompt,
+        });
+      }),
+    getContentGenerationPrompt: protectedProcedure
+      .query(async () => {
+        const { getContentGenerationPrompt } = await import("./contentGenerationEngine");
+        return { prompt: getContentGenerationPrompt() };
+      }),
+    getPageTypeConfigs: protectedProcedure
+      .query(async () => {
+        const { getPageTypeConfigs } = await import("./contentGenerationEngine");
+        return getPageTypeConfigs();
+      }),
   }),
 
   // ============= AI ANSWER FORGE — Webhook Logs =============

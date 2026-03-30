@@ -40,20 +40,27 @@
 - [ ] Add backend controls for query cap per package tier
 
 ## Sprint 4: Credibility Research Engine
-- [ ] Build credibility research module using Claude Haiku (Anthropic API direct)
-- [ ] Research and verify credibility claims from onboarding data
-- [ ] Expand credibility facts with context (rarity, significance)
-- [ ] Store structured credibility data per business
+- [x] Build credibility research module using Claude Sonnet (Anthropic API direct)
+- [x] Research and verify credibility claims from onboarding data (10 categories: certifications, awards, BBB, warranties, team, reviews, years in business, insurance, community, differentiators)
+- [x] Expand credibility facts with context (confidence levels, verification URLs, sources)
+- [x] Store structured credibility data per business (credibilityData table)
+- [x] Generate llm.txt content from credibility facts
+- [x] Generate schema markup recommendations
+- [x] Add tRPC procedures (runCredibilityResearch, getCredibilityData)
+- [x] Write 30 vitest tests for credibility + content engines
 
 ## Sprint 5: Content Generation Engine
-- [ ] Deep research optimal content generation prompt for AI citation
-- [ ] Write initial content generation prompt template (Casey reviews)
-- [ ] Build content generation module using Claude Sonnet (Anthropic API direct)
-- [ ] Generate multiple dedicated pages dynamically based on credibility data
-- [ ] Generate content in proven format: H1 → summary → bullets → 600-800 word expansion
-- [ ] Add contextual interlinking between generated pages
-- [ ] Build llm.txt generator
-- [ ] Build schema markup analyzer and generator
+- [x] Deep research optimal content generation prompt for AI citation
+- [x] Write initial content generation prompt template (H1 → summary → bullets → 600-800 word expansion → FAQ → interlinks)
+- [x] Build content generation module using Claude Sonnet (Anthropic API direct)
+- [x] Generate multiple dedicated pages dynamically based on credibility data (8 page types: certifications, warranties, awards, team, FAQ, pricing, service area, about)
+- [x] Generate content in proven format: H1 → summary → bullets → 600-800 word expansion → FAQ
+- [x] Add contextual interlinking between generated pages
+- [x] Build llm.txt generator (integrated into credibility research)
+- [x] Build schema markup generator using Claude Haiku (cost optimization)
+- [x] Page type determination logic (auto-selects pages based on available credibility data)
+- [x] Add tRPC procedures (runContentGeneration, getContentPages, regenerateContentPage, getContentGenerationPrompt, getPageTypeConfigs)
+- [x] All 192 tests passing across 19 test files
 
 ## Sprint 6: WordPress Auto-Publisher
 - [ ] Install and configure Puppeteer for headless browser automation
