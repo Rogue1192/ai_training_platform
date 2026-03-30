@@ -1,6 +1,7 @@
 import axios from "axios";
 
-export type AIProvider = "openai" | "anthropic" | "google";
+// BUG-006 fix: add "perplexity" to the AIProvider union type
+export type AIProvider = "openai" | "anthropic" | "google" | "perplexity";
 
 export interface AIMessage {
   role: "user" | "assistant" | "system";
@@ -12,19 +13,17 @@ export interface AIResponse {
   responseTime: number;
 }
 
+// ============= Provider-specific callers =============
+
 /**
  * Call OpenAI API
  */
 async function callOpenAI(apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
   const startTime = Date.now();
-
   try {
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
-      {
-        model,
-        messages,
-      },
+      { model, messages },
       {
         headers: {
           "Content-Type": "application/json",
@@ -32,10 +31,8 @@ async function callOpenAI(apiKey: string, model: string, messages: AIMessage[]):
         },
       }
     );
-
     const responseTime = Date.now() - startTime;
     const content = response.data.choices[0]?.message?.content || "";
-
     return { content, responseTime };
   } catch (error: any) {
     throw new Error(`OpenAI API error: ${error.response?.data?.error?.message || error.message}`);
@@ -47,9 +44,7 @@ async function callOpenAI(apiKey: string, model: string, messages: AIMessage[]):
  */
 async function callAnthropic(apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
   const startTime = Date.now();
-
   try {
-    // Convert messages to Anthropic format
     const systemMessage = messages.find((m) => m.role === "system");
     const conversationMessages = messages.filter((m) => m.role !== "system");
 
@@ -72,10 +67,8 @@ async function callAnthropic(apiKey: string, model: string, messages: AIMessage[
         },
       }
     );
-
     const responseTime = Date.now() - startTime;
     const content = response.data.content[0]?.text || "";
-
     return { content, responseTime };
   } catch (error: any) {
     throw new Error(`Anthropic API error: ${error.response?.data?.error?.message || error.message}`);
@@ -83,13 +76,11 @@ async function callAnthropic(apiKey: string, model: string, messages: AIMessage[
 }
 
 /**
- * Call Google AI API
+ * Call Google Gemini API
  */
 async function callGoogle(apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
   const startTime = Date.now();
-
   try {
-    // Convert messages to Google format
     const systemMessage = messages.find((m) => m.role === "system");
     const conversationMessages = messages.filter((m) => m.role !== "system");
 
@@ -104,16 +95,10 @@ async function callGoogle(apiKey: string, model: string, messages: AIMessage[]):
         contents,
         systemInstruction: systemMessage ? { parts: [{ text: systemMessage.content }] } : undefined,
       },
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
+      { headers: { "Content-Type": "application/json" } }
     );
-
     const responseTime = Date.now() - startTime;
     const content = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
     return { content, responseTime };
   } catch (error: any) {
     throw new Error(`Google AI API error: ${error.response?.data?.error?.message || error.message}`);
@@ -121,16 +106,48 @@ async function callGoogle(apiKey: string, model: string, messages: AIMessage[]):
 }
 
 /**
+ * Call Perplexity API (OpenAI-compatible endpoint)
+ * BUG-006 fix: Perplexity was missing from callAI entirely
+ */
+async function callPerplexity(apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
+  const startTime = Date.now();
+  try {
+    const response = await axios.post(
+      "https://api.perplexity.ai/chat/completions",
+      { model, messages },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+      }
+    );
+    const responseTime = Date.now() - startTime;
+    const content = response.data.choices[0]?.message?.content || "";
+    return { content, responseTime };
+  } catch (error: any) {
+    throw new Error(`Perplexity API error: ${error.response?.data?.error?.message || error.message}`);
+  }
+}
+
+// ============= Deprecated model resolution =============
+
+/**
  * Map of deprecated model names to their current replacements.
  * When a model is deprecated by its provider, add a mapping here
  * so existing sessions with the old model name continue to work.
  */
 export const DEPRECATED_MODEL_MAP: Record<string, string> = {
+  // Google
   "gemini-2.0-flash-exp": "gemini-2.0-flash",
   "gemini-pro": "gemini-1.5-pro",
-  "claude-3-opus-20240229": "claude-sonnet-4-5-20250929",
+  // Anthropic
+  "claude-3-opus-20240229": "claude-opus-4-5-20251101",
   "claude-3-sonnet-20240229": "claude-sonnet-4-5-20250929",
   "claude-3-haiku-20240307": "claude-haiku-4-5-20251001",
+  // OpenAI
+  "gpt-4-turbo-preview": "gpt-4o",
+  "gpt-4": "gpt-4o",
 };
 
 /**
@@ -145,12 +162,18 @@ export function resolveModel(model: string): string {
   return model;
 }
 
+// ============= Main callAI entry point =============
+
 /**
- * Generic AI provider call
+ * Generic AI provider call — dispatches to the correct provider.
  */
-export async function callAI(provider: AIProvider, apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
+export async function callAI(
+  provider: AIProvider,
+  apiKey: string,
+  model: string,
+  messages: AIMessage[]
+): Promise<AIResponse> {
   const resolvedModel = resolveModel(model);
-  
   switch (provider) {
     case "openai":
       return callOpenAI(apiKey, resolvedModel, messages);
@@ -158,57 +181,90 @@ export async function callAI(provider: AIProvider, apiKey: string, model: string
       return callAnthropic(apiKey, resolvedModel, messages);
     case "google":
       return callGoogle(apiKey, resolvedModel, messages);
+    case "perplexity":
+      return callPerplexity(apiKey, resolvedModel, messages);
     default:
       throw new Error(`Unsupported AI provider: ${provider}`);
   }
 }
 
+// ============= Model lists =============
+
 /**
- * Get available models for a provider
+ * Get available models for a provider.
+ * BUG-015/016 fix: updated OpenAI and Gemini model lists to current (Mar 2026).
  */
 export function getAvailableModels(provider: AIProvider): string[] {
   switch (provider) {
     case "openai":
-      return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"];
+      // BUG-015 fix: add GPT-4.1, GPT-4.1-mini, o3, o3-mini; remove gpt-4-turbo (deprecated)
+      return [
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "o3",
+        "o3-mini",
+        "gpt-3.5-turbo",
+      ];
     case "anthropic":
-      // Updated to current Claude 4.5 models (Jan 2026)
-      return ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001", "claude-opus-4-5-20251101"];
+      // Claude 4.5 models (Jan 2026)
+      return [
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001",
+      ];
     case "google":
-      return ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"];
+      // BUG-016 fix: add Gemini 2.5 Flash; keep 2.0 and 1.5 for existing sessions
+      return [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash",
+      ];
+    case "perplexity":
+      // BUG-037 fix: Perplexity model list (Mar 2026)
+      return [
+        "sonar-pro",
+        "sonar",
+        "sonar-reasoning-pro",
+        "sonar-reasoning",
+      ];
     default:
       return [];
   }
 }
 
+// ============= Key verification =============
+
 /**
- * Verify API key by making a test call
+ * Verify API key by making a test call.
+ * BUG-009 fix: removed console.log that printed the first 10 chars of the API key.
  */
-export async function verifyApiKey(provider: AIProvider, apiKey: string): Promise<{ valid: boolean; error?: string }> {
+export async function verifyApiKey(
+  provider: AIProvider,
+  apiKey: string
+): Promise<{ valid: boolean; error?: string }> {
   try {
     const models = getAvailableModels(provider);
     const testModel = models[0];
-
     if (!testModel) {
       return { valid: false, error: `No models available for provider: ${provider}` };
     }
-
-    console.log(`[API Verification] Testing ${provider} with model ${testModel}...`);
-    console.log(`[API Verification] API key starts with: ${apiKey.substring(0, 10)}...`);
-    
     await callAI(provider, apiKey, testModel, [{ role: "user", content: "Hello" }]);
-    console.log(`[API Verification] ${provider} verification successful`);
     return { valid: true };
   } catch (error: any) {
-    const errorMessage = error?.message || String(error);
-    console.error(`[API Verification] ${provider} verification failed:`, errorMessage);
-    return { valid: false, error: errorMessage };
+    return { valid: false, error: error?.message || String(error) };
   }
 }
 
 /**
- * Test API key with a real API call and return detailed results
+ * Test API key with a real API call and return detailed results for the Settings UI.
  */
-export async function testApiKey(provider: AIProvider, apiKey: string): Promise<{
+export async function testApiKey(
+  provider: AIProvider,
+  apiKey: string
+): Promise<{
   success: boolean;
   message: string;
   model?: string;
@@ -218,31 +274,23 @@ export async function testApiKey(provider: AIProvider, apiKey: string): Promise<
   try {
     const models = getAvailableModels(provider);
     const testModel = models[0];
-
     if (!testModel) {
       return { success: false, message: `No models available for provider: ${provider}` };
     }
 
-    console.log(`[API Test] Testing ${provider} with model ${testModel}...`);
-    
     const result = await callAI(provider, apiKey, testModel, [
-      { role: "user", content: "Say 'API key is working!' in exactly those words." }
+      { role: "user", content: "Say 'API key is working!' in exactly those words." },
     ]);
-    
-    console.log(`[API Test] ${provider} test successful - response time: ${result.responseTime}ms`);
-    
+
     return {
       success: true,
-      message: `API key is valid and working correctly`,
+      message: "API key is valid and working correctly",
       model: testModel,
       responseTime: result.responseTime,
-      response: result.content.substring(0, 100), // Truncate for display
+      response: result.content.substring(0, 100),
     };
   } catch (error: any) {
     const errorMessage = error?.message || String(error);
-    console.error(`[API Test] ${provider} test failed:`, errorMessage);
-    
-    // Parse common error types for user-friendly messages
     let userMessage = errorMessage;
     if (errorMessage.includes("401") || errorMessage.includes("invalid_api_key") || errorMessage.includes("Invalid API")) {
       userMessage = "Invalid API key. Please check your key and try again.";
@@ -253,7 +301,6 @@ export async function testApiKey(provider: AIProvider, apiKey: string): Promise<
     } else if (errorMessage.includes("model")) {
       userMessage = `Model access error: ${errorMessage}`;
     }
-    
     return { success: false, message: userMessage };
   }
 }
