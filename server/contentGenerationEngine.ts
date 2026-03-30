@@ -46,7 +46,7 @@ export interface ContentGenerationResult {
  * This is the prompt Casey will review and potentially modify.
  * It encodes the optimal format for AI citation based on research.
  */
-const CONTENT_GENERATION_SYSTEM_PROMPT = `You are an expert content writer specializing in creating web pages that get cited by AI search engines (ChatGPT, Google AI Overviews, Gemini, Perplexity).
+const CONTENT_GENERATION_SYSTEM_PROMPT = `You are an expert content writer specializing in creating web pages that get cited by AI search engines (ChatGPT, Google AI Overviews, Gemini).
 
 Your content MUST follow this exact structure for maximum AI citation potential:
 

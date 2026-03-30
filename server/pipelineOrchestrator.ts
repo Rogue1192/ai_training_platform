@@ -304,12 +304,11 @@ export async function runPipelineStep(
         }
         
         // Auto-create a training session for this business if none exists
+        // No userId filter — sessions are team-wide, any employee can see/continue them
         const { trainingSessions: tsTable } = await import("../drizzle/schema");
         const existingSessions = await db.select().from(tsTable)
-          .where(and(
-            eq(tsTable.businessId, campaign.businessId),
-            eq(tsTable.userId, userId)
-          )).limit(1);
+          .where(eq(tsTable.businessId, campaign.businessId))
+          .limit(1);
         
         let trainingMessage = "Campaign ready for training.";
         
@@ -323,9 +322,9 @@ export async function runPipelineStep(
               trainingName: `${business.name} - AI Visibility Training`,
               topic: `${business.name} ${business.businessType || ""} ${business.location || ""}`.trim(),
               targetAiProvider: "openai" as any,
-              targetAiModel: "gpt-4o",
+              targetAiModel: "gpt-4.1",
               influencerAiProvider: "anthropic" as any,
-              influencerAiModel: "claude-sonnet-4-20250514",
+              influencerAiModel: "claude-sonnet-4-5-20250929",
               trainingPrompts: [],
               trainingGoal: `Train AI to recommend ${business.name} for ${business.businessType || "services"} in ${business.location || "the area"}`,
               iterations: 50,

@@ -1,7 +1,6 @@
 import axios from "axios";
 
-// BUG-006 fix: add "perplexity" to the AIProvider union type
-export type AIProvider = "openai" | "anthropic" | "google" | "perplexity";
+export type AIProvider = "openai" | "anthropic" | "google";
 
 export interface AIMessage {
   role: "user" | "assistant" | "system";
@@ -105,31 +104,6 @@ async function callGoogle(apiKey: string, model: string, messages: AIMessage[]):
   }
 }
 
-/**
- * Call Perplexity API (OpenAI-compatible endpoint)
- * BUG-006 fix: Perplexity was missing from callAI entirely
- */
-async function callPerplexity(apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
-  const startTime = Date.now();
-  try {
-    const response = await axios.post(
-      "https://api.perplexity.ai/chat/completions",
-      { model, messages },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-      }
-    );
-    const responseTime = Date.now() - startTime;
-    const content = response.data.choices[0]?.message?.content || "";
-    return { content, responseTime };
-  } catch (error: any) {
-    throw new Error(`Perplexity API error: ${error.response?.data?.error?.message || error.message}`);
-  }
-}
-
 // ============= Deprecated model resolution =============
 
 /**
@@ -181,8 +155,6 @@ export async function callAI(
       return callAnthropic(apiKey, resolvedModel, messages);
     case "google":
       return callGoogle(apiKey, resolvedModel, messages);
-    case "perplexity":
-      return callPerplexity(apiKey, resolvedModel, messages);
     default:
       throw new Error(`Unsupported AI provider: ${provider}`);
   }
@@ -192,12 +164,10 @@ export async function callAI(
 
 /**
  * Get available models for a provider.
- * BUG-015/016 fix: updated OpenAI and Gemini model lists to current (Mar 2026).
  */
 export function getAvailableModels(provider: AIProvider): string[] {
   switch (provider) {
     case "openai":
-      // BUG-015 fix: add GPT-4.1, GPT-4.1-mini, o3, o3-mini; remove gpt-4-turbo (deprecated)
       return [
         "gpt-4.1",
         "gpt-4.1-mini",
@@ -208,27 +178,17 @@ export function getAvailableModels(provider: AIProvider): string[] {
         "gpt-3.5-turbo",
       ];
     case "anthropic":
-      // Claude 4.5 models (Jan 2026)
       return [
         "claude-opus-4-5-20251101",
         "claude-sonnet-4-5-20250929",
         "claude-haiku-4-5-20251001",
       ];
     case "google":
-      // BUG-016 fix: add Gemini 2.5 Flash; keep 2.0 and 1.5 for existing sessions
       return [
         "gemini-2.5-flash",
         "gemini-2.0-flash",
         "gemini-1.5-pro",
         "gemini-1.5-flash",
-      ];
-    case "perplexity":
-      // BUG-037 fix: Perplexity model list (Mar 2026)
-      return [
-        "sonar-pro",
-        "sonar",
-        "sonar-reasoning-pro",
-        "sonar-reasoning",
       ];
     default:
       return [];
@@ -239,7 +199,6 @@ export function getAvailableModels(provider: AIProvider): string[] {
 
 /**
  * Verify API key by making a test call.
- * BUG-009 fix: removed console.log that printed the first 10 chars of the API key.
  */
 export async function verifyApiKey(
   provider: AIProvider,
@@ -304,3 +263,5 @@ export async function testApiKey(
     return { success: false, message: userMessage };
   }
 }
+
+

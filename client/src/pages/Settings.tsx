@@ -9,7 +9,7 @@ import { Loader2, Check, X, Key, PlayCircle, AlertCircle } from "lucide-react";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
 import PromptTemplateEditor from "@/components/PromptTemplateEditor";
 
-type AIProvider = "openai" | "anthropic" | "google" | "perplexity";
+type AIProvider = "openai" | "anthropic" | "google";
 
 const PROVIDERS: {
   id: AIProvider;
@@ -35,12 +35,6 @@ const PROVIDERS: {
     description: "Gemini 2.5 Flash, Gemini 2.0 Flash, Gemini 1.5 Pro, Gemini 1.5 Flash",
     placeholder: "AIza...",
   },
-  {
-    id: "perplexity",
-    label: "Perplexity",
-    description: "Sonar Pro, Sonar, Sonar Reasoning Pro, Sonar Reasoning",
-    placeholder: "pplx-...",
-  },
 ];
 
 export default function Settings() {
@@ -54,7 +48,6 @@ export default function Settings() {
     openai: "",
     anthropic: "",
     google: "",
-    perplexity: "",
   });
 
   const [testingProvider, setTestingProvider] = useState<AIProvider | null>(null);

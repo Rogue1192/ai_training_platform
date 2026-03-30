@@ -8,8 +8,7 @@ import { integer, pgEnum, pgTable, serial, text, timestamp, varchar, json, boole
 
 // Enums
 export const roleEnum = pgEnum("role", ["user", "admin"]);
-// BUG-006 fix: added "perplexity" to the enum
-export const aiProviderEnum = pgEnum("ai_provider", ["openai", "anthropic", "google", "perplexity"]);
+export const aiProviderEnum = pgEnum("ai_provider", ["openai", "anthropic", "google"]);
 export const apiKeyStatusEnum = pgEnum("api_key_status", ["connected", "disconnected"]);
 export const trainingStatusEnum = pgEnum("training_status", ["paused", "in_progress", "completed", "error"]);
 // Note: trainingPhase, conversationType, and promptType use varchar instead of enum for TiDB compatibility

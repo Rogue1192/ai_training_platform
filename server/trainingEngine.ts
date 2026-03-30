@@ -21,19 +21,22 @@ import {
 /**
  * Start a training session - routes to V2 for new sessions, V1 for legacy
  */
-export async function startTrainingSession(sessionId: number, userId: number): Promise<void> {
+export async function startTrainingSession(sessionId: number, userId: number | null): Promise<void> {
   const session = await getTrainingSessionById(sessionId);
   if (!session) {
     throw new Error("Training session not found");
   }
   
+  // userId is used only for audit trail in V1/V2 queues; null is safe here
+  const resolvedUserId = userId ?? 0;
+  
   // Use V2 for new sessions (isLegacy = false), V1 for legacy sessions
   if (session.isLegacy) {
     console.log(`[Training Engine] Starting legacy session ${sessionId} with V1`);
-    await startV1(sessionId, userId);
+    await startV1(sessionId, resolvedUserId);
   } else {
     console.log(`[Training Engine] Starting session ${sessionId} with V2 (phase-based)`);
-    await startTrainingSessionV2(sessionId, userId);
+    await startTrainingSessionV2(sessionId, resolvedUserId);
   }
 }
 

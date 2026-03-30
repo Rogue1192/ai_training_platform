@@ -494,7 +494,7 @@ async function recoverStuckSessions(): Promise<void> {
         );
         await trainingQueueV2.add("phase-job", {
           sessionId: session.id,
-          userId: session.userId,
+          userId: session.userId ?? 0,
           phase: "evaluation",
         }, {
           delay: 2000,
@@ -510,7 +510,7 @@ async function recoverStuckSessions(): Promise<void> {
 
         await trainingQueueV2.add("phase-job", {
           sessionId: session.id,
-          userId: session.userId,
+          userId: session.userId ?? 0,
           phase: "training",
           iterationNumber: nextIteration,
         }, {
