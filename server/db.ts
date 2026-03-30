@@ -148,13 +148,6 @@ export async function createBusiness(business: InsertBusiness): Promise<Business
   return inserted[0]!;
 }
 
-export async function getBusinessesByUserId(userId: number): Promise<Business[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  return db.select().from(businesses).where(eq(businesses.userId, userId)).orderBy(desc(businesses.createdAt));
-}
-
 /** Team-wide: return ALL businesses (internal tool — all employees share access) */
 export async function getAllBusinesses(): Promise<Business[]> {
   const db = await getDb();
@@ -271,24 +264,6 @@ export async function createTrainingSession(session: InsertTrainingSession): Pro
   return inserted[0]!;
 }
 
-export async function getTrainingSessionsByUserId(userId: number): Promise<TrainingSession[]> {
-  console.log('[DB] getTrainingSessionsByUserId called for userId:', userId);
-  const db = await getDb();
-  if (!db) {
-    console.log('[DB] Database not available');
-    return [];
-  }
-  console.log('[DB] Executing query...');
-  try {
-    const result = await db.select().from(trainingSessions).where(eq(trainingSessions.userId, userId)).orderBy(desc(trainingSessions.createdAt));
-    console.log('[DB] Query completed, found', result.length, 'sessions');
-    return result;
-  } catch (error: any) {
-    console.error('[DB] Query error:', error.message);
-    throw error;
-  }
-}
-
 export async function getTrainingSessionById(id: number): Promise<TrainingSession | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -342,13 +317,6 @@ export async function createScheduledJob(job: InsertScheduledJob): Promise<Sched
   const result = await db.insert(scheduledJobs).values(job).returning();
   const inserted = result;
   return inserted[0]!;
-}
-
-export async function getScheduledJobsByUserId(userId: number): Promise<ScheduledJob[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  return db.select().from(scheduledJobs).where(eq(scheduledJobs.userId, userId)).orderBy(desc(scheduledJobs.createdAt));
 }
 
 /** Team-wide: return ALL scheduled jobs (internal tool — all employees share access) */
@@ -419,32 +387,6 @@ export async function getAllScheduledJobRuns(limit = 100): Promise<(ScheduledJob
   return runs as any;
 }
 
-export async function getScheduledJobRunsByUserId(userId: number, limit = 100): Promise<(ScheduledJobRun & { jobName?: string })[]> {
-  const db = await getDb();
-  if (!db) return [];
-  const runs = await db.select({
-    id: scheduledJobRuns.id,
-    scheduledJobId: scheduledJobRuns.scheduledJobId,
-    trainingSessionId: scheduledJobRuns.trainingSessionId,
-    status: scheduledJobRuns.status,
-    startedAt: scheduledJobRuns.startedAt,
-    completedAt: scheduledJobRuns.completedAt,
-    errorMessage: scheduledJobRuns.errorMessage,
-    baselineMentioned: scheduledJobRuns.baselineMentioned,
-    evaluationMentioned: scheduledJobRuns.evaluationMentioned,
-    influenceScore: scheduledJobRuns.influenceScore,
-    iterationsCompleted: scheduledJobRuns.iterationsCompleted,
-    triggeredBy: scheduledJobRuns.triggeredBy,
-    jobName: scheduledJobs.jobName,
-  })
-    .from(scheduledJobRuns)
-    .innerJoin(scheduledJobs, eq(scheduledJobRuns.scheduledJobId, scheduledJobs.id))
-    .where(eq(scheduledJobs.userId, userId))
-    .orderBy(desc(scheduledJobRuns.startedAt))
-    .limit(limit);
-  return runs;
-}
-
 /**
  * Find the most recent "running" scheduledJobRun for a given training session.
  * Used by the V2 worker to update run history when a session completes or fails.
@@ -513,64 +455,6 @@ export async function getAllTodayMetrics(): Promise<{
   const avgResponseTime = Number(conversationsResult[0]?.avgTime ?? 0);
 
   return { activeTrainings, completedGoals, apiCallsToday, avgResponseTime };
-}
-
-export async function getTodayMetrics(userId: number): Promise<{
-  activeTrainings: number;
-  completedGoals: number;
-  apiCallsToday: number;
-  avgResponseTime: number;
-}> {
-  const db = await getDb();
-  if (!db) {
-    return {
-      activeTrainings: 0,
-      completedGoals: 0,
-      apiCallsToday: 0,
-      avgResponseTime: 0,
-    };
-  }
-
-  // Get active trainings count
-  const activeResult = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(trainingSessions)
-    .where(and(eq(trainingSessions.userId, userId), eq(trainingSessions.status, "in_progress")));
-
-  const activeTrainings = Number(activeResult[0]?.count ?? 0);
-
-  // Get completed goals count
-  const completedResult = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(trainingSessions)
-    .where(and(eq(trainingSessions.userId, userId), eq(trainingSessions.status, "completed")));
-
-  const completedGoals = Number(completedResult[0]?.count ?? 0);
-
-  // Get today's conversations for API calls and avg response time
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  // Convert to ISO string for PostgreSQL compatibility
-  const todayIso = today.toISOString();
-
-  const conversationsResult = await db
-    .select({
-      count: sql<number>`count(*)`,
-      avgTime: sql<number>`avg(${trainingConversations.responseTime})`,
-    })
-    .from(trainingConversations)
-    .innerJoin(trainingSessions, eq(trainingConversations.trainingSessionId, trainingSessions.id))
-    .where(and(eq(trainingSessions.userId, userId), gte(trainingConversations.createdAt, new Date(todayIso))));
-
-  const apiCallsToday = Number(conversationsResult[0]?.count ?? 0);
-  const avgResponseTime = Number(conversationsResult[0]?.avgTime ?? 0);
-
-  return {
-    activeTrainings,
-    completedGoals,
-    apiCallsToday,
-    avgResponseTime,
-  };
 }
 
 
