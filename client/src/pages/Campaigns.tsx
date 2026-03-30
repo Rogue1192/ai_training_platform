@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useLocation } from "wouter";
 
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
@@ -65,6 +66,7 @@ const statusIcons: Record<string, any> = {
 };
 
 export default function Campaigns() {
+  const [, navigate] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
 
@@ -176,7 +178,8 @@ export default function Campaigns() {
             return (
               <Card
                 key={campaign.id}
-                className="bg-card border-border hover:border-primary/20 transition-all"
+                className="bg-card border-border hover:border-primary/20 transition-all cursor-pointer"
+                onClick={() => navigate(`/campaigns/${campaign.id}`)}
               >
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">

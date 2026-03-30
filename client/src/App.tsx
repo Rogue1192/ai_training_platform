@@ -16,6 +16,8 @@ import Login from "./pages/Login";
 import TwoFactorVerify from "./pages/TwoFactorVerify";
 import ClientDashboard from "./pages/ClientDashboard";
 import ClientDashboards from "./pages/ClientDashboards";
+import CampaignDetail from "./pages/CampaignDetail";
+import PromptTemplates from "./pages/PromptTemplates";
 import {
   LayoutDashboard,
   Building2,
@@ -25,6 +27,7 @@ import {
   Rocket,
   Package,
   Link2,
+  FileText,
 } from "lucide-react";
 
 const navigationItems = [
@@ -35,6 +38,7 @@ const navigationItems = [
   { href: "/schedule", label: "Schedule", icon: Calendar },
   { href: "/packages", label: "Packages", icon: Package },
   { href: "/client-dashboards", label: "Client Links", icon: Link2 },
+  { href: "/prompts", label: "Prompts", icon: FileText },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -82,6 +86,16 @@ function Router() {
       <Route path="/client-dashboards">
         <DashboardLayout navigationItems={navigationItems}>
           <ClientDashboards />
+        </DashboardLayout>
+      </Route>
+      <Route path="/campaigns/:id">
+        <DashboardLayout navigationItems={navigationItems}>
+          <CampaignDetail />
+        </DashboardLayout>
+      </Route>
+      <Route path="/prompts">
+        <DashboardLayout navigationItems={navigationItems}>
+          <PromptTemplates />
         </DashboardLayout>
       </Route>
       <Route path="/404" component={NotFound} />

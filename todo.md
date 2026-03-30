@@ -84,7 +84,7 @@
 - [x] Build indexing verification (HTTP HEAD checks after 3-4 day wait, 80% threshold)
 - [x] Store published URLs in contentPages table for training reference
 - [x] Add tRPC procedures (submitCampaign, verifyCampaign, getHistory, getTaskStatus)
-- [ ] Add SINBYTE_API_KEY secret (Casey providing tomorrow)
+- [x] Add SINBYTE_API_KEY secret (validated and working)
 
 ## Pipeline Orchestrator (connects all sprints)
 - [x] Build full pipeline orchestrator connecting Sprints 3-7
@@ -171,12 +171,25 @@
 - [x] All 271 tests passing across 22 test files
 
 ## Sprint 14: Admin Dashboard Overhaul
-- [ ] Campaign pipeline view (which phase each campaign is in)
-- [ ] Industry keyword cache management
-- [ ] Manual query/location override per campaign
-- [ ] Training frequency controls
-- [ ] Webhook monitoring log
-- [ ] Auto-publish success/failure tracking
+- [x] Campaign Detail / Pipeline View page (/campaigns/:id)
+- [x] Visual 8-step pipeline progress bar with step status indicators (completed/active/pending/error)
+- [x] Pipeline step controls — run individual steps or full auto-pilot
+- [x] Rank tracking display with visibility scores and before/after comparison
+- [x] Training mode management (aggressive/moderate/maintenance) with mode switching
+- [x] Content pages display with published URLs
+- [x] Credibility data display with score and llm.txt status
+- [x] Webhook log display with recent events
+- [x] Win detection display with significance levels
+- [x] Make campaign cards clickable to navigate to detail page
+- [x] Build Prompt Templates management page (/prompts)
+- [x] CRUD for prompt templates (create, edit, delete, toggle active/inactive)
+- [x] Template type tabs (clean, suggestive, follow_up, category_based)
+- [x] Template variable support ({{business_name}}, {{industry}}, {{location}}, {{website}}, {{service_area}})
+- [x] Reset to defaults functionality
+- [x] Add Prompts to sidebar navigation
+- [ ] Industry keyword cache management UI (future)
+- [ ] Manual query/location override per campaign (future)
+- [x] All 296 tests passing across 24 test files
 
 ## Sprint 15: Testing & Hardening
 - [ ] Write tests for all new endpoints
