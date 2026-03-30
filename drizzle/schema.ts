@@ -60,9 +60,10 @@ export type InsertUser = typeof users.$inferInsert;
 // Businesses table (enhanced with credibility fields)
 export const businesses = pgTable("businesses", {
   id: serial("id").primaryKey(),
+  // Nullable — businesses belong to the company, not an individual employee.
+  // onDelete: set null so deleting an employee account does NOT destroy client data.
   userId: integer("userId")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+    .references(() => users.id, { onDelete: "set null" }),
   name: varchar("name", { length: 255 }).notNull(),
   businessType: varchar("businessType", { length: 100 }),
   location: varchar("location", { length: 255 }),
@@ -114,9 +115,10 @@ export type InsertApiKey = typeof apiKeys.$inferInsert;
 // Training Sessions table
 export const trainingSessions = pgTable("trainingSessions", {
   id: serial("id").primaryKey(),
+  // Nullable — sessions belong to the business/campaign, not an individual employee.
+  // onDelete: set null so deleting an employee account does NOT destroy training history.
   userId: integer("userId")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+    .references(() => users.id, { onDelete: "set null" }),
   businessId: integer("businessId").references(() => businesses.id, { onDelete: "set null" }),
   trainingName: varchar("trainingName", { length: 255 }).notNull(),
   topic: text("topic").notNull(),
@@ -176,9 +178,10 @@ export type InsertTrainingConversation = typeof trainingConversations.$inferInse
 // Scheduled Jobs table
 export const scheduledJobs = pgTable("scheduledJobs", {
   id: serial("id").primaryKey(),
+  // Nullable — scheduled jobs belong to the team, not an individual employee.
+  // onDelete: set null so deleting an employee account does NOT delete scheduled jobs.
   userId: integer("userId")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+    .references(() => users.id, { onDelete: "set null" }),
   trainingSessionId: integer("trainingSessionId").references(() => trainingSessions.id, {
     onDelete: "cascade",
   }),
@@ -243,12 +246,10 @@ export const platformMetrics = pgTable("platformMetrics", {
 export type PlatformMetric = typeof platformMetrics.$inferSelect;
 export type InsertPlatformMetric = typeof platformMetrics.$inferInsert;
 
-// Prompt Templates table - Global prompt configuration
+// Prompt Templates table - Global prompt configuration (shared across all team members)
 export const promptTemplates = pgTable("promptTemplates", {
   id: serial("id").primaryKey(),
-  userId: integer("userId")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  // userId removed — prompt templates are global team resources, not per-employee.
   templateType: varchar("templateType", { length: 50 }).notNull(), // 'clean' | 'suggestive' | 'follow_up' | 'category_based'
   templateName: varchar("templateName", { length: 255 }).notNull(),
   templateContent: text("templateContent").notNull(),

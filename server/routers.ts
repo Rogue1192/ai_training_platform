@@ -93,6 +93,7 @@ export const appRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         const { createBusiness } = await import("./db");
+        // userId stored for audit trail only — nullable, not used for access control
         const business = await createBusiness({ ...input, userId: ctx.user.id });
         return { success: true, businessId: business.id };
       }),
@@ -309,6 +310,7 @@ export const appRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         const { createTrainingSession } = await import("./db");
+        // userId stored for audit trail only — nullable, not used for access control
         const session = await createTrainingSession({
           ...input,
           userId: ctx.user.id,
@@ -446,8 +448,9 @@ export const appRouter = router({
           throw new Error("Can only restart completed or error sessions");
         }
         
+        // userId not carried over from original session — restarted sessions are team-owned
         const newSession = await createTrainingSession({
-          userId: ctx.user.id,
+          userId: ctx.user.id, // audit trail only
           businessId: originalSession.businessId,
           trainingName: originalSession.trainingName + " (Restarted)",
           topic: originalSession.topic,
@@ -691,6 +694,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           cronExpression: input.cronExpression,
         });
         
+        // userId stored for audit trail only — nullable, not used for access control
         return createScheduledJob({
           ...input,
           businessId: session.businessId ?? undefined,
