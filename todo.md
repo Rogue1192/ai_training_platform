@@ -356,3 +356,8 @@
 - [x] Cross-reference all service modules against schema (12 modules audited in parallel)
 - [x] Fix all mismatches found (3 real bugs fixed: scheduleType enum, trainingQueue missing fields, credibilityEngine dead fields)
 - [x] Run tests and compile check (328 tests passing, 0 TS errors)
+
+## User-Reported Issues
+- [ ] BUG: All prompts doubled up in admin Prompts section
+- [ ] BUG: AI model lists are outdated — missing Gemini 2.5/2.5 Flash, possibly outdated GPT and Claude models
+- [ ] Sweep for other basic issues across the platform

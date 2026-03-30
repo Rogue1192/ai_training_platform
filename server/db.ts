@@ -735,15 +735,14 @@ export async function deletePromptTemplate(id: number): Promise<boolean> {
 }
 
 /**
- * Delete all prompt templates for a user (used when resetting to defaults)
+ * Delete ALL prompt templates (team-wide reset)
  */
-export async function deleteAllPromptTemplates(userId: number): Promise<number> {
+export async function deleteAllPromptTemplates(_userId?: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
   const result = await db
     .delete(promptTemplates)
-    .where(eq(promptTemplates.userId, userId))
     .returning();
 
   return result.length;
@@ -934,16 +933,16 @@ export const DEFAULT_PROMPT_TEMPLATES: Omit<InsertPromptTemplate, 'id' | 'userId
 ];
 
 /**
- * Seed default prompt templates for a user
+ * Seed default prompt templates (team-wide — shared by all employees)
  */
 export async function seedDefaultPromptTemplates(userId: number): Promise<PromptTemplate[]> {
   const db = await getDb();
   if (!db) return [];
 
-  // Check if user already has templates
-  const existing = await hasPromptTemplates(userId);
+  // Check if ANY templates exist globally (team-wide tool)
+  const existing = await hasAnyPromptTemplates();
   if (existing) {
-    return getPromptTemplates(userId);
+    return getAllPromptTemplates();
   }
 
   // Insert all default templates
