@@ -278,12 +278,9 @@ export const appRouter = router({
 
   // Training session management
   training: router({
-    list: protectedProcedure.query(async ({ ctx }) => {
-      console.log('[training.list] Called');
+    list: protectedProcedure.query(async () => {
       const { getAllTrainingSessions } = await import("./db");
-      const sessions = await getAllTrainingSessions();
-      console.log('[training.list] Found', sessions.length, 'sessions');
-      return sessions;
+      return getAllTrainingSessions();
     }),
     getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       const { getTrainingSessionById } = await import("./db");
@@ -722,7 +719,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { calculateNextRun } = await import("./scheduler");
         const { id, ...updates } = input;
         
-        // Verify ownership
+        // Verify the job exists
         const { getDb } = await import("./db");
         const db = await getDb();
         if (!db) throw new Error("Database not available");
@@ -751,7 +748,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         return { success: true };
       }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      // Verify ownership before deleting
+      // Verify the job exists before deleting
       const { getDb, deleteScheduledJob } = await import("./db");
       const db = await getDb();
       if (!db) throw new Error("Database not available");
@@ -765,7 +762,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       return { success: true };
     }),
     runNow: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      // Verify ownership before running
+      // Verify the job exists before running
       const { getDb } = await import("./db");
       const db = await getDb();
       if (!db) throw new Error("Database not available");
@@ -783,7 +780,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       .input(z.object({ jobId: z.number().optional() }))
       .query(async ({ ctx, input }) => {
         if (input.jobId) {
-          // Verify the job belongs to the current user before returning its history
+          // Verify the job exists before returning its history
           const { getDb, getScheduledJobRunsByJobId } = await import("./db");
           const db = await getDb();
           if (!db) throw new Error("Database not available");

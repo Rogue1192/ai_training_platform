@@ -120,16 +120,6 @@ export async function createCampaign(campaign: Omit<InsertCampaign, "id" | "crea
   return result[0]!;
 }
 
-export async function getCampaignsByUserId(userId: number): Promise<Campaign[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  return db
-    .select()
-    .from(campaigns)
-    .where(eq(campaigns.userId, userId))
-    .orderBy(desc(campaigns.createdAt));
-}
 
 export async function getCampaignById(id: number): Promise<Campaign | undefined> {
   const db = await getDb();
@@ -162,25 +152,6 @@ export async function updateCampaign(id: number, updates: Partial<InsertCampaign
   return result[0];
 }
 
-export async function getCampaignStats(userId: number): Promise<Record<string, number>> {
-  const db = await getDb();
-  if (!db) return {};
-
-  const result = await db
-    .select({
-      status: campaigns.status,
-      count: sql<number>`count(*)`,
-    })
-    .from(campaigns)
-    .where(eq(campaigns.userId, userId))
-    .groupBy(campaigns.status);
-
-  const stats: Record<string, number> = {};
-  for (const row of result) {
-    stats[row.status] = Number(row.count);
-  }
-  return stats;
-}
 
 // ============= Campaign Query-Location Operations =============
 
@@ -528,50 +499,6 @@ export async function getSchemaMarkupByBusinessId(businessId: number): Promise<S
     .orderBy(desc(schemaMarkupRecommendations.createdAt))
     .limit(1);
   return result[0];
-}
-
-// ============= Campaign with Business Info (joined query) =============
-
-export async function getCampaignsWithBusinessInfo(userId: number): Promise<
-  (Campaign & { businessName: string; businessType: string | null; website: string | null })[]
-> {
-  const db = await getDb();
-  if (!db) return [];
-
-  const result = await db
-    .select({
-      id: campaigns.id,
-      userId: campaigns.userId,
-      businessId: campaigns.businessId,
-      packageTierId: campaigns.packageTierId,
-      campaignName: campaigns.campaignName,
-      status: campaigns.status,
-      clientType: campaigns.clientType,
-      keywordResearchCompletedAt: campaigns.keywordResearchCompletedAt,
-      credibilityResearchCompletedAt: campaigns.credibilityResearchCompletedAt,
-      contentGenerationCompletedAt: campaigns.contentGenerationCompletedAt,
-      publishingCompletedAt: campaigns.publishingCompletedAt,
-      indexingSubmittedAt: campaigns.indexingSubmittedAt,
-      indexingVerifiedAt: campaigns.indexingVerifiedAt,
-      baselineCheckCompletedAt: campaigns.baselineCheckCompletedAt,
-      trainingStartedAt: campaigns.trainingStartedAt,
-      trainingAggressiveness: campaigns.trainingAggressiveness,
-      rankCheckFrequency: campaigns.rankCheckFrequency,
-      lastError: campaigns.lastError,
-      errorCount: campaigns.errorCount,
-      sourceWebhookId: campaigns.sourceWebhookId,
-      createdAt: campaigns.createdAt,
-      updatedAt: campaigns.updatedAt,
-      businessName: businesses.name,
-      businessType: businesses.businessType,
-      website: businesses.website,
-    })
-    .from(campaigns)
-    .innerJoin(businesses, eq(campaigns.businessId, businesses.id))
-    .where(eq(campaigns.userId, userId))
-    .orderBy(desc(campaigns.createdAt));
-
-  return result as any;
 }
 
 // ============= All Campaigns (no user filter — internal team tool) =============
