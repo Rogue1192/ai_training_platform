@@ -8,16 +8,10 @@ export const ENV = {
   // Owner info
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
 
-  // App
-  appBaseUrl: process.env.APP_BASE_URL || process.env.VITE_APP_BASE_URL || "",
+  // App — BUG-025 fix: use only APP_BASE_URL (server-side env var); VITE_ prefix is for client-side only
+  appBaseUrl: process.env.APP_BASE_URL ?? "",
   isProduction: process.env.NODE_ENV === "production",
 
   // Encryption
   encryptionKey: process.env.ENCRYPTION_KEY ?? "",
-
-  // OpenAI (for LLM, image generation, voice transcription)
-  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
-
-  // Google Maps
-  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
 };

@@ -1760,7 +1760,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         // Get dashboard URL if exists
         const { clientDashboards } = await import("../drizzle/schema");
         const [dashboard] = await db!.select().from(clientDashboards).where(eq(clientDashboards.campaignId, input.campaignId)).limit(1);
-        const baseUrl = process.env.APP_BASE_URL || process.env.VITE_APP_BASE_URL || "";
+        const baseUrl = process.env.APP_BASE_URL ?? "";
         const dashboardUrl = dashboard?.isActive && baseUrl ? `${baseUrl}/report/${dashboard.accessToken}` : undefined;
         
         return sendWelcomeEmail({
@@ -1794,7 +1794,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         if (!business?.contactEmail) return { success: false, error: "No contact email" };
         
         const [dashboard] = await db!.select().from(clientDashboards).where(eq(clientDashboards.campaignId, input.campaignId)).limit(1);
-        const baseUrl = process.env.APP_BASE_URL || process.env.VITE_APP_BASE_URL || "";
+        const baseUrl = process.env.APP_BASE_URL ?? "";
         const dashboardUrl = dashboard?.isActive && baseUrl ? `${baseUrl}/report/${dashboard.accessToken}` : undefined;
         
         return sendMilestoneEmail({

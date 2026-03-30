@@ -23,9 +23,10 @@ describe("Supabase Connection", () => {
     expect(error?.message).not.toContain("invalid_credentials");
   });
 
-  it("should have VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY set", () => {
-    expect(process.env.VITE_SUPABASE_URL).toBeDefined();
-    expect(process.env.VITE_SUPABASE_ANON_KEY).toBeDefined();
-    expect(process.env.VITE_SUPABASE_URL).toContain("supabase.co");
+  // BUG-026 fix: server-side code uses SUPABASE_URL and SUPABASE_ANON_KEY, not VITE_ prefixed vars
+  it("should have SUPABASE_URL and SUPABASE_ANON_KEY set", () => {
+    expect(process.env.SUPABASE_URL).toBeDefined();
+    expect(process.env.SUPABASE_ANON_KEY).toBeDefined();
+    expect(process.env.SUPABASE_URL).toContain("supabase.co");
   });
 });

@@ -927,7 +927,7 @@ export async function sendCampaignWinEmails(
   let dashboardUrl: string | undefined;
   const [dashboard] = await db.select().from(clientDashboards).where(eq(clientDashboards.campaignId, campaignId)).limit(1);
   if (dashboard?.isActive) {
-    const baseUrl = process.env.APP_BASE_URL || process.env.VITE_APP_BASE_URL || "";
+    const baseUrl = process.env.APP_BASE_URL ?? "";
     dashboardUrl = baseUrl ? `${baseUrl}/report/${dashboard.accessToken}` : undefined;
   }
 
@@ -982,7 +982,7 @@ export async function sendCampaignVisibilityReport(
   let dashboardUrl: string | undefined;
   const [dashboard] = await db.select().from(clientDashboards).where(eq(clientDashboards.campaignId, campaignId)).limit(1);
   if (dashboard?.isActive) {
-    const baseUrl = process.env.APP_BASE_URL || process.env.VITE_APP_BASE_URL || "";
+    const baseUrl = process.env.APP_BASE_URL ?? "";
     dashboardUrl = baseUrl ? `${baseUrl}/report/${dashboard.accessToken}` : undefined;
   }
 
