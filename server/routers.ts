@@ -323,21 +323,41 @@ export const appRouter = router({
   serviceKey: router({
     list: protectedProcedure.query(async () => {
       const { getAllServiceKeys } = await import("./db");
+      const { decrypt } = await import("./encryption");
       const keys = await getAllServiceKeys();
-      // Return without encrypted values — just status and service name
-      return keys.map(k => ({
-        id: k.id,
-        service: k.service,
-        status: k.status,
-        lastVerified: k.lastVerified,
-        createdAt: k.createdAt,
-        updatedAt: k.updatedAt,
-        hasKey: !!k.encryptedValue,
-      }));
+      return keys.map(k => {
+        // Safely extract non-sensitive metadata from encrypted value
+        let metadata: Record<string, string> = {};
+        if (k.encryptedValue) {
+          try {
+            const raw = decrypt(k.encryptedValue);
+            // dataforseo stores JSON {login, password} — expose only login (email)
+            if (k.service === "dataforseo") {
+              const parsed = JSON.parse(raw) as { login?: string; password?: string };
+              if (parsed.login) metadata.login = parsed.login;
+            }
+            // whitelabel stores JSON — expose all fields (none are secret)
+            if (k.service === "whitelabel") {
+              const parsed = JSON.parse(raw) as Record<string, string>;
+              metadata = parsed;
+            }
+          } catch { /* ignore decrypt/parse errors */ }
+        }
+        return {
+          id: k.id,
+          service: k.service,
+          status: k.status,
+          lastVerified: k.lastVerified,
+          createdAt: k.createdAt,
+          updatedAt: k.updatedAt,
+          hasKey: !!k.encryptedValue,
+          metadata,
+        };
+      });
     }),
     save: protectedProcedure
       .input(z.object({
-        service: z.enum(["dataforseo", "sinbyte", "resend"]),
+        service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel"]),
         // For dataforseo: pass as JSON string {login, password}
         // For sinbyte/resend: pass as the API key string
         value: z.string().min(1),
@@ -350,14 +370,14 @@ export const appRouter = router({
         return { success: true };
       }),
     delete: protectedProcedure
-      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend"]) }))
+      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel"]) }))
       .mutation(async ({ input }) => {
         const { deleteServiceKey } = await import("./db");
         await deleteServiceKey(input.service);
         return { success: true };
       }),
     test: protectedProcedure
-      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend"]) }))
+      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel"]) }))
       .mutation(async ({ input }) => {
         const { getServiceKey, upsertServiceKey } = await import("./db");
         const { decrypt } = await import("./encryption");
@@ -390,6 +410,10 @@ export const appRouter = router({
             const { error } = await resend.domains.list();
             const valid = !error;
             return { success: valid, message: valid ? "Resend API key verified" : (error?.message || "Invalid Resend key") };
+          } else if (input.service === "whitelabel") {
+            // White-label settings are always valid if they exist
+            const parsed = JSON.parse(value) as { companyName?: string };
+            return { success: true, message: `White-label settings verified (company: ${parsed.companyName || "set"})` };
           }
           return { success: false, message: "Unknown service" };
         } catch (err: any) {

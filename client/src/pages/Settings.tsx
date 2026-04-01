@@ -5,11 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search } from "lucide-react";
+import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search, Palette } from "lucide-react";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
 
 type AIProvider = "openai" | "anthropic" | "google";
-type ServiceType = "dataforseo" | "sinbyte" | "resend";
+type ServiceType = "dataforseo" | "sinbyte" | "resend" | "whitelabel";
 
 const PROVIDERS: {
   id: AIProvider;
@@ -66,7 +66,7 @@ const SERVICE_CONFIGS: {
   {
     id: "resend",
     label: "Resend",
-    description: "Branded email delivery from my.aianswerforge.com",
+    description: "Branded email delivery for client notifications",
     icon: <Mail className="w-6 h-6 text-primary" />,
     fields: [
       { key: "apiKey", label: "API Key", placeholder: "re_...", type: "password" },
@@ -92,11 +92,18 @@ export default function Settings() {
     google: "",
   });
 
-  // Service key inputs: { dataforseo: { login: "", password: "" }, sinbyte: { apiKey: "" }, resend: { apiKey: "" } }
   const [serviceInputs, setServiceInputs] = useState<Record<ServiceType, Record<string, string>>>({
     dataforseo: { login: "", password: "" },
     sinbyte: { apiKey: "" },
     resend: { apiKey: "" },
+    whitelabel: {
+      companyName: "",
+      fromEmail: "",
+      supportEmail: "",
+      appUrl: "",
+      footerText: "",
+      logoUrl: "",
+    },
   });
 
   const [testingProvider, setTestingProvider] = useState<AIProvider | null>(null);
@@ -177,6 +184,20 @@ export default function Settings() {
         return;
       }
       value = JSON.stringify({ login: inputs.login.trim(), password: inputs.password.trim() });
+    } else if (service === "whitelabel") {
+      if (!inputs.companyName?.trim()) {
+        toast.error("Company name is required");
+        return;
+      }
+      // Only save fields that have values
+      const wl: Record<string, string> = {};
+      if (inputs.companyName?.trim()) wl.companyName = inputs.companyName.trim();
+      if (inputs.fromEmail?.trim()) wl.fromEmail = inputs.fromEmail.trim();
+      if (inputs.supportEmail?.trim()) wl.supportEmail = inputs.supportEmail.trim();
+      if (inputs.appUrl?.trim()) wl.appUrl = inputs.appUrl.trim();
+      if (inputs.footerText?.trim()) wl.footerText = inputs.footerText.trim();
+      if (inputs.logoUrl?.trim()) wl.logoUrl = inputs.logoUrl.trim();
+      value = JSON.stringify(wl);
     } else {
       if (!inputs.apiKey?.trim()) {
         toast.error("Please enter an API key");
@@ -187,26 +208,40 @@ export default function Settings() {
 
     try {
       await saveServiceKey.mutateAsync({ service, value });
-      toast.success(`${service} credentials saved successfully`);
-      setServiceInputs((prev) => ({
-        ...prev,
-        [service]: service === "dataforseo" ? { login: "", password: "" } : { apiKey: "" },
-      }));
+      toast.success(
+        service === "whitelabel"
+          ? "White-label settings saved successfully"
+          : `${service} credentials saved successfully`
+      );
+      // Clear inputs after save
+      if (service === "whitelabel") {
+        setServiceInputs((prev) => ({
+          ...prev,
+          whitelabel: { companyName: "", fromEmail: "", supportEmail: "", appUrl: "", footerText: "", logoUrl: "" },
+        }));
+      } else {
+        setServiceInputs((prev) => ({
+          ...prev,
+          [service]: service === "dataforseo" ? { login: "", password: "" } : { apiKey: "" },
+        }));
+      }
       setTestResults((prev) => ({ ...prev, [service]: null }));
       refetchServiceKeys();
     } catch (error: any) {
-      toast.error(error.message || "Failed to save service key");
+      toast.error(error.message || "Failed to save settings");
     }
   };
 
   const handleDeleteServiceKey = async (service: ServiceType) => {
     try {
       await deleteServiceKeyMutation.mutateAsync({ service });
-      toast.success(`${service} credentials deleted`);
+      toast.success(
+        service === "whitelabel" ? "White-label settings deleted" : `${service} credentials deleted`
+      );
       setTestResults((prev) => ({ ...prev, [service]: null }));
       refetchServiceKeys();
     } catch (error: any) {
-      toast.error(error.message || "Failed to delete service key");
+      toast.error(error.message || "Failed to delete");
     }
   };
 
@@ -271,6 +306,9 @@ export default function Settings() {
       </div>
     );
   }
+
+  const whiteLabelStatus = getServiceStatus("whitelabel");
+  const whiteLabelMeta = whiteLabelStatus?.metadata || {};
 
   return (
     <div className="space-y-6">
@@ -371,7 +409,7 @@ export default function Settings() {
       <div>
         <h2 className="text-xl font-semibold text-foreground mb-1">Service Keys</h2>
         <p className="text-sm text-muted-foreground mb-4">
-          Required for keyword research, indexing, and email delivery. Stored encrypted — no need to set Railway env vars manually.
+          Required for keyword research, indexing, and email delivery. Stored encrypted.
         </p>
         <div className="grid gap-4">
           {SERVICE_CONFIGS.map((svc) => {
@@ -379,6 +417,7 @@ export default function Settings() {
             const isSaving = saveServiceKey.isPending;
             const isDeleting = deleteServiceKeyMutation.isPending;
             const isTesting = testingService === svc.id;
+            const meta = status?.metadata || {};
 
             return (
               <Card key={svc.id} className="bg-card border-border">
@@ -391,6 +430,12 @@ export default function Settings() {
                       <div>
                         <CardTitle>{svc.label}</CardTitle>
                         <CardDescription>{svc.description}</CardDescription>
+                        {/* Show saved email for DataForSEO */}
+                        {svc.id === "dataforseo" && status?.hasKey && meta.login && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Logged in as: <span className="font-medium text-foreground">{meta.login}</span>
+                          </p>
+                        )}
                       </div>
                     </div>
                     {status?.hasKey && (
@@ -464,6 +509,189 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* White-Label Branding */}
+      <div>
+        <h2 className="text-xl font-semibold text-foreground mb-1">White-Label Branding</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Customize the company name, email sender, and branding used in all client-facing emails and the dashboard.
+          Leave blank to use the default AI Answer Forge branding.
+        </p>
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Palette className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <CardTitle>Brand Settings</CardTitle>
+                  <CardDescription>
+                    Applied to all client emails — win notifications, baseline reports, upgrade emails
+                  </CardDescription>
+                  {whiteLabelStatus?.hasKey && whiteLabelMeta.companyName && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Currently set to: <span className="font-medium text-foreground">{whiteLabelMeta.companyName}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+              {whiteLabelStatus?.hasKey && (
+                <div className="flex items-center gap-2">
+                  <Check className="w-5 h-5 text-green-500" />
+                  <span className="text-sm text-green-500 font-medium">Configured</span>
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Show current saved values if configured */}
+            {whiteLabelStatus?.hasKey && Object.keys(whiteLabelMeta).length > 0 && (
+              <div className="p-3 rounded-lg bg-muted/40 border border-border space-y-1 text-sm">
+                <p className="font-medium text-foreground mb-2">Current Settings</p>
+                {whiteLabelMeta.companyName && (
+                  <p className="text-muted-foreground">Company Name: <span className="text-foreground">{whiteLabelMeta.companyName}</span></p>
+                )}
+                {whiteLabelMeta.fromEmail && (
+                  <p className="text-muted-foreground">From Email: <span className="text-foreground">{whiteLabelMeta.fromEmail}</span></p>
+                )}
+                {whiteLabelMeta.supportEmail && (
+                  <p className="text-muted-foreground">Support Email: <span className="text-foreground">{whiteLabelMeta.supportEmail}</span></p>
+                )}
+                {whiteLabelMeta.appUrl && (
+                  <p className="text-muted-foreground">App URL: <span className="text-foreground">{whiteLabelMeta.appUrl}</span></p>
+                )}
+                {whiteLabelMeta.footerText && (
+                  <p className="text-muted-foreground">Footer Text: <span className="text-foreground">{whiteLabelMeta.footerText}</span></p>
+                )}
+                {whiteLabelMeta.logoUrl && (
+                  <p className="text-muted-foreground">Logo URL: <span className="text-foreground">{whiteLabelMeta.logoUrl}</span></p>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="wl-companyName">Company Name *</Label>
+                <Input
+                  id="wl-companyName"
+                  placeholder={whiteLabelMeta.companyName || "AI Answer Forge"}
+                  value={serviceInputs.whitelabel.companyName}
+                  onChange={(e) =>
+                    setServiceInputs((prev) => ({
+                      ...prev,
+                      whitelabel: { ...prev.whitelabel, companyName: e.target.value },
+                    }))
+                  }
+                  className="bg-background border-input"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="wl-fromEmail">From Email</Label>
+                <Input
+                  id="wl-fromEmail"
+                  type="email"
+                  placeholder={whiteLabelMeta.fromEmail || "Your Company <updates@yourdomain.com>"}
+                  value={serviceInputs.whitelabel.fromEmail}
+                  onChange={(e) =>
+                    setServiceInputs((prev) => ({
+                      ...prev,
+                      whitelabel: { ...prev.whitelabel, fromEmail: e.target.value },
+                    }))
+                  }
+                  className="bg-background border-input"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="wl-supportEmail">Support Email</Label>
+                <Input
+                  id="wl-supportEmail"
+                  type="email"
+                  placeholder={whiteLabelMeta.supportEmail || "support@yourdomain.com"}
+                  value={serviceInputs.whitelabel.supportEmail}
+                  onChange={(e) =>
+                    setServiceInputs((prev) => ({
+                      ...prev,
+                      whitelabel: { ...prev.whitelabel, supportEmail: e.target.value },
+                    }))
+                  }
+                  className="bg-background border-input"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="wl-appUrl">App / Dashboard URL</Label>
+                <Input
+                  id="wl-appUrl"
+                  placeholder={whiteLabelMeta.appUrl || "https://yourdomain.com"}
+                  value={serviceInputs.whitelabel.appUrl}
+                  onChange={(e) =>
+                    setServiceInputs((prev) => ({
+                      ...prev,
+                      whitelabel: { ...prev.whitelabel, appUrl: e.target.value },
+                    }))
+                  }
+                  className="bg-background border-input"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="wl-footerText">Email Footer Text</Label>
+                <Input
+                  id="wl-footerText"
+                  placeholder={whiteLabelMeta.footerText || "Powered by Your Company"}
+                  value={serviceInputs.whitelabel.footerText}
+                  onChange={(e) =>
+                    setServiceInputs((prev) => ({
+                      ...prev,
+                      whitelabel: { ...prev.whitelabel, footerText: e.target.value },
+                    }))
+                  }
+                  className="bg-background border-input"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="wl-logoUrl">Logo URL (optional)</Label>
+                <Input
+                  id="wl-logoUrl"
+                  placeholder={whiteLabelMeta.logoUrl || "https://yourdomain.com/logo.png"}
+                  value={serviceInputs.whitelabel.logoUrl}
+                  onChange={(e) =>
+                    setServiceInputs((prev) => ({
+                      ...prev,
+                      whitelabel: { ...prev.whitelabel, logoUrl: e.target.value },
+                    }))
+                  }
+                  className="bg-background border-input"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button
+                onClick={() => handleSaveServiceKey("whitelabel")}
+                disabled={saveServiceKey.isPending}
+              >
+                {saveServiceKey.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : whiteLabelStatus?.hasKey ? (
+                  "Update Branding"
+                ) : (
+                  "Save Branding"
+                )}
+              </Button>
+              {whiteLabelStatus?.hasKey && (
+                <Button
+                  variant="destructive"
+                  onClick={() => handleDeleteServiceKey("whitelabel")}
+                  disabled={deleteServiceKeyMutation.isPending}
+                >
+                  <X className="w-4 h-4 mr-1" />
+                  Reset to Default
+                </Button>
+              )}
+            </div>
+            {renderTestResult("whitelabel")}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Two-Factor Authentication */}
       <TwoFactorAuth />

@@ -1156,7 +1156,7 @@ export async function seedDefaultPromptTemplates(): Promise<PromptTemplate[]> {
 
 // ─── Service Keys (DataForSEO, SinByte, Resend) ───────────────────────────────
 
-export type ServiceKeyService = "dataforseo" | "sinbyte" | "resend";
+export type ServiceKeyService = "dataforseo" | "sinbyte" | "resend" | "whitelabel";
 
 export async function getServiceKey(service: ServiceKeyService) {
   const db = await getDb();
