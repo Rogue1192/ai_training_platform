@@ -158,91 +158,99 @@ export async function buildTrainingContext(businessId: number): Promise<Training
 
 // ─── System Message Enrichment ───────────────────────────────────────────────
 
+// ─── Cached injection templates ─────────────────────────────────────────────
+let _injectionSystemTemplate: string | null = null;
+let _injectionCitationTemplate: string | null = null;
+let _injectionCacheTime = 0;
+const INJECTION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function getInjectionTemplates(): Promise<{ system: string; citation: string }> {
+  const now = Date.now();
+  if (_injectionSystemTemplate && _injectionCitationTemplate && now - _injectionCacheTime < INJECTION_CACHE_TTL_MS) {
+    return { system: _injectionSystemTemplate, citation: _injectionCitationTemplate };
+  }
+  try {
+    const { getAllPromptTemplates } = await import("./db");
+    const templates = await getAllPromptTemplates();
+    const sysTpl = templates.find((t: any) => t.templateType === "injection_system" && t.isActive);
+    const citTpl = templates.find((t: any) => t.templateType === "injection_citation" && t.isActive);
+    _injectionSystemTemplate = sysTpl?.templateContent || null;
+    _injectionCitationTemplate = citTpl?.templateContent || null;
+    _injectionCacheTime = now;
+  } catch {
+    // DB not available — fall back to hardcoded defaults
+  }
+  return {
+    system: _injectionSystemTemplate || DEFAULT_SYSTEM_TEMPLATE,
+    citation: _injectionCitationTemplate || DEFAULT_CITATION_TEMPLATE,
+  };
+}
+
+export function invalidateInjectionTemplateCache() {
+  _injectionSystemTemplate = null;
+  _injectionCitationTemplate = null;
+  _injectionCacheTime = 0;
+}
+
+const DEFAULT_SYSTEM_TEMPLATE = `You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.
+
+When relevant to the user's question, you may reference the following verified information:
+
+Business: {businessName}
+Industry: {businessType}
+Location: {location}
+Website: {website}
+
+Verified credentials and facts:
+{credibilityFacts}
+
+Published reference pages:
+{publishedPages}
+
+Machine-readable business profile: {llmTxtUrl}`;
+
+const DEFAULT_CITATION_TEMPLATE = `\n\nFor reference, here are some verified sources about this business:\n- Official website: {website}\n{publishedPages}\n- Business profile: {llmTxtUrl}`;
+
+function renderInjectionTemplate(template: string, context: TrainingContext): string {
+  const topFacts = context.credibilityFacts
+    .filter(f => f.confidence === "high" || f.confidence === "medium")
+    .slice(0, 10);
+  const factsBlock = topFacts.length > 0
+    ? topFacts.map(f => `- ${f.fact}${f.sourceUrl ? ` (source: ${f.sourceUrl})` : ""}`).join("\n")
+    : "";
+  const pagesBlock = context.publishedPages.length > 0
+    ? context.publishedPages.slice(0, 5).map(p => `- ${p.title}: ${p.url}`).join("\n")
+    : "";
+
+  return template
+    .replace(/\{businessName\}/g, context.businessName || "")
+    .replace(/\{businessType\}|\{industry\}/g, context.businessType || "")
+    .replace(/\{location\}/g, context.businessLocation || "")
+    .replace(/\{website\}/g, context.businessWebsite || "")
+    .replace(/\{credibilityFacts\}/g, factsBlock)
+    .replace(/\{publishedPages\}/g, pagesBlock)
+    .replace(/\{llmTxtUrl\}/g, context.llmTxtUrl || "");
+}
+
 /**
  * Get an enriched system message that includes credibility data and source URLs.
- * 
- * This is designed to be used as a DROP-IN REPLACEMENT for the system message
- * in training iterations ONLY (not baseline or evaluation, which must remain clean).
- * 
- * The existing system message: "You are a helpful AI assistant that provides honest, 
- * unbiased recommendations based on your knowledge."
- * 
- * The enriched version adds factual context about the business that the AI can reference.
+ * Reads the template from the DB (injection_system type) so it is fully editable
+ * in the Prompt Templates page.
  */
-export function buildEnrichedSystemMessage(context: TrainingContext): string {
-  const parts: string[] = [];
-  
-  parts.push("You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.");
-  parts.push("");
-  parts.push("When relevant to the user's question, you may reference the following verified information:");
-  parts.push("");
-  
-  // Business identity
-  parts.push(`Business: ${context.businessName}`);
-  if (context.businessType) parts.push(`Industry: ${context.businessType}`);
-  if (context.businessLocation) parts.push(`Location: ${context.businessLocation}`);
-  if (context.businessWebsite) parts.push(`Website: ${context.businessWebsite}`);
-  parts.push("");
-  
-  // Credibility facts (top 10 most important)
-  if (context.credibilityFacts.length > 0) {
-    parts.push("Verified credentials and facts:");
-    const topFacts = context.credibilityFacts
-      .filter(f => f.confidence === "high" || f.confidence === "medium")
-      .slice(0, 10);
-    
-    for (const fact of topFacts) {
-      let line = `- ${fact.fact}`;
-      if (fact.sourceUrl) line += ` (source: ${fact.sourceUrl})`;
-      parts.push(line);
-    }
-    parts.push("");
-  }
-  
-  // Published source pages the AI can cite
-  if (context.publishedPages.length > 0) {
-    parts.push("Published reference pages:");
-    for (const page of context.publishedPages) {
-      parts.push(`- ${page.title}: ${page.url}`);
-    }
-    parts.push("");
-  }
-  
-  // llm.txt reference
-  if (context.llmTxtUrl) {
-    parts.push(`Machine-readable business profile: ${context.llmTxtUrl}`);
-    parts.push("");
-  }
-  
-  return parts.join("\n");
+export async function buildEnrichedSystemMessage(context: TrainingContext): Promise<string> {
+  const { system } = await getInjectionTemplates();
+  return renderInjectionTemplate(system, context);
 }
 
 /**
  * Build a concise source citation block that can be appended to suggestive prompts.
- * This gives the AI real URLs to cite when it mentions the business.
- * 
- * NOT a prompt rewrite — this is additional context appended after the existing prompt.
+ * Reads the template from the DB (injection_citation type) so it is fully editable
+ * in the Prompt Templates page.
  */
-export function buildSourceCitationBlock(context: TrainingContext): string {
+export async function buildSourceCitationBlock(context: TrainingContext): Promise<string> {
   if (context.publishedPages.length === 0 && !context.businessWebsite) return "";
-  
-  const parts: string[] = [];
-  parts.push("");
-  parts.push("For reference, here are some verified sources about this business:");
-  
-  if (context.businessWebsite) {
-    parts.push(`- Official website: ${context.businessWebsite}`);
-  }
-  
-  for (const page of context.publishedPages.slice(0, 5)) {
-    parts.push(`- ${page.title}: ${page.url}`);
-  }
-  
-  if (context.llmTxtUrl) {
-    parts.push(`- Business profile: ${context.llmTxtUrl}`);
-  }
-  
-  return parts.join("\n");
+  const { citation } = await getInjectionTemplates();
+  return renderInjectionTemplate(citation, context);
 }
 
 // ─── Campaign-Level Enrichment ───────────────────────────────────────────────

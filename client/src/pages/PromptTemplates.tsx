@@ -88,6 +88,18 @@ const typeLabels: Record<string, { label: string; icon: any; color: string; desc
     color: "text-teal-400 bg-teal-500/10 border-teal-500/30",
     description: "Prompts used by Claude Haiku to research, verify, and expand on the client's credentials. Outputs structured facts and source URLs.",
   },
+  injection_system: {
+    label: "System Injection",
+    icon: Layers,
+    color: "text-rose-400 bg-rose-500/10 border-rose-500/30",
+    description: "Injected as the system message in every training session. Replaces the plain 'You are a helpful AI assistant' line with business identity, verified credentials, and published reference pages. Variables: {businessName}, {businessType}, {location}, {website}, {credibilityFacts}, {publishedPages}, {llmTxtUrl}",
+  },
+  injection_citation: {
+    label: "Citation Block",
+    icon: ArrowRight,
+    color: "text-amber-400 bg-amber-500/10 border-amber-500/30",
+    description: "Appended to the end of every training prompt so the AI has real URLs to cite when it mentions the business. Variables: {website}, {publishedPages}, {llmTxtUrl}",
+  },
 };
 
 export default function PromptTemplates() {
@@ -210,6 +222,8 @@ export default function PromptTemplates() {
                         <SelectItem value="category_based">Category</SelectItem>
                         <SelectItem value="content_generation">Content Generation</SelectItem>
                         <SelectItem value="credibility_research">Credibility Research</SelectItem>
+                        <SelectItem value="injection_system">System Injection</SelectItem>
+                        <SelectItem value="injection_citation">Citation Block</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

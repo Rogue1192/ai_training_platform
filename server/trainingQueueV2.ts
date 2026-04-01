@@ -282,11 +282,11 @@ async function executeTrainingIteration(
     // This is the key improvement: training prompts now include real, verifiable facts
     const trainingContext = await getTrainingContextForSession(sessionId);
     const enrichedSystemMessage = trainingContext
-      ? buildEnrichedSystemMessage(trainingContext)
+      ? await buildEnrichedSystemMessage(trainingContext)
       : "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.";
     
     // Append source citation block to suggestive prompt if we have published pages
-    const citationBlock = trainingContext ? buildSourceCitationBlock(trainingContext) : "";
+    const citationBlock = trainingContext ? await buildSourceCitationBlock(trainingContext) : "";
     const enrichedPrompt = citationBlock ? `${suggestivePrompt}${citationBlock}` : suggestivePrompt;
     
     if (trainingContext?.credibilityFacts.length) {

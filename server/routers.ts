@@ -1334,7 +1334,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
   promptTemplate: router({
     // List all templates for the current user, optionally filtered by type
     list: protectedProcedure
-      .input(z.object({ templateType: z.enum(["clean", "suggestive", "follow_up", "category_based", "content_generation", "credibility_research"]).optional() }).optional())
+      .input(z.object({ templateType: z.enum(["clean", "suggestive", "follow_up", "category_based", "content_generation", "credibility_research", "injection_system", "injection_citation"]).optional() }).optional())
       .query(async ({ ctx, input }) => {
         const { getAllPromptTemplates, hasAnyPromptTemplates, seedDefaultPromptTemplates } = await import("./db");
         
@@ -1362,7 +1362,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
     create: protectedProcedure
       .input(
         z.object({
-          templateType: z.enum(["clean", "suggestive", "follow_up", "category_based", "content_generation", "credibility_research"]),
+          templateType: z.enum(["clean", "suggestive", "follow_up", "category_based", "content_generation", "credibility_research", "injection_system", "injection_citation"]),
           templateName: z.string().min(1).max(255),
           templateContent: z.string().min(1),
           isActive: z.boolean().default(true),
@@ -1379,7 +1379,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
     update: protectedProcedure
       .input(z.object({
         id: z.number(),
-        templateType: z.enum(["clean", "suggestive", "follow_up", "category_based", "content_generation", "credibility_research"]).optional(),
+        templateType: z.enum(["clean", "suggestive", "follow_up", "category_based", "content_generation", "credibility_research", "injection_system", "injection_citation"]).optional(),
         templateName: z.string().min(1).max(255).optional(),
         templateContent: z.string().min(1).optional(),
         isActive: z.boolean().optional(),
@@ -1707,7 +1707,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { buildTrainingContext, buildEnrichedSystemMessage } = await import("./trainingContextEnricher");
         const context = await buildTrainingContext(input.businessId);
         if (!context) return { message: null, hasContext: false };
-        return { message: buildEnrichedSystemMessage(context), hasContext: true };
+        return { message: await buildEnrichedSystemMessage(context), hasContext: true };
       }),
     // Get source citation block preview
     getSourceCitationBlock: protectedProcedure
@@ -1716,7 +1716,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { buildTrainingContext, buildSourceCitationBlock } = await import("./trainingContextEnricher");
         const context = await buildTrainingContext(input.businessId);
         if (!context) return { block: null, hasContext: false };
-        return { block: buildSourceCitationBlock(context), hasContext: true };
+        return { block: await buildSourceCitationBlock(context), hasContext: true };
       }),
   }),
 
