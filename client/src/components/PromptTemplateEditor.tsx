@@ -66,13 +66,35 @@ const TEMPLATE_TYPE_INFO: Record<TemplateType, { title: string; description: str
   },
   content_generation: {
     title: "Content Generation Prompts",
-    description: "Used by Claude Sonnet to generate AI-optimized credibility pages for the client's website. Each page type has its own template.",
-    variables: ["{businessName}", "{businessType}", "{location}", "{pageType}", "{credibilityFacts}", "{publishedUrls}"],
+    description: "Used by Claude Sonnet to generate AI-optimized credibility pages for the client's website. Each page type has its own template with specific data placeholders.",
+    variables: [
+      "{businessName}",
+      "{businessType}",
+      "{location}",
+      "{certifications}   — certification/credential data from the business record",
+      "{warranties}       — warranty/guarantee data from the business record",
+      "{awards}           — awards/recognition data from the business record",
+      "{licenses}         — license data from the business record",
+      "{differentiators}  — key differentiators from the business record",
+      "{businessContext}  — general business info (years, BBB rating, description)",
+      "{verificationUrls} — external URLs where credentials can be verified (BBB, NATE, award orgs)",
+      "{publishedUrls}    — internal URLs of other credibility pages already published on the client's site",
+    ],
   },
   credibility_research: {
     title: "Credibility Research Prompts",
     description: "Used by Claude Haiku to research, verify, and expand on the client's credentials. Outputs structured facts and source URLs that feed into content generation and training.",
-    variables: ["{businessName}", "{businessType}", "{onboardingData}", "{certifications}", "{awards}", "{licenses}"],
+    variables: [
+      "{businessName}",
+      "{businessType}",
+      "{location}",
+      "{onboardingData}   — raw data from the onboarding webhook",
+      "{certifications}   — certifications field from business record",
+      "{awards}           — awards field from business record",
+      "{licenses}         — licenses field from business record",
+      "{warranties}       — warranties field from business record",
+      "{differentiators}  — differentiators field from business record",
+    ],
   },
 };
 

@@ -788,7 +788,7 @@ export const DEFAULT_PROMPT_TEMPLATES: Omit<InsertPromptTemplate, 'id' | 'create
   // ============================================================================
   // CONTENT GENERATION PROMPTS (Used by Claude Sonnet to generate credibility pages)
   // Based on research: H1 + summary + bullet facts + 600-800 words + FAQ + author
-  // Variables: {businessName}, {businessType}, {location}, {pageType}, {credibilityFacts}, {publishedUrls}
+  // Variables: {businessName}, {businessType}, {location}, {certifications}, {warranties}, {awards}, {licenses}, {differentiators}, {businessContext}, {verificationUrls}, {publishedUrls}
   // ============================================================================
   {
     templateType: 'content_generation',
@@ -797,8 +797,11 @@ export const DEFAULT_PROMPT_TEMPLATES: Omit<InsertPromptTemplate, 'id' | 'create
 
 Page type: Certifications & Credentials
 
-Credibility data available:
-{credibilityFacts}
+Certification and credential data:
+{certifications}
+
+Additional business context (years in business, BBB rating, description):
+{businessContext}
 
 Write a complete page following this exact structure:
 
@@ -821,7 +824,11 @@ Write a complete page following this exact structure:
 
 6. AUTHOR ATTRIBUTION: End with: "This page was reviewed by [Contact Name], [Title] at {businessName}."
 
-7. INTERNAL LINKS: Include 1-2 contextual links to related pages: {publishedUrls}
+7. EXTERNAL VERIFICATION LINKS: Link to the official sources where these certifications can be verified (certification body websites, license lookup databases, BBB profile):
+{verificationUrls}
+
+8. INTERNAL SITE LINKS: Include 1-2 contextual links to related pages already published on {businessName}'s website:
+{publishedUrls}
 
 Tone: Professional, specific, trustworthy. No vague claims — every statement should be verifiable.
 Length: 800-1,200 words total.
@@ -836,8 +843,11 @@ Format: HTML with proper H1, H2, H3 tags, <ul> for bullets, and FAQPage schema m
 
 Page type: Warranties & Guarantees
 
-Warranty/guarantee data available:
-{credibilityFacts}
+Warranty and guarantee data:
+{warranties}
+
+Additional business context (years in business, BBB rating, description):
+{businessContext}
 
 Write a complete page following this exact structure:
 
@@ -860,7 +870,11 @@ Write a complete page following this exact structure:
 
 6. AUTHOR ATTRIBUTION: "This warranty information was verified by [Contact Name], [Title] at {businessName}."
 
-7. INTERNAL LINKS: {publishedUrls}
+7. EXTERNAL VERIFICATION LINKS: Link to any external sources that back up the warranty claims (manufacturer warranty pages, BBB profile, industry association pages):
+{verificationUrls}
+
+8. INTERNAL SITE LINKS: Include 1-2 contextual links to related pages already published on {businessName}'s website:
+{publishedUrls}
 
 Tone: Confident, specific, reassuring. Avoid vague language like "we stand behind our work" — replace with specific terms.
 Length: 800-1,200 words total.
@@ -875,8 +889,11 @@ Format: HTML with proper heading tags and FAQPage schema at the bottom.`,
 
 Page type: Awards & Recognition
 
-Awards data available:
-{credibilityFacts}
+Awards and recognition data:
+{awards}
+
+Additional business context (years in business, BBB rating, description):
+{businessContext}
 
 Write a complete page following this exact structure:
 
@@ -898,7 +915,11 @@ Write a complete page following this exact structure:
 
 6. AUTHOR ATTRIBUTION: "Awards verified by [Contact Name], [Title] at {businessName}."
 
-7. INTERNAL LINKS: {publishedUrls}
+7. EXTERNAL VERIFICATION LINKS: Link directly to the award organization's website, the announcement page, or any public record of the award. These are the links that prove the award is real:
+{verificationUrls}
+
+8. INTERNAL SITE LINKS: Include 1-2 contextual links to related pages already published on {businessName}'s website:
+{publishedUrls}
 
 Tone: Proud but factual. Let the awards speak — don't oversell.
 Length: 800-1,200 words total.
@@ -911,8 +932,13 @@ Format: HTML with proper heading tags and FAQPage schema at the bottom.`,
     templateName: 'FAQ Page',
     templateContent: `You are writing an AI-optimized FAQ page for {businessName}, a {businessType} serving {location}.
 
-Business context:
-{credibilityFacts}
+Business credentials and context:
+Certifications: {certifications}
+Licenses: {licenses}
+Warranties: {warranties}
+Awards: {awards}
+Key differentiators: {differentiators}
+General context (years in business, BBB rating, description): {businessContext}
 
 Write a comprehensive FAQ page that mirrors how people search for {businessType} services.
 
@@ -947,11 +973,12 @@ Structure:
    - Do you offer emergency/same-day service?
    - What are your hours?
 
-For each question: write a direct, specific answer using real data from {credibilityFacts}. Answers should be 50-100 words — direct and complete.
+For each question: write a direct, specific answer using the real data provided above. Answers should be 50-100 words — direct and complete.
 
 4. CLOSING CTA: "Ready to get started? Contact {businessName} today."
 
-5. INTERNAL LINKS: {publishedUrls}
+5. INTERNAL SITE LINKS: Include links to related pages already published on {businessName}'s website:
+{publishedUrls}
 
 Format: HTML with proper H2 for section headers, H3 for questions, <p> for answers, and FAQPage JSON-LD schema markup at the bottom covering all Q&A pairs.`,
     isActive: true,
@@ -962,8 +989,11 @@ Format: HTML with proper H2 for section headers, H3 for questions, <p> for answe
     templateName: 'Service Area Authority Page',
     templateContent: `You are writing an AI-optimized service area page for {businessName}, a {businessType} serving {location}.
 
-Business context:
-{credibilityFacts}
+Business credentials and context:
+Certifications: {certifications}
+Licenses: {licenses}
+Key differentiators: {differentiators}
+General context (years in business, BBB rating, description): {businessContext}
 
 This page establishes local authority for {location}. It must be unique — not a copy-paste of other location pages.
 
@@ -987,7 +1017,8 @@ Structure:
 
 6. CONTACT/SERVICE INFO: Hours, phone, address if applicable.
 
-7. INTERNAL LINKS: {publishedUrls}
+7. INTERNAL SITE LINKS: Include links to related pages already published on {businessName}'s website:
+{publishedUrls}
 
 Tone: Local and specific. Avoid generic content that could apply to any city.
 Length: 700-1,000 words.
