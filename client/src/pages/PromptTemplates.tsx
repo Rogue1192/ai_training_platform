@@ -45,6 +45,8 @@ import {
   Layers,
   Copy,
   Check,
+  PenTool,
+  Search,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -73,6 +75,18 @@ const typeLabels: Record<string, { label: string; icon: any; color: string; desc
     icon: Layers,
     color: "text-orange-400 bg-orange-500/10 border-orange-500/30",
     description: "Prompts organized by industry or service category",
+  },
+  content_generation: {
+    label: "Content",
+    icon: PenTool,
+    color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/30",
+    description: "Prompts used by Claude Sonnet to generate AI-optimized credibility pages for the client's website",
+  },
+  credibility_research: {
+    label: "Research",
+    icon: Search,
+    color: "text-teal-400 bg-teal-500/10 border-teal-500/30",
+    description: "Prompts used by Claude Haiku to research, verify, and expand on the client's credentials. Outputs structured facts and source URLs.",
   },
 };
 
@@ -194,6 +208,8 @@ export default function PromptTemplates() {
                         <SelectItem value="suggestive">Suggestive</SelectItem>
                         <SelectItem value="follow_up">Follow-Up</SelectItem>
                         <SelectItem value="category_based">Category</SelectItem>
+                        <SelectItem value="content_generation">Content Generation</SelectItem>
+                        <SelectItem value="credibility_research">Credibility Research</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

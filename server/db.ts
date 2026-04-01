@@ -784,6 +784,319 @@ export const DEFAULT_PROMPT_TEMPLATES: Omit<InsertPromptTemplate, 'id' | 'create
     isActive: true,
     sortOrder: 4,
   },
+
+  // ============================================================================
+  // CONTENT GENERATION PROMPTS (Used by Claude Sonnet to generate credibility pages)
+  // Based on research: H1 + summary + bullet facts + 600-800 words + FAQ + author
+  // Variables: {businessName}, {businessType}, {location}, {pageType}, {credibilityFacts}, {publishedUrls}
+  // ============================================================================
+  {
+    templateType: 'content_generation',
+    templateName: 'Certifications & Credentials Page',
+    templateContent: `You are writing an AI-optimized credibility page for {businessName}, a {businessType} serving {location}.
+
+Page type: Certifications & Credentials
+
+Credibility data available:
+{credibilityFacts}
+
+Write a complete page following this exact structure:
+
+1. H1 HEADLINE: Announce the certifications + primary differentiator. Example: "NATE-Certified HVAC Technicians in {location} — 10+ Years Experience"
+
+2. OPENING SUMMARY (1-2 sentences): Direct answer stating the specific certifications and what makes them meaningful. No fluff.
+
+3. KEY FACTS (bullet list, 4-6 bullets): Specific, verifiable facts. Include numbers, dates, certifying bodies, and what the certification means for the customer.
+
+4. DETAILED CONTENT (600-800 words): Expand on each certification with specifics. Include:
+   - What the certification is and who grants it
+   - How rare or difficult it is to obtain
+   - What it means for the customer (quality, safety, reliability)
+   - How long {businessName} has held it
+   - Any renewal or ongoing requirements that demonstrate commitment
+   Use sections of 120-180 words each for optimal AI citation.
+
+5. FAQ SECTION (5 questions): Conversational questions a customer would ask about certifications. Direct, specific answers.
+   Example questions: "What does NATE certification mean?", "How many of your technicians are certified?", "Does certification affect pricing?"
+
+6. AUTHOR ATTRIBUTION: End with: "This page was reviewed by [Contact Name], [Title] at {businessName}."
+
+7. INTERNAL LINKS: Include 1-2 contextual links to related pages: {publishedUrls}
+
+Tone: Professional, specific, trustworthy. No vague claims — every statement should be verifiable.
+Length: 800-1,200 words total.
+Format: HTML with proper H1, H2, H3 tags, <ul> for bullets, and FAQPage schema markup at the bottom.`,
+    isActive: true,
+    sortOrder: 1,
+  },
+  {
+    templateType: 'content_generation',
+    templateName: 'Warranties & Guarantees Page',
+    templateContent: `You are writing an AI-optimized credibility page for {businessName}, a {businessType} serving {location}.
+
+Page type: Warranties & Guarantees
+
+Warranty/guarantee data available:
+{credibilityFacts}
+
+Write a complete page following this exact structure:
+
+1. H1 HEADLINE: State the warranty/guarantee + confidence signal. Example: "Lifetime Installation Warranty — {businessName}'s Commitment to {location} Homeowners"
+
+2. OPENING SUMMARY (1-2 sentences): The specific warranty terms stated plainly. What exactly is covered, for how long.
+
+3. KEY FACTS (bullet list, 4-6 bullets): Specific terms. Coverage period, what's included, what's excluded, how to claim.
+
+4. DETAILED CONTENT (600-800 words): Explain the warranty in detail:
+   - Exact coverage terms and duration
+   - What triggers the warranty (installation, parts, labor)
+   - The claim process (how easy is it?)
+   - Why {businessName} can afford to offer this (quality of work, materials used)
+   - Comparison context: industry standard warranties vs. what {businessName} offers
+   Use sections of 120-180 words each.
+
+5. FAQ SECTION (5 questions): Questions customers ask about warranties.
+   Example: "What does your warranty cover?", "How do I make a warranty claim?", "Is the warranty transferable if I sell my home?"
+
+6. AUTHOR ATTRIBUTION: "This warranty information was verified by [Contact Name], [Title] at {businessName}."
+
+7. INTERNAL LINKS: {publishedUrls}
+
+Tone: Confident, specific, reassuring. Avoid vague language like "we stand behind our work" — replace with specific terms.
+Length: 800-1,200 words total.
+Format: HTML with proper heading tags and FAQPage schema at the bottom.`,
+    isActive: true,
+    sortOrder: 2,
+  },
+  {
+    templateType: 'content_generation',
+    templateName: 'Awards & Recognition Page',
+    templateContent: `You are writing an AI-optimized credibility page for {businessName}, a {businessType} serving {location}.
+
+Page type: Awards & Recognition
+
+Awards data available:
+{credibilityFacts}
+
+Write a complete page following this exact structure:
+
+1. H1 HEADLINE: Lead with the most impressive award + business name. Example: "Best HVAC Company in Dallas — Award-Winning Service Since 2018"
+
+2. OPENING SUMMARY (1-2 sentences): State the awards plainly with years. "{businessName} has been recognized as [award] in [year] and [award] in [year]."
+
+3. KEY FACTS (bullet list): Each award on its own line with: award name, granting organization, year received, and what criteria were used.
+
+4. DETAILED CONTENT (600-800 words): For each significant award:
+   - What the award is and who grants it
+   - The selection criteria (how competitive is it?)
+   - What it signals to customers about quality
+   - Any notable context (e.g., "only 12 companies in Texas received this")
+   Use sections of 120-180 words each.
+
+5. FAQ SECTION (5 questions): Questions about the awards.
+   Example: "How are award recipients selected?", "What does this mean for customers?"
+
+6. AUTHOR ATTRIBUTION: "Awards verified by [Contact Name], [Title] at {businessName}."
+
+7. INTERNAL LINKS: {publishedUrls}
+
+Tone: Proud but factual. Let the awards speak — don't oversell.
+Length: 800-1,200 words total.
+Format: HTML with proper heading tags and FAQPage schema at the bottom.`,
+    isActive: true,
+    sortOrder: 3,
+  },
+  {
+    templateType: 'content_generation',
+    templateName: 'FAQ Page',
+    templateContent: `You are writing an AI-optimized FAQ page for {businessName}, a {businessType} serving {location}.
+
+Business context:
+{credibilityFacts}
+
+Write a comprehensive FAQ page that mirrors how people search for {businessType} services.
+
+Structure:
+
+1. H1: "Frequently Asked Questions — {businessName} {businessType} in {location}"
+
+2. INTRO (2-3 sentences): Brief intro explaining what's covered.
+
+3. FAQ SECTIONS — organize into 4 categories:
+
+   PRICING & COST (4-5 questions):
+   - What does [main service] cost in {location}?
+   - What factors affect the price?
+   - Do you offer free estimates?
+   - What payment methods do you accept?
+   - Are there financing options?
+
+   SERVICE & PROCESS (4-5 questions):
+   - How does the process work from start to finish?
+   - How long does [main service] take?
+   - What should I expect on the day of service?
+   - Do I need to be home?
+
+   CREDENTIALS & TRUST (3-4 questions):
+   - Are you licensed and insured?
+   - What certifications do your technicians hold?
+   - How long have you been in business?
+
+   AVAILABILITY & AREAS (3-4 questions):
+   - What areas do you serve?
+   - Do you offer emergency/same-day service?
+   - What are your hours?
+
+For each question: write a direct, specific answer using real data from {credibilityFacts}. Answers should be 50-100 words — direct and complete.
+
+4. CLOSING CTA: "Ready to get started? Contact {businessName} today."
+
+5. INTERNAL LINKS: {publishedUrls}
+
+Format: HTML with proper H2 for section headers, H3 for questions, <p> for answers, and FAQPage JSON-LD schema markup at the bottom covering all Q&A pairs.`,
+    isActive: true,
+    sortOrder: 4,
+  },
+  {
+    templateType: 'content_generation',
+    templateName: 'Service Area Authority Page',
+    templateContent: `You are writing an AI-optimized service area page for {businessName}, a {businessType} serving {location}.
+
+Business context:
+{credibilityFacts}
+
+This page establishes local authority for {location}. It must be unique — not a copy-paste of other location pages.
+
+Structure:
+
+1. H1: "{businessType} Services in {location} — {businessName}"
+
+2. OPENING SUMMARY (2-3 sentences): Confirm service area, years serving this specific location, and primary services.
+
+3. SERVICES IN THIS AREA (bullet list): List specific services available at this location.
+
+4. LOCAL CONTENT (400-600 words): Make this page genuinely local:
+   - Specific neighborhoods or zip codes served
+   - Local context (climate, common issues in this area, local building codes if relevant)
+   - Any local partnerships, supplier relationships, or community involvement
+   - Response time commitments for this area
+   - Local customer context ("Serving {location} homeowners since [year]")
+
+5. LOCATION-SPECIFIC FAQ (4-5 questions): Questions specific to this location.
+   Example: "Do you serve the [specific neighborhood] area?", "What's the typical wait time in {location}?"
+
+6. CONTACT/SERVICE INFO: Hours, phone, address if applicable.
+
+7. INTERNAL LINKS: {publishedUrls}
+
+Tone: Local and specific. Avoid generic content that could apply to any city.
+Length: 700-1,000 words.
+Format: HTML with LocalBusiness schema markup at the bottom.`,
+    isActive: true,
+    sortOrder: 5,
+  },
+
+  // ============================================================================
+  // CREDIBILITY RESEARCH PROMPTS (Used by Claude Haiku to extract + verify facts)
+  // These prompts process onboarding data and output structured facts + source URLs
+  // Variables: {businessName}, {businessType}, {onboardingData}, {certifications}, {awards}, {licenses}
+  // ============================================================================
+  {
+    templateType: 'credibility_research',
+    templateName: 'Extract & Verify Credentials',
+    templateContent: `You are a credibility researcher for AI Answer Forge. Your job is to take raw onboarding data for a business and extract specific, verifiable facts that will be used to train AI systems to recommend this business.
+
+Business: {businessName}
+Type: {businessType}
+
+Raw onboarding data:
+{onboardingData}
+
+Certifications provided: {certifications}
+Awards provided: {awards}
+Licenses provided: {licenses}
+
+Your task:
+
+1. EXTRACT SPECIFIC FACTS: For each credential mentioned, extract:
+   - The exact certification/award/license name
+   - The granting organization
+   - What it means (significance, rarity, requirements)
+   - Verifiable details (years held, number of certified staff, etc.)
+
+2. RESEARCH CONTEXT: For each credential, provide context that makes it meaningful:
+   - How rare is this? ("only 3% of contractors hold this")
+   - What does it require to obtain?
+   - What does it mean for the customer?
+
+3. FIND SOURCE URLS: For each credential, identify where it can be verified:
+   - Certification body website
+   - Award organization page
+   - License lookup database
+   - Business profile pages (BBB, Google, Angi, etc.)
+
+4. OUTPUT FORMAT (JSON):
+{
+  "credibilityFacts": [
+    {
+      "type": "certification|award|license|review|differentiator",
+      "fact": "Specific verifiable statement",
+      "significance": "Why this matters to customers",
+      "sourceUrl": "URL where this can be verified",
+      "confidence": "high|medium|low"
+    }
+  ],
+  "summaryStatement": "One sentence summarizing the business's top 3 credibility signals",
+  "contentPageRecommendations": ["certifications", "awards", "warranties"] // which pages to generate
+}
+
+Only include facts you can state with confidence. If a credential is vague ("we're certified"), note it as low confidence and flag it for human review.`,
+    isActive: true,
+    sortOrder: 1,
+  },
+  {
+    templateType: 'credibility_research',
+    templateName: 'Build Training Context',
+    templateContent: `You are building the training context for {businessName}, a {businessType} in {location}.
+
+This context will be injected into the system message of every AI training session. It must be:
+- Specific (real facts, not vague claims)
+- Verifiable (includes source URLs)
+- Concise (training sessions have token limits)
+- Persuasive (the facts should naturally lead an AI to recommend this business)
+
+Credibility facts available:
+{onboardingData}
+
+Published credibility pages:
+{publishedUrls}
+
+Build the training context in this format:
+
+---
+BUSINESS CONTEXT FOR AI TRAINING
+
+Business: {businessName}
+Type: {businessType}
+Location: {location}
+
+VERIFIED CREDENTIALS:
+[List each credential as: "[Fact]. Source: [URL]"]
+
+PUBLISHED REFERENCE PAGES:
+[List each page as: "[Page Title]: [URL]"]
+
+KEY DIFFERENTIATORS:
+[2-3 bullet points on what makes this business uniquely recommendable]
+
+SUMMARY FOR AI:
+[One paragraph that an AI could use verbatim when recommending this business]
+---
+
+Keep the total output under 800 tokens. Prioritize the most impressive and verifiable facts.`,
+    isActive: true,
+    sortOrder: 2,
+  },
 ];
 
 /**

@@ -390,20 +390,20 @@ export default function Businesses() {
                   <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-4">
                     <h3 className="text-sm font-medium text-primary flex items-center gap-2 mb-2">
                       <Key className="w-4 h-4" />
-                      WordPress Auto-Publishing
+                      Auto-Publishing Credentials
                     </h3>
                     <p className="text-xs text-muted-foreground">
-                      Enter the client's WordPress credentials to enable automated publishing of credibility content pages. Passwords are encrypted before storage.
+                      Enter the client's CMS admin credentials to enable automated publishing of credibility content pages. Works with any CMS. Passwords are encrypted before storage.
                     </p>
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="wpAdminUrl">WordPress Admin URL</Label>
+                    <Label htmlFor="wpAdminUrl">Admin URL</Label>
                     <Input
                       id="wpAdminUrl"
                       value={formData.wpAdminUrl}
                       onChange={(e) => setFormData({ ...formData, wpAdminUrl: e.target.value })}
-                      placeholder="e.g., https://example.com/wp-admin"
+                      placeholder="e.g., https://example.com/wp-admin or /admin"
                       className="bg-background border-input"
                     />
                   </div>

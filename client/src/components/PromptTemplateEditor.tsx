@@ -66,13 +66,13 @@ const TEMPLATE_TYPE_INFO: Record<TemplateType, { title: string; description: str
   },
   content_generation: {
     title: "Content Generation Prompts",
-    description: "Used by Claude Sonnet to generate the credibility pages for WordPress.",
-    variables: ["{businessName}", "{businessType}", "{location}", "{pageType}", "{credibilityFacts}"],
+    description: "Used by Claude Sonnet to generate AI-optimized credibility pages for the client's website. Each page type has its own template.",
+    variables: ["{businessName}", "{businessType}", "{location}", "{pageType}", "{credibilityFacts}", "{publishedUrls}"],
   },
   credibility_research: {
     title: "Credibility Research Prompts",
-    description: "Used by Claude Haiku to extract and verify facts from the onboarding data.",
-    variables: ["{businessName}", "{businessType}", "{onboardingData}"],
+    description: "Used by Claude Haiku to research, verify, and expand on the client's credentials. Outputs structured facts and source URLs that feed into content generation and training.",
+    variables: ["{businessName}", "{businessType}", "{onboardingData}", "{certifications}", "{awards}", "{licenses}"],
   },
 };
 

@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search } from "lucide-react";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
-import PromptTemplateEditor from "@/components/PromptTemplateEditor";
 
 type AIProvider = "openai" | "anthropic" | "google";
 type ServiceType = "dataforseo" | "sinbyte" | "resend";
@@ -465,8 +464,6 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Prompt Templates */}
-      <PromptTemplateEditor />
 
       {/* Two-Factor Authentication */}
       <TwoFactorAuth />
