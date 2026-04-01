@@ -327,14 +327,8 @@ export async function checkAllCampaignsForWins(): Promise<{
         await notifyAdminOfWins(report);
       }
 
-      // If this campaign is on a trial, trigger the Stripe payment link email
-      // and record the "after" video for breakthrough/major wins
-      try {
-        const { handleTrialWin } = await import("./trialManager");
-        await handleTrialWin(campaign.id);
-      } catch (err) {
-        console.error("[Win Notifications] Trial win handler failed:", err);
-      }
+      // Trial upgrades happen automatically at day 14 via the scheduler.
+      // Win detection does NOT trigger early conversion — GHL handles billing.
 
       // Record "after" videos for breakthrough wins (first appearance)
       const breakthroughWins = report.wins.filter(w => w.significance === "breakthrough");
@@ -354,6 +348,53 @@ export async function checkAllCampaignsForWins(): Promise<{
         } catch (err) {
           console.error("[Win Notifications] Win video recording failed:", err);
         }
+      }
+
+      // Build win email entries with before/after video URLs from DB
+      try {
+        const { sendCampaignWinEmails } = await import("./emailService");
+        const { campaignQueryLocations } = await import("../drizzle/schema");
+        const { eq: eqOp } = await import("drizzle-orm");
+        const db = await getDb();
+
+        const winsWithVideos = await Promise.all(report.wins.map(async (win) => {
+          let beforeVideoChatgpt: string | undefined;
+          let beforeVideoGoogleAi: string | undefined;
+          let afterVideoChatgpt: string | undefined;
+          let afterVideoGoogleAi: string | undefined;
+
+          if (win.queryLocationId && db) {
+            const [ql] = await db
+              .select()
+              .from(campaignQueryLocations)
+              .where(eqOp(campaignQueryLocations.id, win.queryLocationId))
+              .limit(1);
+            if (ql) {
+              beforeVideoChatgpt = (ql as any).beforeVideoChatgpt ?? undefined;
+              beforeVideoGoogleAi = (ql as any).beforeVideoGoogleAi ?? undefined;
+              afterVideoChatgpt = (ql as any).afterVideoChatgpt ?? undefined;
+              afterVideoGoogleAi = (ql as any).afterVideoGoogleAi ?? undefined;
+            }
+          }
+
+          return {
+            platform: win.platform,
+            query: win.query,
+            location: win.location,
+            message: win.description,
+            significance: win.significance,
+            beforeVideoChatgpt,
+            beforeVideoGoogleAi,
+            afterVideoChatgpt,
+            afterVideoGoogleAi,
+          };
+        }));
+
+        // Calculate a simple score (% of queries where business is mentioned)
+        const currentScore = report.totalWins > 0 ? Math.min(100, report.totalWins * 10) : 0;
+        await sendCampaignWinEmails(campaign.id, winsWithVideos, currentScore, null);
+      } catch (emailErr) {
+        console.error("[Win Notifications] Failed to send win email:", emailErr);
       }
     }
   }

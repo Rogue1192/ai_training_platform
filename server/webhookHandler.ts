@@ -543,11 +543,12 @@ export function createWebhookRouter(): Router {
     }
   });
 
-  // ─── GHL Trial Conversion Webhook ─────────────────────────────────────────────
-  // GHL calls this after a trial client pays. Upgrades campaign limits to full package.
-  // POST /api/ghl/trial-converted
-  // Body: { campaignId: number, selectedPackage?: string, ghlContactId?: string }
-  router.post("/api/ghl/trial-converted", async (req: Request, res: Response) => {
+  // ─── GHL Cancel Trial Webhook ─────────────────────────────────────────────
+  // GHL calls this if a client cancels before their 14-day trial ends.
+  // Stops the campaign. Without this, the system auto-upgrades at day 14.
+  // POST /api/ghl/cancel-trial
+  // Body: { campaignId: number, ghlContactId?: string, reason?: string }
+  router.post("/api/ghl/cancel-trial", async (req: Request, res: Response) => {
     try {
       // Verify webhook auth
       const authResult = verifyWebhookAuth(req);
@@ -556,25 +557,24 @@ export function createWebhookRouter(): Router {
         return;
       }
 
-      const { campaignId, selectedPackage, ghlContactId } = req.body;
+      const { campaignId, ghlContactId, reason } = req.body;
 
       if (!campaignId) {
         res.status(400).json({ error: "campaignId is required" });
         return;
       }
 
-      const { convertTrialToPaid } = await import("./trialManager");
-      const result = await convertTrialToPaid(Number(campaignId), selectedPackage);
+      const { cancelTrial } = await import("./trialManager");
+      await cancelTrial(Number(campaignId), reason);
 
-      console.log(`[Webhook] GHL trial conversion: campaign ${campaignId} → ${result.tier.name}. GHL contact: ${ghlContactId || "unknown"}`);
+      console.log(`[Webhook] GHL trial cancellation: campaign ${campaignId}. GHL contact: ${ghlContactId || "unknown"}. Reason: ${reason || "none"}`);
 
       res.status(200).json({
         success: true,
-        message: `Campaign ${campaignId} converted to ${result.tier.name}`,
-        tier: result.tier,
+        message: `Campaign ${campaignId} trial cancelled and paused.`,
       });
     } catch (err: any) {
-      console.error("[Webhook] Error processing GHL trial conversion:", err);
+      console.error("[Webhook] Error processing GHL trial cancellation:", err);
       res.status(500).json({ error: err.message || "Internal error" });
     }
   });

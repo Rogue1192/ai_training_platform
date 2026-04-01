@@ -1158,3 +1158,112 @@ export async function sendTrialExpiredEmail(data: TrialExpiredEmailData): Promis
     return { success: false, error: message };
   }
 }
+
+// ─── Baseline Visibility Email ────────────────────────────────────────────────
+
+export interface BaselineVisibilityEmailData {
+  businessName: string;
+  contactName: string;
+  contactEmail: string;
+  dashboardUrl?: string;
+  notRankingQueries: Array<{
+    query: string;
+    location: string;
+    beforeVideoChatgpt?: string;
+    beforeVideoGoogleAi?: string;
+  }>;
+  alreadyRankingQueries: Array<{
+    query: string;
+    location: string;
+  }>;
+}
+
+function buildBaselineVisibilityEmailHtml(data: BaselineVisibilityEmailData): string {
+  const queryRows = data.notRankingQueries.map((q) => {
+    const videos: string[] = [];
+    if (q.beforeVideoChatgpt) {
+      videos.push(`<a href="${q.beforeVideoChatgpt}" style="color:#3b82f6;text-decoration:none;font-weight:600;">▶ Watch ChatGPT Scan</a>`);
+    }
+    if (q.beforeVideoGoogleAi) {
+      videos.push(`<a href="${q.beforeVideoGoogleAi}" style="color:#3b82f6;text-decoration:none;font-weight:600;">▶ Watch Google AI Scan</a>`);
+    }
+    return `
+      <div class="win-card" style="margin:8px 0;">
+        <p class="win-text" style="font-weight:600;margin:0 0 4px;">❌ "${q.query}" — ${q.location}</p>
+        <p class="win-meta" style="margin:0 0 6px;color:#94a3b8;">${data.businessName} is not appearing in AI results for this query yet.</p>
+        ${videos.length > 0 ? `<p style="margin:0;">${videos.join(" &nbsp;|&nbsp; ")}</p>` : ""}
+      </div>`;
+  }).join("\n");
+
+  const alreadyRankingSection = data.alreadyRankingQueries.length > 0 ? `
+    <div style="margin-top:24px;">
+      <h2 style="font-size:16px;color:#22c55e;">Already Appearing ✅</h2>
+      <p style="color:#94a3b8;font-size:13px;">Good news — ${data.businessName} already appears in AI results for the following queries. We'll focus our efforts on the areas above where there's room to grow.</p>
+      ${data.alreadyRankingQueries.map((q) => `
+        <div class="win-card" style="margin:6px 0;">
+          <p class="win-text" style="margin:0;color:#22c55e;">✅ "${q.query}" — ${q.location}</p>
+        </div>`).join("\n")}
+    </div>` : "";
+
+  const content = `
+    <h1>Your AI Visibility Baseline Report</h1>
+    <p class="subtitle">Hi ${data.contactName}, here's where ${data.businessName} stands in AI search results right now — before we get to work.</p>
+
+    <div class="score-card">
+      <p class="score-label">Current AI Visibility</p>
+      <p style="font-size:36px;font-weight:700;color:#ef4444;margin:8px 0;">${data.notRankingQueries.length > 0 ? "Not Ranking" : "Already Visible"}</p>
+      <p style="font-size:14px;color:#94a3b8;margin:0;">${data.notRankingQueries.length} quer${data.notRankingQueries.length === 1 ? "y" : "ies"} where you're not yet appearing in AI results</p>
+    </div>
+
+    <p>We ran live scans on <strong>ChatGPT</strong> and <strong>Google AI</strong> for every query and location in your campaign. The videos below show exactly what happens when someone searches for your services right now — and you're not there yet.</p>
+
+    <p>That's about to change. Watch these videos, then watch your dashboard over the coming days as your name starts showing up.</p>
+
+    <h2 style="font-size:16px;margin-top:24px;">Queries Where You're Not Yet Ranking</h2>
+    ${queryRows || "<p style='color:#94a3b8;'>All queries are already ranking — great starting position!</p>"}
+
+    ${alreadyRankingSection}
+
+    ${data.dashboardUrl ? `
+    <div style="text-align:center;margin-top:32px;">
+      <a href="${data.dashboardUrl}" class="cta-button">Track Your Progress Live →</a>
+    </div>
+    <p style="text-align:center;font-size:12px;color:#64748b;margin-top:8px;">Bookmark this link — it's your real-time AI visibility dashboard.</p>
+    ` : ""}
+
+    <div class="divider"></div>
+    <p style="font-size:13px;color:#64748b;">Every time your name appears in a new AI result, you'll get an email with a before-and-after video showing the change. Most clients start seeing results within 7–14 days.</p>
+  `;
+
+  return baseTemplate(content, `${data.businessName} AI Visibility Baseline — here's where you stand today.`);
+}
+
+/**
+ * Send the Day 1 baseline visibility email to a new client.
+ * Includes before-videos for all queries where they're not ranking,
+ * and a link to their live dashboard.
+ */
+export async function sendBaselineVisibilityEmail(data: BaselineVisibilityEmailData): Promise<EmailResult> {
+  let resend: Resend | null = null;
+  try {
+    resend = await getResend();
+  } catch {
+    console.warn("[Email] Resend not configured — skipping baseline visibility email");
+    return { success: false, error: "Email service not configured" };
+  }
+  try {
+    const fromAddress = process.env.EMAIL_FROM || "AI Answer Forge <noreply@aianswerforge.com>";
+    const { data: result, error } = await resend.emails.send({
+      from: fromAddress,
+      to: data.contactEmail,
+      subject: `${data.businessName}: Your AI Visibility Baseline Report`,
+      html: buildBaselineVisibilityEmailHtml(data),
+    });
+    if (error) return { success: false, error: error.message };
+    console.log(`[Email] Baseline visibility email sent to ${data.contactEmail} (${result?.id})`);
+    return { success: true, messageId: result?.id };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  }
+}

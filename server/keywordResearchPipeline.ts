@@ -425,6 +425,85 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
       `[Pipeline] Baseline check complete for campaign ${campaignId}: ${mentions.length} total mentions, ${snapshotsCreated} snapshots created`
     );
 
+    // ── Separate queries into "not ranking" (record video) vs "already ranking" (skip) ──
+    const notRankingQls: typeof queryLocations = [];
+    const alreadyRankingQls: typeof queryLocations = [];
+
+    for (const ql of queryLocations) {
+      const mention = mentions.find(
+        (m) => m.keyword.toLowerCase() === ql.searchQuery.toLowerCase()
+      );
+      const isAlreadyRanking =
+        mention?.llmResponses.chatgpt?.mentioned ||
+        mention?.llmResponses.gemini?.mentioned ||
+        mention?.llmResponses.aiOverview?.mentioned;
+
+      if (isAlreadyRanking) {
+        alreadyRankingQls.push(ql);
+        console.log(`[Pipeline] Skipping video for already-ranking query: "${ql.searchQuery}" in ${ql.location}`);
+      } else {
+        notRankingQls.push(ql);
+      }
+    }
+
+    // ── Record "before" videos for queries where client is NOT ranking ──
+    if (notRankingQls.length > 0) {
+      try {
+        const { recordBaselineVideos } = await import("./scanVideoRecorder");
+        await recordBaselineVideos(
+          campaignId,
+          notRankingQls.map((ql) => ({
+            id: ql.id,
+            searchQuery: ql.searchQuery,
+            location: ql.location,
+          }))
+        );
+        console.log(`[Pipeline] Baseline videos recorded for ${notRankingQls.length} queries`);
+      } catch (videoErr: any) {
+        console.error(`[Pipeline] Baseline video recording failed (non-fatal):`, videoErr.message);
+      }
+    }
+
+    // ── Send Day 1 baseline visibility email to client ──
+    if (business.contactEmail) {
+      try {
+        const { sendBaselineVisibilityEmail } = await import("./emailService");
+        // Fetch updated query-locations with video URLs
+        const updatedQls = await getQueryLocationsByCampaignId(campaignId);
+        const clientDashboardResult = await db
+          .select()
+          .from(require("../drizzle/schema").clientDashboards)
+          .where(eq(require("../drizzle/schema").clientDashboards.campaignId, campaignId))
+          .limit(1);
+        const dashboardUrl = clientDashboardResult[0]?.accessToken
+          ? `${process.env.APP_BASE_URL || ""}/report/${clientDashboardResult[0].accessToken}`
+          : undefined;
+
+        await sendBaselineVisibilityEmail({
+          businessName: business.name,
+          contactName: business.contactName || business.name,
+          contactEmail: business.contactEmail,
+          dashboardUrl,
+          notRankingQueries: notRankingQls.map((ql) => {
+            const updated = updatedQls.find((u) => u.id === ql.id);
+            return {
+              query: ql.searchQuery,
+              location: ql.location,
+              beforeVideoChatgpt: (updated as any)?.beforeVideoChatgpt || undefined,
+              beforeVideoGoogleAi: (updated as any)?.beforeVideoGoogleAi || undefined,
+            };
+          }),
+          alreadyRankingQueries: alreadyRankingQls.map((ql) => ({
+            query: ql.searchQuery,
+            location: ql.location,
+          })),
+        });
+        console.log(`[Pipeline] Day 1 baseline email sent to ${business.contactEmail}`);
+      } catch (emailErr: any) {
+        console.error(`[Pipeline] Baseline email failed (non-fatal):`, emailErr.message);
+      }
+    }
+
     return {
       success: true,
       mentionsFound: mentions.length,

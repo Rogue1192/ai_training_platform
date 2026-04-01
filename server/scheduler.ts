@@ -753,10 +753,22 @@ export function startScheduler(): void {
   // Run immediately on start
   processDueJobs();
 
+  // Check for trial upgrades immediately on start
+  import("./trialManager").then(({ checkAndUpgradeTrials }) => {
+    checkAndUpgradeTrials().catch((err: Error) => console.error("[Scheduler] Trial upgrade check failed:", err));
+  });
+
   // Then run on interval
   schedulerTimer = setInterval(() => {
     processDueJobs();
   }, SCHEDULER_INTERVAL);
+
+  // Run trial upgrade check once per day (every 24 hours)
+  setInterval(() => {
+    import("./trialManager").then(({ checkAndUpgradeTrials }) => {
+      checkAndUpgradeTrials().catch((err: Error) => console.error("[Scheduler] Daily trial upgrade check failed:", err));
+    });
+  }, 24 * 60 * 60 * 1000);
 
   console.log("[Scheduler] Scheduler started successfully");
 }
