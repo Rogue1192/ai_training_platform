@@ -25,6 +25,7 @@ export type WinType = "new_mention" | "position_improvement" | "multi_platform" 
 export interface Win {
   campaignId: number;
   businessName: string;
+  queryLocationId?: number; // ID of the campaignQueryLocations row
   winType: WinType;
   platform: string; // 'chatgpt' | 'gemini' | 'ai_overview' | 'multiple'
   query: string;
@@ -127,13 +128,14 @@ export async function detectWins(campaignId: number): Promise<Win[]> {
         wins.push({
           campaignId,
           businessName: business.name,
+          queryLocationId: ql.id,
           winType: isFirstPosition ? "first_position" : "new_mention",
           platform: platform.key,
-        query: ql.searchQuery,
-        location: ql.location,
-        previousPosition: null,
-        newPosition: platform.curPosition,
-        description: isFirstPosition
+          query: ql.searchQuery,
+          location: ql.location,
+          previousPosition: null,
+          newPosition: platform.curPosition,
+          description: isFirstPosition
             ? `${business.name} is now the #1 recommendation on ${platform.name} for "${ql.searchQuery}" in ${ql.location}!`
             : `${business.name} is now mentioned by ${platform.name} for "${ql.searchQuery}" in ${ql.location}!`,
           significance: isFirstPosition ? "breakthrough" : "major",
@@ -149,13 +151,14 @@ export async function detectWins(campaignId: number): Promise<Win[]> {
         wins.push({
           campaignId,
           businessName: business.name,
+          queryLocationId: ql.id,
           winType: isFirstPosition ? "first_position" : "position_improvement",
           platform: platform.key,
-        query: ql.searchQuery,
-        location: ql.location,
-        previousPosition: platform.prevPosition,
-        newPosition: platform.curPosition,
-        description: isFirstPosition
+          query: ql.searchQuery,
+          location: ql.location,
+          previousPosition: platform.prevPosition,
+          newPosition: platform.curPosition,
+          description: isFirstPosition
             ? `${business.name} moved to #1 on ${platform.name} for "${ql.searchQuery}" (was #${platform.prevPosition})!`
             : `${business.name} improved from #${platform.prevPosition} to #${platform.curPosition} on ${platform.name} for "${ql.searchQuery}"`,
           significance: isFirstPosition ? "breakthrough" : (platform.curPosition <= 3 ? "major" : "moderate"),
@@ -177,6 +180,7 @@ export async function detectWins(campaignId: number): Promise<Win[]> {
       wins.push({
         campaignId,
         businessName: business.name,
+        queryLocationId: ql.id,
         winType: "multi_platform",
         platform: "multiple",
         query: ql.searchQuery,
@@ -321,6 +325,35 @@ export async function checkAllCampaignsForWins(): Promise<{
       // Notify admin of significant wins
       if (report.breakthroughWins > 0 || report.majorWins > 0) {
         await notifyAdminOfWins(report);
+      }
+
+      // If this campaign is on a trial, trigger the Stripe payment link email
+      // and record the "after" video for breakthrough/major wins
+      try {
+        const { handleTrialWin } = await import("./trialManager");
+        await handleTrialWin(campaign.id);
+      } catch (err) {
+        console.error("[Win Notifications] Trial win handler failed:", err);
+      }
+
+      // Record "after" videos for breakthrough wins (first appearance)
+      const breakthroughWins = report.wins.filter(w => w.significance === "breakthrough");
+      if (breakthroughWins.length > 0) {
+        try {
+          const { recordWinVideo } = await import("./scanVideoRecorder");
+          for (const win of breakthroughWins.slice(0, 2)) { // Max 2 videos per check
+            const platform = win.platform === "chatgpt" ? "chatgpt" : "google_ai";
+            await recordWinVideo(
+              campaign.id,
+              win.queryLocationId || 0,
+              win.query,
+              win.location,
+              platform
+            );
+          }
+        } catch (err) {
+          console.error("[Win Notifications] Win video recording failed:", err);
+        }
       }
     }
   }

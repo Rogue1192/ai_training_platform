@@ -336,6 +336,21 @@ export const campaigns = pgTable("campaigns", {
   // Error tracking
   lastError: text("lastError"),
   errorCount: integer("errorCount").default(0).notNull(),
+  // 14-day risk-free trial
+  // trialStatus: 'trial' | 'converted' | 'expired' | 'paid'
+  trialStatus: varchar("trialStatus", { length: 20 }).default("trial").notNull(),
+  trialStartedAt: timestamp("trialStartedAt"),
+  trialExpiresAt: timestamp("trialExpiresAt"),
+  trialConvertedAt: timestamp("trialConvertedAt"),
+  // Package tier selected during onboarding (from GHL webhook)
+  // e.g., 'starter_5loc' | 'growth_5loc' | 'pro_5loc' | 'starter_10loc' | 'growth_10loc' | 'pro_10loc'
+  selectedPackage: varchar("selectedPackage", { length: 50 }),
+  maxQueries: integer("maxQueries").default(5).notNull(),   // Trial: 5, paid: per package
+  maxLocations: integer("maxLocations").default(3).notNull(), // Trial: 3, paid: per package
+  // Stripe
+  stripePaymentLinkSentAt: timestamp("stripePaymentLinkSentAt"),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
   // Metadata
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -365,6 +380,11 @@ export const campaignQueryLocations = pgTable("campaignQueryLocations", {
   // Training status for this specific combo
   trainingStatus: varchar("trainingStatus", { length: 20 }).default("pending").notNull(), // 'pending' | 'training' | 'achieved' | 'monitoring' | 'recovering'
   trainingSessions: integer("trainingSessions").default(0).notNull(), // Count of sessions run for this combo
+  // Before/after scan video URLs (uploaded to Supabase Storage)
+  beforeVideoChatgpt: text("beforeVideoChatgpt"),    // "Before" recording on ChatGPT
+  beforeVideoGoogleAi: text("beforeVideoGoogleAi"),  // "Before" recording on Google AI
+  afterVideoChatgpt: text("afterVideoChatgpt"),      // "After" recording on ChatGPT (set on first win)
+  afterVideoGoogleAi: text("afterVideoGoogleAi"),    // "After" recording on Google AI (set on first win)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });

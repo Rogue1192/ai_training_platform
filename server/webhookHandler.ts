@@ -61,6 +61,10 @@ const onboardingPayloadSchema = z.object({
   googleReviewCount: z.number().optional(),
   googleRating: z.number().optional(),
 
+  // Package selected during onboarding (from GHL form)
+  // e.g., 'starter_5loc' | 'growth_5loc' | 'pro_5loc' | 'starter_10loc' | 'growth_10loc' | 'pro_10loc'
+  selectedPackage: z.string().optional(),
+
   // Optional: webhook secret for authentication
   webhookSecret: z.string().optional(),
 });
@@ -316,7 +320,16 @@ export function createWebhookRouter(): Router {
         rankCheckFrequency: "weekly",
         sourceWebhookId: webhookLog.id,
         errorCount: 0,
+        // Trial defaults — overridden by initializeTrial() below
+        trialStatus: "trial",
+        maxQueries: 5,
+        maxLocations: 3,
+        selectedPackage: payload.selectedPackage || null,
       });
+
+      // Initialize 14-day trial
+      const { initializeTrial } = await import("./trialManager");
+      await initializeTrial(campaign.id, payload.selectedPackage);
 
       // Build the query×location matrix
       // If specific queries were provided, use those. Otherwise, we'll generate them in the keyword research phase.

@@ -62,10 +62,18 @@ export interface WinEmailData {
     location: string;
     message: string;
     significance: "minor" | "moderate" | "major" | "breakthrough";
+    beforeVideoChatgpt?: string;
+    beforeVideoGoogleAi?: string;
+    afterVideoChatgpt?: string;
+    afterVideoGoogleAi?: string;
   }>;
   currentScore: number;
   previousScore: number | null;
   dashboardUrl?: string;
+  // Trial payment link (only set when trial client gets first win)
+  paymentUrl?: string;
+  packageName?: string;
+  monthlyPrice?: number;
 }
 
 export interface VisibilityReportEmailData {
@@ -504,13 +512,27 @@ function buildWinEmailHtml(data: WinEmailData): string {
     (a, b) => significanceOrder[a.significance] - significanceOrder[b.significance]
   );
 
-  const winsHtml = sortedWins.slice(0, 5).map(win => `
+  const winsHtml = sortedWins.slice(0, 5).map(win => {
+    // Build before/after video links for this win
+    const beforeVideos: string[] = [];
+    const afterVideos: string[] = [];
+    if (win.beforeVideoChatgpt) beforeVideos.push(`<a href="${win.beforeVideoChatgpt}" style="color:#3b82f6;text-decoration:underline;margin-right:8px;">&#9654; Before (ChatGPT)</a>`);
+    if (win.beforeVideoGoogleAi) beforeVideos.push(`<a href="${win.beforeVideoGoogleAi}" style="color:#3b82f6;text-decoration:underline;">&#9654; Before (Google AI)</a>`);
+    if (win.afterVideoChatgpt) afterVideos.push(`<a href="${win.afterVideoChatgpt}" style="color:#22c55e;text-decoration:underline;margin-right:8px;">&#9654; After (ChatGPT)</a>`);
+    if (win.afterVideoGoogleAi) afterVideos.push(`<a href="${win.afterVideoGoogleAi}" style="color:#22c55e;text-decoration:underline;">&#9654; After (Google AI)</a>`);
+    const videoHtml = (beforeVideos.length > 0 || afterVideos.length > 0) ? `
+      <div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:6px;font-size:12px;">
+        ${beforeVideos.length > 0 ? `<div style="margin-bottom:4px;"><strong>Before:</strong> ${beforeVideos.join('')}</div>` : ''}
+        ${afterVideos.length > 0 ? `<div><strong>After:</strong> ${afterVideos.join('')}</div>` : ''}
+      </div>` : '';
+    return `
     <div class="win-card ${win.significance}">
       <span class="win-badge ${win.significance}">${win.significance === 'breakthrough' ? '&#127942; Breakthrough' : win.significance === 'major' ? '&#11088; Major Win' : win.significance === 'moderate' ? '&#128200; Improvement' : '&#128077; Progress'}</span>
       <p class="win-text">${win.message}</p>
       <p class="win-meta">${win.platform} &bull; ${win.query} &bull; ${win.location}</p>
-    </div>
-  `).join('');
+      ${videoHtml}
+    </div>`;
+  }).join('');
 
   const content = `
     <h1>${data.totalWins} New Win${data.totalWins > 1 ? 's' : ''} Detected!</h1>
@@ -532,9 +554,20 @@ function buildWinEmailHtml(data: WinEmailData): string {
       <a href="${data.dashboardUrl}" class="cta-button">View Full Dashboard</a>
     </div>
     ` : ''}
+
+    ${data.paymentUrl ? `
+    <div style="margin: 24px 0; padding: 24px; background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%); border-radius: 12px; text-align: center;">
+      <p style="color: #94a3b8; font-size: 13px; margin: 0 0 8px;">YOUR RESULTS ARE IN &mdash; TIME TO SCALE UP</p>
+      <h2 style="color: #ffffff; margin: 0 0 8px; font-size: 22px;">You showed up in AI search results.</h2>
+      <p style="color: #cbd5e1; font-size: 15px; margin: 0 0 16px;">Your 14-day trial worked. Now activate your <strong style="color:#ffffff;">${data.packageName || 'full package'}</strong> to keep the momentum going.</p>
+      <p style="color: #22c55e; font-size: 28px; font-weight: 700; margin: 0 0 4px;">$${data.monthlyPrice || 0}/mo</p>
+      <p style="color: #64748b; font-size: 12px; margin: 0 0 20px;">Cancel anytime. No long-term contracts.</p>
+      <a href="${data.paymentUrl}" style="display:inline-block;background:#22c55e;color:#ffffff;font-weight:700;font-size:16px;padding:14px 32px;border-radius:8px;text-decoration:none;">Activate My Full Package &rarr;</a>
+    </div>
+    ` : ''}
     
     <div class="divider"></div>
-    <p style="font-size: 13px; color: #64748b;">AI Answer Forge continuously monitors your business visibility across ChatGPT, Google Gemini, and Google AI Overview. These wins represent real improvements in how AI recommends your business to potential customers.</p>
+    <p style="font-size: 13px; color: #64748b;">AI Answer Forge continuously monitors your business visibility across ChatGPT, Google AI, and Google AI Overview. These wins represent real improvements in how AI recommends your business to potential customers.</p>
   `;
 
   const preheader = `${data.totalWins} new AI visibility win${data.totalWins > 1 ? 's' : ''} for ${data.businessName}! Score: ${data.currentScore}/100`;
@@ -1012,4 +1045,120 @@ export async function sendCampaignVisibilityReport(
     dashboardUrl,
     reportPeriod,
   });
+}
+
+// ─── Trial Win Payment Email ──────────────────────────────────────────────────
+
+export interface TrialWinPaymentEmailData {
+  businessName: string;
+  contactName: string;
+  contactEmail: string;
+  packageName: string;
+  monthlyPrice: number;
+  maxQueries: number;
+  maxLocations: number;
+  paymentUrl: string;
+}
+
+export async function sendTrialWinPaymentEmail(data: TrialWinPaymentEmailData): Promise<EmailResult> {
+  const content = `
+    <h1>Your Business Just Showed Up in AI Search Results!</h1>
+    <p class="subtitle">Congratulations, ${data.contactName}! Your 14-day trial is working.</p>
+
+    <div class="score-card" style="background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);">
+      <p class="score-label" style="color:#94a3b8;">TRIAL RESULT</p>
+      <p class="score-value" style="color:#22c55e;">&#10003; Showing Up</p>
+      <p class="score-label" style="color:#cbd5e1;">${data.businessName} is now appearing in AI search results</p>
+    </div>
+
+    <p>Your business has been detected in AI search results during your 14-day risk-free trial. This means the system is working — AI platforms are starting to recommend you to potential customers.</p>
+
+    <p>To keep this momentum going and expand to your full package, activate your subscription now:</p>
+
+    <div style="padding: 20px; background: #f8fafc; border-radius: 8px; margin: 20px 0;">
+      <p style="font-weight: 700; font-size: 16px; margin: 0 0 4px;">${data.packageName}</p>
+      <p style="color: #22c55e; font-size: 28px; font-weight: 700; margin: 0 0 4px;">$${data.monthlyPrice}/mo</p>
+      <p style="color: #64748b; font-size: 13px; margin: 0 0 12px;">${data.maxQueries} queries &times; ${data.maxLocations} locations</p>
+      <p style="color: #64748b; font-size: 12px; margin: 0;">Cancel anytime. No long-term contracts.</p>
+    </div>
+
+    <div style="text-align: center;">
+      <a href="${data.paymentUrl}" style="display:inline-block;background:#22c55e;color:#ffffff;font-weight:700;font-size:16px;padding:14px 32px;border-radius:8px;text-decoration:none;">Activate My Full Package &rarr;</a>
+    </div>
+
+    <div class="divider"></div>
+    <p style="font-size: 13px; color: #64748b;">If you have any questions, reply to this email or contact your account manager.</p>
+  `;
+
+  const resend = await getResend();
+  if (!resend) {
+    console.warn("[Email] Resend not configured — skipping trial win payment email");
+    return { success: false, error: "Email service not configured" };
+  }
+
+  try {
+    const fromAddress = process.env.EMAIL_FROM || "AI Answer Forge <noreply@aianswerforge.com>";
+    const { data: result, error } = await resend.emails.send({
+      from: fromAddress,
+      to: data.contactEmail,
+      subject: `${data.businessName} is showing up in AI search — activate your full package`,
+      html: baseTemplate(content, `Your trial worked! ${data.businessName} is appearing in AI search results.`),
+    });
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, messageId: result?.id };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  }
+}
+
+// ─── Trial Expired Email ──────────────────────────────────────────────────────
+
+export interface TrialExpiredEmailData {
+  businessName: string;
+  contactName: string;
+  contactEmail: string;
+}
+
+export async function sendTrialExpiredEmail(data: TrialExpiredEmailData): Promise<EmailResult> {
+  const content = `
+    <h1>Your 14-Day Trial Has Ended</h1>
+    <p class="subtitle">Hi ${data.contactName}, your free trial for ${data.businessName} has expired.</p>
+
+    <p>Your 14-day risk-free trial has ended. During the trial, we ran AI visibility scans and began the training process for your business.</p>
+
+    <p>Since no AI visibility wins were detected during the trial period, you were not charged — as promised.</p>
+
+    <p>If you'd like to continue and give the system more time to work, you can start a paid subscription at any time. Many businesses see their first results between days 7 and 21 depending on their industry and competition level.</p>
+
+    <div style="text-align: center; margin: 24px 0;">
+      <a href="${process.env.APP_URL || 'https://aianswerforge.com'}/pricing" style="display:inline-block;background:#3b82f6;color:#ffffff;font-weight:700;font-size:16px;padding:14px 32px;border-radius:8px;text-decoration:none;">View Pricing &amp; Restart &rarr;</a>
+    </div>
+
+    <div class="divider"></div>
+    <p style="font-size: 13px; color: #64748b;">Questions? Reply to this email or contact your account manager.</p>
+  `;
+
+  const resend = await getResend();
+  if (!resend) {
+    console.warn("[Email] Resend not configured — skipping trial expired email");
+    return { success: false, error: "Email service not configured" };
+  }
+
+  try {
+    const fromAddress = process.env.EMAIL_FROM || "AI Answer Forge <noreply@aianswerforge.com>";
+    const { data: result, error } = await resend.emails.send({
+      from: fromAddress,
+      to: data.contactEmail,
+      subject: `Your AI Answer Forge trial for ${data.businessName} has ended`,
+      html: baseTemplate(content, `Your 14-day trial for ${data.businessName} has expired.`),
+    });
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, messageId: result?.id };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  }
 }
