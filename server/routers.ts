@@ -87,12 +87,34 @@ export const appRouter = router({
           phone: z.string().optional(),
           address: z.string().optional(),
           notes: z.string().optional(),
+          contactEmail: z.string().optional(),
+          contactName: z.string().optional(),
+          certifications: z.string().optional(),
+          awards: z.string().optional(),
+          yearsInBusiness: z.number().optional(),
+          bbbRating: z.string().optional(),
+          licenses: z.string().optional(),
+          warranties: z.string().optional(),
+          differentiators: z.string().optional(),
+          clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
+          wpAdminUrl: z.string().optional(),
+          wpUsername: z.string().optional(),
+          wpPassword: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
         const { createBusiness } = await import("./db");
+        const { encrypt } = await import("./encryption");
+        
+        const { wpPassword, ...restInput } = input;
+        const businessData: any = { ...restInput, userId: ctx.user.id };
+        
+        if (wpPassword) {
+          businessData.wpPasswordEncrypted = encrypt(wpPassword);
+        }
+        
         // userId stored for audit trail only — nullable, not used for access control
-        const business = await createBusiness({ ...input, userId: ctx.user.id });
+        const business = await createBusiness(businessData);
         return { success: true, businessId: business.id };
       }),
     update: protectedProcedure
@@ -107,12 +129,33 @@ export const appRouter = router({
           phone: z.string().optional(),
           address: z.string().optional(),
           notes: z.string().optional(),
+          contactEmail: z.string().optional(),
+          contactName: z.string().optional(),
+          certifications: z.string().optional(),
+          awards: z.string().optional(),
+          yearsInBusiness: z.number().optional(),
+          bbbRating: z.string().optional(),
+          licenses: z.string().optional(),
+          warranties: z.string().optional(),
+          differentiators: z.string().optional(),
+          clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
+          wpAdminUrl: z.string().optional(),
+          wpUsername: z.string().optional(),
+          wpPassword: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
         const { updateBusiness } = await import("./db");
-        const { id, ...updates } = input;
-        await updateBusiness(id, updates);
+        const { encrypt } = await import("./encryption");
+        
+        const { id, wpPassword, ...updates } = input;
+        const updateData: any = { ...updates };
+        
+        if (wpPassword) {
+          updateData.wpPasswordEncrypted = encrypt(wpPassword);
+        }
+        
+        await updateBusiness(id, updateData);
         return { success: true };
       }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
@@ -955,12 +998,14 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
         const { getCampaignById, getQueryLocationsByCampaignId } = await import("./dbCampaigns");
+        const { getBusinessById } = await import("./db");
         const campaign = await getCampaignById(input.id);
         if (!campaign) {
           throw new Error("Campaign not found");
         }
+        const business = await getBusinessById(campaign.businessId);
         const queryLocations = await getQueryLocationsByCampaignId(input.id);
-        return { ...campaign, queryLocations };
+        return { ...campaign, business, businessName: business?.name, queryLocations };
       }),
     update: protectedProcedure
       .input(
@@ -1265,7 +1310,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
   promptTemplate: router({
     // List all templates for the current user, optionally filtered by type
     list: protectedProcedure
-      .input(z.object({ templateType: z.enum(["clean", "suggestive", "follow_up", "category_based"]).optional() }).optional())
+      .input(z.object({ templateType: z.enum(["clean", "suggestive", "follow_up", "category_based", "content_generation", "credibility_research"]).optional() }).optional())
       .query(async ({ ctx, input }) => {
         const { getAllPromptTemplates, hasAnyPromptTemplates, seedDefaultPromptTemplates } = await import("./db");
         
@@ -1290,26 +1335,27 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         return template;
       }),
 
-    // Create a new template
     create: protectedProcedure
-      .input(z.object({
-        templateType: z.enum(["clean", "suggestive", "follow_up", "category_based"]),
-        templateName: z.string().min(1).max(255),
-        templateContent: z.string().min(1),
-        isActive: z.boolean().default(true),
-        sortOrder: z.number().default(0),
-      }))
+      .input(
+        z.object({
+          templateType: z.enum(["clean", "suggestive", "follow_up", "category_based", "content_generation", "credibility_research"]),
+          templateName: z.string().min(1).max(255),
+          templateContent: z.string().min(1),
+          isActive: z.boolean().default(true),
+          sortOrder: z.number().default(0),
+        })
+      )
       .mutation(async ({ ctx, input }) => {
         const { createPromptTemplate } = await import("./db");
-        return createPromptTemplate({
-          ...input,
-        });
+        const template = await createPromptTemplate(input);
+        return { success: true, templateId: template.id };
       }),
 
     // Update an existing template
     update: protectedProcedure
       .input(z.object({
         id: z.number(),
+        templateType: z.enum(["clean", "suggestive", "follow_up", "category_based", "content_generation", "credibility_research"]).optional(),
         templateName: z.string().min(1).max(255).optional(),
         templateContent: z.string().min(1).optional(),
         isActive: z.boolean().optional(),

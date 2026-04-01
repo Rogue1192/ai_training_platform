@@ -30,7 +30,7 @@ import {
 import { toast } from "sonner";
 import { Loader2, Plus, Pencil, Trash2, RotateCcw, MessageSquare, Info } from "lucide-react";
 
-type TemplateType = "clean" | "suggestive" | "follow_up" | "category_based";
+type TemplateType = "clean" | "suggestive" | "follow_up" | "category_based" | "content_generation" | "credibility_research";
 
 interface PromptTemplate {
   id: number;
@@ -63,6 +63,16 @@ const TEMPLATE_TYPE_INFO: Record<TemplateType, { title: string; description: str
     title: "Category-Based Prompts",
     description: "Fallback prompts when the original prompt can't be cleaned. Based on business type and location.",
     variables: ["{businessType}", "{location}"],
+  },
+  content_generation: {
+    title: "Content Generation Prompts",
+    description: "Used by Claude Sonnet to generate the credibility pages for WordPress.",
+    variables: ["{businessName}", "{businessType}", "{location}", "{pageType}", "{credibilityFacts}"],
+  },
+  credibility_research: {
+    title: "Credibility Research Prompts",
+    description: "Used by Claude Haiku to extract and verify facts from the onboarding data.",
+    variables: ["{businessName}", "{businessType}", "{onboardingData}"],
   },
 };
 
@@ -105,10 +115,11 @@ export default function PromptTemplateEditor() {
 
   const handleUpdate = async (template: PromptTemplate, updates: Partial<PromptTemplate>) => {
     try {
-      await updateMutation.mutateAsync({
+      const payload: any = {
         id: template.id,
         ...updates,
-      });
+      };
+      await updateMutation.mutateAsync(payload);
       toast.success("Template updated successfully");
       setEditingTemplate(null);
       refetch();
@@ -188,14 +199,16 @@ export default function PromptTemplateEditor() {
       </CardHeader>
       <CardContent>
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TemplateType)}>
-          <TabsList className="grid w-full grid-cols-4 mb-6">
+          <TabsList className="grid w-full grid-cols-6 mb-6">
             <TabsTrigger value="clean">Clean</TabsTrigger>
             <TabsTrigger value="suggestive">Suggestive</TabsTrigger>
             <TabsTrigger value="follow_up">Follow-up</TabsTrigger>
             <TabsTrigger value="category_based">Category</TabsTrigger>
+            <TabsTrigger value="content_generation">Content</TabsTrigger>
+            <TabsTrigger value="credibility_research">Research</TabsTrigger>
           </TabsList>
 
-          {(["clean", "suggestive", "follow_up", "category_based"] as TemplateType[]).map((type) => (
+          {(["clean", "suggestive", "follow_up", "category_based", "content_generation", "credibility_research"] as TemplateType[]).map((type) => (
             <TabsContent key={type} value={type} className="space-y-4">
               {/* Info Box */}
               <div className="bg-muted/50 border border-border rounded-lg p-4">

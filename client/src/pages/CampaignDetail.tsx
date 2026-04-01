@@ -377,11 +377,56 @@ export default function CampaignDetail() {
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="bg-muted/50">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="credibility">Credibility</TabsTrigger>
           <TabsTrigger value="training">Training</TabsTrigger>
           <TabsTrigger value="rankings">Rankings</TabsTrigger>
           <TabsTrigger value="content">Content</TabsTrigger>
           <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
         </TabsList>
+
+        {/* ─── CREDIBILITY TAB ─── */}
+        <TabsContent value="credibility" className="space-y-4">
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+                <Shield className="w-4 h-4 text-primary" />
+                Business Credibility Facts
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Years in Business</h4>
+                  <p className="text-sm text-foreground">{(campaign as any).business?.yearsInBusiness || "Not specified"}</p>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">BBB Rating</h4>
+                  <p className="text-sm text-foreground">{(campaign as any).business?.bbbRating || "Not specified"}</p>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Certifications</h4>
+                  <p className="text-sm text-foreground">{(campaign as any).business?.certifications || "Not specified"}</p>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Licenses</h4>
+                  <p className="text-sm text-foreground">{(campaign as any).business?.licenses || "Not specified"}</p>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Awards</h4>
+                  <p className="text-sm text-foreground">{(campaign as any).business?.awards || "Not specified"}</p>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Warranties</h4>
+                  <p className="text-sm text-foreground">{(campaign as any).business?.warranties || "Not specified"}</p>
+                </div>
+              </div>
+              <div className="space-y-2 pt-2 border-t border-border">
+                <h4 className="text-sm font-medium text-muted-foreground">Key Differentiators</h4>
+                <p className="text-sm text-foreground">{(campaign as any).business?.differentiators || "Not specified"}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* ─── OVERVIEW TAB ─── */}
         <TabsContent value="overview" className="space-y-4">
