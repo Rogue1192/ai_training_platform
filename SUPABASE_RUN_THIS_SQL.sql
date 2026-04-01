@@ -134,5 +134,27 @@ ALTER TABLE "apiKeys"
 
 
 -- ============================================================
--- DONE. All migrations applied.
+-- STEP 9: Create serviceKeys table
+-- Stores DataForSEO, SinByte, and Resend API credentials
+-- so they can be managed via Settings UI instead of Railway env vars.
+-- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'service_key_service') THEN
+    CREATE TYPE "service_key_service" AS ENUM ('dataforseo', 'sinbyte', 'resend');
+  END IF;
+END$$;
+
+CREATE TABLE IF NOT EXISTS "serviceKeys" (
+  "id" serial PRIMARY KEY,
+  "service" "service_key_service" NOT NULL UNIQUE,
+  "encryptedValue" text NOT NULL,
+  "status" "api_key_status" DEFAULT 'connected' NOT NULL,
+  "lastVerified" timestamp,
+  "createdAt" timestamp DEFAULT now() NOT NULL,
+  "updatedAt" timestamp DEFAULT now() NOT NULL
+);
+
+-- ============================================================
+-- DONE (including Step 9). All migrations applied.
 -- ============================================================
