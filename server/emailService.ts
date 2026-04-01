@@ -19,12 +19,27 @@ const SUPPORT_EMAIL = "support@my.aianswerforge.com";
 
 let resendClient: Resend | null = null;
 
-function getResend(): Resend {
-  if (!resendClient) {
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
-    resendClient = new Resend(apiKey);
+async function getResend(): Promise<Resend> {
+  if (resendClient) return resendClient;
+  // Try DB first (set via Settings UI)
+  try {
+    const { getServiceKey } = await import("./db");
+    const { decrypt } = await import("./encryption");
+    const record = await getServiceKey("resend");
+    if (record?.encryptedValue) {
+      const apiKey = decrypt(record.encryptedValue);
+      if (apiKey) {
+        resendClient = new Resend(apiKey);
+        return resendClient;
+      }
+    }
+  } catch {
+    // Fall through to env var
   }
+  // Fallback to env var (Railway secrets)
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error("Resend API key not configured. Please add it in Settings → Service Keys.");
+  resendClient = new Resend(apiKey);
   return resendClient;
 }
 
@@ -719,7 +734,7 @@ function buildMilestoneEmailHtml(data: MilestoneEmailData): string {
  */
 export async function sendWinNotificationEmail(data: WinEmailData): Promise<EmailResult> {
   try {
-    const resend = getResend();
+    const resend = await getResend();
     const html = buildWinEmailHtml(data);
 
     const { data: result, error } = await resend.emails.send({
@@ -748,7 +763,7 @@ export async function sendWinNotificationEmail(data: WinEmailData): Promise<Emai
  */
 export async function sendVisibilityReportEmail(data: VisibilityReportEmailData): Promise<EmailResult> {
   try {
-    const resend = getResend();
+    const resend = await getResend();
     const html = buildVisibilityReportHtml(data);
 
     const { data: result, error } = await resend.emails.send({
@@ -777,7 +792,7 @@ export async function sendVisibilityReportEmail(data: VisibilityReportEmailData)
  */
 export async function sendWelcomeEmail(data: WelcomeEmailData): Promise<EmailResult> {
   try {
-    const resend = getResend();
+    const resend = await getResend();
     const html = buildWelcomeEmailHtml(data);
 
     const { data: result, error } = await resend.emails.send({
@@ -806,7 +821,7 @@ export async function sendWelcomeEmail(data: WelcomeEmailData): Promise<EmailRes
  */
 export async function sendMilestoneEmail(data: MilestoneEmailData): Promise<EmailResult> {
   try {
-    const resend = getResend();
+    const resend = await getResend();
     const html = buildMilestoneEmailHtml(data);
 
     const { data: result, error } = await resend.emails.send({
@@ -835,7 +850,7 @@ export async function sendMilestoneEmail(data: MilestoneEmailData): Promise<Emai
  */
 export async function sendTestEmail(toEmail: string): Promise<EmailResult> {
   try {
-    const resend = getResend();
+    const resend = await getResend();
 
     const html = baseTemplate(`
       <h1>Test Email</h1>

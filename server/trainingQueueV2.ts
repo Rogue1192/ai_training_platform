@@ -30,6 +30,11 @@ import {
   selectRandomPrompt,
   BusinessInfo,
 } from "./promptGeneration";
+import {
+  getTrainingContextForSession,
+  buildEnrichedSystemMessage,
+  buildSourceCitationBlock,
+} from "./trainingContextEnricher";
 
 // Types for the new phase-based system
 export type TrainingPhase = 'pending' | 'baseline' | 'training' | 'evaluation' | 'completed';
@@ -267,20 +272,35 @@ async function executeTrainingIteration(
   try {
     targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
 
-    // Build clean prompts for evaluation generate SUGGESTIVE version
+    // Build suggestive prompt for training phase
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
     const { prompt: suggestivePrompt } = await generateSuggestivePromptAsync(basePrompt, businessInfo);
     
     console.log(`[Training V2] Training suggestive prompt: "${suggestivePrompt.substring(0, 100)}..."`);
     
+    // Enrich system message with credibility data and published URLs if available
+    // This is the key improvement: training prompts now include real, verifiable facts
+    const trainingContext = await getTrainingContextForSession(sessionId);
+    const enrichedSystemMessage = trainingContext
+      ? buildEnrichedSystemMessage(trainingContext)
+      : "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.";
+    
+    // Append source citation block to suggestive prompt if we have published pages
+    const citationBlock = trainingContext ? buildSourceCitationBlock(trainingContext) : "";
+    const enrichedPrompt = citationBlock ? `${suggestivePrompt}${citationBlock}` : suggestivePrompt;
+    
+    if (trainingContext?.credibilityFacts.length) {
+      console.log(`[Training V2] Enriched with ${trainingContext.credibilityFacts.length} credibility facts and ${trainingContext.publishedPages.length} published pages`);
+    }
+    
     const messages: AIMessage[] = [
       {
         role: "system",
-        content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.",
+        content: enrichedSystemMessage,
       },
       {
         role: "user",
-        content: suggestivePrompt,
+        content: enrichedPrompt,
       },
     ];
     

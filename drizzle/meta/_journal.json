@@ -50,6 +50,34 @@
       "when": 1774820403730,
       "tag": "0006_parched_living_tribunal",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1774820403731,
+      "tag": "0007_data_safety_nullable_userids",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1774820403732,
+      "tag": "0009_global_api_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1774820403733,
+      "tag": "0010_nullable_campaign_platform_userids",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1774820403734,
+      "tag": "0011_service_keys_table",
+      "breakpoints": true
     }
   ]
 }

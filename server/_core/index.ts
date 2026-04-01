@@ -4,13 +4,21 @@ import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
-import { appRouter } from "../routers";
+import { appRouter, llmInsightsRouter } from "../routers";
+import { router } from "./trpc";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { trainingWorker } from "../trainingQueue";
 import { startTrainingWorkerV2 } from "../trainingQueueV2";
 import { startScheduler } from "../scheduler";
 import { createWebhookRouter } from "../webhookHandler";
+
+// Combined router with all sub-routers including llmInsights
+const combinedRouter = router({
+  ...appRouter._def.procedures,
+  llmInsights: llmInsightsRouter,
+});
+export type CombinedRouter = typeof combinedRouter;
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -44,7 +52,7 @@ async function startServer() {
   app.use(
     "/api/trpc",
     createExpressMiddleware({
-      router: appRouter,
+      router: combinedRouter,
       createContext,
     })
   );

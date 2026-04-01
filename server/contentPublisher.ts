@@ -147,7 +147,7 @@ async function publishGutenbergPage(
   const titleSelector = ".editor-post-title__input, h1.wp-block-post-title";
   await page.waitForSelector(titleSelector, { timeout: 10000 });
   await page.click(titleSelector);
-  await page.keyboard.selectAll();
+  await page.keyboard.press("ControlOrMeta+a"); // Select all text in title field
   await page.keyboard.type(payload.title);
 
   // Switch to HTML (code) editor to inject raw HTML content

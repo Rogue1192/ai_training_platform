@@ -34,7 +34,6 @@ type TemplateType = "clean" | "suggestive" | "follow_up" | "category_based";
 
 interface PromptTemplate {
   id: number;
-  userId: number;
   templateType: string;
   templateName: string;
   templateContent: string;

@@ -112,6 +112,25 @@ export const apiKeys = pgTable("apiKeys", {
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = typeof apiKeys.$inferInsert;
 
+// Service Keys table — global keys for external services (DataForSEO, SinByte, Resend)
+// These are stored encrypted in the database so they can be managed via the Settings UI
+// instead of requiring manual Railway env var configuration.
+export const serviceKeyServiceEnum = pgEnum("service_key_service", ["dataforseo", "sinbyte", "resend"]);
+export const serviceKeys = pgTable("serviceKeys", {
+  id: serial("id").primaryKey(),
+  service: serviceKeyServiceEnum("service").notNull().unique(),
+  // For services with login+password (DataForSEO), store as JSON: {login, password}
+  // For services with a single API key (SinByte, Resend), store as the key string
+  encryptedValue: text("encryptedValue").notNull(),
+  status: apiKeyStatusEnum("status").default("connected").notNull(),
+  lastVerified: timestamp("lastVerified"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type ServiceKey = typeof serviceKeys.$inferSelect;
+export type InsertServiceKey = typeof serviceKeys.$inferInsert;
+
 // Training Sessions table
 export const trainingSessions = pgTable("trainingSessions", {
   id: serial("id").primaryKey(),

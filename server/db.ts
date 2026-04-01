@@ -809,3 +809,47 @@ export async function seedDefaultPromptTemplates(): Promise<PromptTemplate[]> {
 
   return templates;
 }
+
+// ─── Service Keys (DataForSEO, SinByte, Resend) ───────────────────────────────
+
+export type ServiceKeyService = "dataforseo" | "sinbyte" | "resend";
+
+export async function getServiceKey(service: ServiceKeyService) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { serviceKeys } = await import("../drizzle/schema");
+  const [key] = await db.select().from(serviceKeys).where(eq(serviceKeys.service, service)).limit(1);
+  return key;
+}
+
+export async function getAllServiceKeys() {
+  const db = await getDb();
+  if (!db) return [];
+  const { serviceKeys } = await import("../drizzle/schema");
+  return db.select().from(serviceKeys);
+}
+
+export async function upsertServiceKey(service: ServiceKeyService, encryptedValue: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const { serviceKeys } = await import("../drizzle/schema");
+  const existing = await getServiceKey(service);
+  if (existing) {
+    await db.update(serviceKeys)
+      .set({ encryptedValue, status: "connected", updatedAt: new Date() })
+      .where(eq(serviceKeys.service, service));
+    return { ...existing, encryptedValue, status: "connected" as const };
+  } else {
+    const [created] = await db.insert(serviceKeys)
+      .values({ service, encryptedValue, status: "connected" })
+      .returning();
+    return created;
+  }
+}
+
+export async function deleteServiceKey(service: ServiceKeyService) {
+  const db = await getDb();
+  if (!db) return;
+  const { serviceKeys } = await import("../drizzle/schema");
+  await db.delete(serviceKeys).where(eq(serviceKeys.service, service));
+}

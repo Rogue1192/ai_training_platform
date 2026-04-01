@@ -5,11 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Check, X, Key, PlayCircle, AlertCircle } from "lucide-react";
+import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search } from "lucide-react";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
 import PromptTemplateEditor from "@/components/PromptTemplateEditor";
 
 type AIProvider = "openai" | "anthropic" | "google";
+type ServiceType = "dataforseo" | "sinbyte" | "resend";
 
 const PROVIDERS: {
   id: AIProvider;
@@ -37,12 +38,54 @@ const PROVIDERS: {
   },
 ];
 
+const SERVICE_CONFIGS: {
+  id: ServiceType;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  fields: { key: string; label: string; placeholder: string; type?: string }[];
+}[] = [
+  {
+    id: "dataforseo",
+    label: "DataForSEO",
+    description: "Keyword research, AI search volume, and LLM mention tracking",
+    icon: <Search className="w-6 h-6 text-primary" />,
+    fields: [
+      { key: "login", label: "Login (Email)", placeholder: "your@email.com" },
+      { key: "password", label: "Password", placeholder: "••••••••", type: "password" },
+    ],
+  },
+  {
+    id: "sinbyte",
+    label: "SinByte",
+    description: "Fast Google indexing for published content pages",
+    icon: <Database className="w-6 h-6 text-primary" />,
+    fields: [
+      { key: "apiKey", label: "API Key", placeholder: "sb-...", type: "password" },
+    ],
+  },
+  {
+    id: "resend",
+    label: "Resend",
+    description: "Branded email delivery from my.aianswerforge.com",
+    icon: <Mail className="w-6 h-6 text-primary" />,
+    fields: [
+      { key: "apiKey", label: "API Key", placeholder: "re_...", type: "password" },
+    ],
+  },
+];
+
 export default function Settings() {
   const { data: apiKeys, isLoading, refetch } = trpc.apiKey.list.useQuery();
+  const { data: serviceKeys, refetch: refetchServiceKeys } = trpc.serviceKey.list.useQuery();
   const createApiKey = trpc.apiKey.create.useMutation();
   const updateApiKey = trpc.apiKey.update.useMutation();
   const deleteApiKey = trpc.apiKey.delete.useMutation();
   const testApiKey = trpc.apiKey.test.useMutation();
+
+  const saveServiceKey = trpc.serviceKey.save.useMutation();
+  const deleteServiceKeyMutation = trpc.serviceKey.delete.useMutation();
+  const testServiceKeyMutation = trpc.serviceKey.test.useMutation();
 
   const [keyInputs, setKeyInputs] = useState<Record<AIProvider, string>>({
     openai: "",
@@ -50,13 +93,25 @@ export default function Settings() {
     google: "",
   });
 
+  // Service key inputs: { dataforseo: { login: "", password: "" }, sinbyte: { apiKey: "" }, resend: { apiKey: "" } }
+  const [serviceInputs, setServiceInputs] = useState<Record<ServiceType, Record<string, string>>>({
+    dataforseo: { login: "", password: "" },
+    sinbyte: { apiKey: "" },
+    resend: { apiKey: "" },
+  });
+
   const [testingProvider, setTestingProvider] = useState<AIProvider | null>(null);
+  const [testingService, setTestingService] = useState<ServiceType | null>(null);
   const [testResults, setTestResults] = useState<
     Record<string, { success: boolean; message: string; model?: string; responseTime?: number } | null>
   >({});
 
   const getKeyStatus = (provider: AIProvider) => {
     return apiKeys?.find((k) => k.provider === provider);
+  };
+
+  const getServiceStatus = (service: ServiceType) => {
+    return serviceKeys?.find((k) => k.service === service);
   };
 
   const handleSaveKey = async (provider: AIProvider, key: string) => {
@@ -113,8 +168,72 @@ export default function Settings() {
     }
   };
 
-  const renderTestResult = (provider: AIProvider) => {
-    const result = testResults[provider];
+  const handleSaveServiceKey = async (service: ServiceType) => {
+    const inputs = serviceInputs[service];
+    let value: string;
+
+    if (service === "dataforseo") {
+      if (!inputs.login?.trim() || !inputs.password?.trim()) {
+        toast.error("Please enter both DataForSEO login and password");
+        return;
+      }
+      value = JSON.stringify({ login: inputs.login.trim(), password: inputs.password.trim() });
+    } else {
+      if (!inputs.apiKey?.trim()) {
+        toast.error("Please enter an API key");
+        return;
+      }
+      value = inputs.apiKey.trim();
+    }
+
+    try {
+      await saveServiceKey.mutateAsync({ service, value });
+      toast.success(`${service} credentials saved successfully`);
+      setServiceInputs((prev) => ({
+        ...prev,
+        [service]: service === "dataforseo" ? { login: "", password: "" } : { apiKey: "" },
+      }));
+      setTestResults((prev) => ({ ...prev, [service]: null }));
+      refetchServiceKeys();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save service key");
+    }
+  };
+
+  const handleDeleteServiceKey = async (service: ServiceType) => {
+    try {
+      await deleteServiceKeyMutation.mutateAsync({ service });
+      toast.success(`${service} credentials deleted`);
+      setTestResults((prev) => ({ ...prev, [service]: null }));
+      refetchServiceKeys();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete service key");
+    }
+  };
+
+  const handleTestServiceKey = async (service: ServiceType) => {
+    setTestingService(service);
+    setTestResults((prev) => ({ ...prev, [service]: null }));
+    try {
+      const result = await testServiceKeyMutation.mutateAsync({ service });
+      setTestResults((prev) => ({ ...prev, [service]: result }));
+      if (result.success) {
+        toast.success(`${service} connection verified!`);
+      } else {
+        toast.error(`${service} test failed: ${result.message}`);
+      }
+      refetchServiceKeys();
+    } catch (error: any) {
+      const errorResult = { success: false, message: error.message || "Test failed" };
+      setTestResults((prev) => ({ ...prev, [service]: errorResult }));
+      toast.error(error.message || "Failed to test service key");
+    } finally {
+      setTestingService(null);
+    }
+  };
+
+  const renderTestResult = (key: string) => {
+    const result = testResults[key];
     if (!result) return null;
     return (
       <div
@@ -159,87 +278,191 @@ export default function Settings() {
       <div>
         <h1 className="text-3xl font-bold text-foreground">Settings</h1>
         <p className="text-muted-foreground mt-2">
-          Manage global AI provider API keys — entered once and used for all clients and campaigns
+          Manage global API keys — entered once and used for all clients and campaigns
         </p>
       </div>
 
-      <div className="grid gap-6">
-        {PROVIDERS.map((p) => (
-          <Card key={p.id} className="bg-card border-border">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Key className="w-6 h-6 text-primary" />
+      {/* AI Provider Keys */}
+      <div>
+        <h2 className="text-xl font-semibold text-foreground mb-1">AI Provider Keys</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Required for AI training sessions. One key per provider, shared across all campaigns.
+        </p>
+        <div className="grid gap-4">
+          {PROVIDERS.map((p) => (
+            <Card key={p.id} className="bg-card border-border">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Key className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <CardTitle>{p.label}</CardTitle>
+                      <CardDescription>{p.description}</CardDescription>
+                    </div>
                   </div>
-                  <div>
-                    <CardTitle>{p.label}</CardTitle>
-                    <CardDescription>{p.description}</CardDescription>
-                  </div>
-                </div>
-                {getKeyStatus(p.id) && (
-                  <div className="flex items-center gap-2">
-                    <Check className="w-5 h-5 text-green-500" />
-                    <span className="text-sm text-green-500 font-medium">Connected</span>
-                  </div>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor={`${p.id}-key`}>API Key</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id={`${p.id}-key`}
-                    type="password"
-                    placeholder={getKeyStatus(p.id) ? "••••••••••••••••" : p.placeholder}
-                    value={keyInputs[p.id]}
-                    onChange={(e) => setKeyInputs((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                    className="bg-background border-input"
-                  />
-                  <Button
-                    onClick={() => handleSaveKey(p.id, keyInputs[p.id])}
-                    disabled={createApiKey.isPending || updateApiKey.isPending}
-                  >
-                    {createApiKey.isPending || updateApiKey.isPending ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : getKeyStatus(p.id) ? (
-                      "Update"
-                    ) : (
-                      "Save"
-                    )}
-                  </Button>
                   {getKeyStatus(p.id) && (
-                    <>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleTestKey(p.id)}
-                        disabled={testingProvider === p.id}
-                      >
-                        {testingProvider === p.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            <PlayCircle className="w-4 h-4 mr-1" />
-                            Test
-                          </>
-                        )}
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={() => handleDeleteKey(p.id)}
-                        disabled={deleteApiKey.isPending}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </>
+                    <div className="flex items-center gap-2">
+                      <Check className="w-5 h-5 text-green-500" />
+                      <span className="text-sm text-green-500 font-medium">Connected</span>
+                    </div>
                   )}
                 </div>
-                {renderTestResult(p.id)}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor={`${p.id}-key`}>API Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id={`${p.id}-key`}
+                      type="password"
+                      placeholder={getKeyStatus(p.id) ? "••••••••••••••••" : p.placeholder}
+                      value={keyInputs[p.id]}
+                      onChange={(e) => setKeyInputs((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                      className="bg-background border-input"
+                    />
+                    <Button
+                      onClick={() => handleSaveKey(p.id, keyInputs[p.id])}
+                      disabled={createApiKey.isPending || updateApiKey.isPending}
+                    >
+                      {createApiKey.isPending || updateApiKey.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : getKeyStatus(p.id) ? (
+                        "Update"
+                      ) : (
+                        "Save"
+                      )}
+                    </Button>
+                    {getKeyStatus(p.id) && (
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={() => handleTestKey(p.id)}
+                          disabled={testingProvider === p.id}
+                        >
+                          {testingProvider === p.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <>
+                              <PlayCircle className="w-4 h-4 mr-1" />
+                              Test
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={() => handleDeleteKey(p.id)}
+                          disabled={deleteApiKey.isPending}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {renderTestResult(p.id)}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* Service Keys */}
+      <div>
+        <h2 className="text-xl font-semibold text-foreground mb-1">Service Keys</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Required for keyword research, indexing, and email delivery. Stored encrypted — no need to set Railway env vars manually.
+        </p>
+        <div className="grid gap-4">
+          {SERVICE_CONFIGS.map((svc) => {
+            const status = getServiceStatus(svc.id);
+            const isSaving = saveServiceKey.isPending;
+            const isDeleting = deleteServiceKeyMutation.isPending;
+            const isTesting = testingService === svc.id;
+
+            return (
+              <Card key={svc.id} className="bg-card border-border">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                        {svc.icon}
+                      </div>
+                      <div>
+                        <CardTitle>{svc.label}</CardTitle>
+                        <CardDescription>{svc.description}</CardDescription>
+                      </div>
+                    </div>
+                    {status?.hasKey && (
+                      <div className="flex items-center gap-2">
+                        <Check className="w-5 h-5 text-green-500" />
+                        <span className="text-sm text-green-500 font-medium">Connected</span>
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {svc.fields.map((field) => (
+                    <div key={field.key} className="space-y-2">
+                      <Label htmlFor={`${svc.id}-${field.key}`}>{field.label}</Label>
+                      <Input
+                        id={`${svc.id}-${field.key}`}
+                        type={field.type || "text"}
+                        placeholder={status?.hasKey ? "••••••••••••••••" : field.placeholder}
+                        value={serviceInputs[svc.id][field.key] || ""}
+                        onChange={(e) =>
+                          setServiceInputs((prev) => ({
+                            ...prev,
+                            [svc.id]: { ...prev[svc.id], [field.key]: e.target.value },
+                          }))
+                        }
+                        className="bg-background border-input"
+                      />
+                    </div>
+                  ))}
+                  <div className="flex gap-2 pt-1">
+                    <Button onClick={() => handleSaveServiceKey(svc.id)} disabled={isSaving}>
+                      {isSaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : status?.hasKey ? (
+                        "Update"
+                      ) : (
+                        "Save"
+                      )}
+                    </Button>
+                    {status?.hasKey && (
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={() => handleTestServiceKey(svc.id)}
+                          disabled={isTesting}
+                        >
+                          {isTesting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <>
+                              <PlayCircle className="w-4 h-4 mr-1" />
+                              Test
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={() => handleDeleteServiceKey(svc.id)}
+                          disabled={isDeleting}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {renderTestResult(svc.id)}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
 
       {/* Prompt Templates */}
@@ -255,10 +478,10 @@ export default function Settings() {
         </CardHeader>
         <CardContent>
           <ul className="space-y-2 text-sm text-muted-foreground">
-            <li>• API keys are global — one key per provider, shared across all clients and campaigns</li>
-            <li>• All API keys are encrypted at rest using AES-256-GCM encryption</li>
-            <li>• Keys are verified upon submission to ensure they work correctly</li>
-            <li>• API keys are never exposed in logs or error messages</li>
+            <li>• All keys are global — one key per provider/service, shared across all clients and campaigns</li>
+            <li>• All keys are encrypted at rest using AES-256-GCM encryption</li>
+            <li>• Keys saved here take priority over Railway environment variables</li>
+            <li>• Keys are never exposed in logs or error messages</li>
             <li>• You can update or delete any key at any time</li>
             <li>• Use the Test button to verify a key has the required permissions</li>
           </ul>

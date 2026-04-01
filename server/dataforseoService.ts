@@ -4,11 +4,26 @@ import axios from "axios";
 
 const DATAFORSEO_BASE = "https://api.dataforseo.com/v3";
 
-function getAuthHeader(): string {
+async function getAuthHeader(): Promise<string> {
+  // Try DB first (set via Settings UI)
+  try {
+    const { getServiceKey } = await import("./db");
+    const { decrypt } = await import("./encryption");
+    const record = await getServiceKey("dataforseo");
+    if (record?.encryptedValue) {
+      const creds = JSON.parse(decrypt(record.encryptedValue)) as { login: string; password: string };
+      if (creds.login && creds.password) {
+        return "Basic " + Buffer.from(`${creds.login}:${creds.password}`).toString("base64");
+      }
+    }
+  } catch {
+    // Fall through to env var
+  }
+  // Fallback to env vars (Railway secrets)
   const login = process.env.DATAFORSEO_LOGIN;
   const password = process.env.DATAFORSEO_PASSWORD;
   if (!login || !password) {
-    throw new Error("DataForSEO credentials not configured. Set DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD.");
+    throw new Error("DataForSEO credentials not configured. Please add them in Settings → Service Keys.");
   }
   return "Basic " + Buffer.from(`${login}:${password}`).toString("base64");
 }
@@ -17,7 +32,7 @@ async function dfsFetch<T = any>(endpoint: string, body: any[]): Promise<T> {
   const response = await axios.post(`${DATAFORSEO_BASE}${endpoint}`, body, {
     headers: {
       "Content-Type": "application/json",
-      Authorization: getAuthHeader(),
+      Authorization: await getAuthHeader(),
     },
     timeout: 120_000, // 2 minutes — some endpoints are slow
   });

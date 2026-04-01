@@ -54,14 +54,26 @@ export interface IndexingSubmissionResult {
 const SINBYTE_API_BASE = "https://app.sinbyte.com/api/indexing/";
 
 /**
- * Get the SinByte API key from environment variables
- * Casey will set this up in the Secrets panel
+ * Get the SinByte API key from the database (Settings UI) or env var fallback.
+ * Priority: DB (Settings UI) → SINBYTE_API_KEY env var
  */
-function getSinByteApiKey(): string {
+async function getSinByteApiKey(): Promise<string> {
+  // Try DB first (set via Settings UI)
+  try {
+    const { getServiceKey } = await import("./db");
+    const { decrypt } = await import("./encryption");
+    const record = await getServiceKey("sinbyte");
+    if (record?.encryptedValue) {
+      return decrypt(record.encryptedValue);
+    }
+  } catch {
+    // Fall through to env var
+  }
+  // Fallback to env var (Railway secrets)
   const apiKey = process.env.SINBYTE_API_KEY;
   if (!apiKey) {
     throw new Error(
-      "SinByte API key not configured. Please add SINBYTE_API_KEY in Settings → Secrets."
+      "SinByte API key not configured. Please add it in Settings → Service Keys."
     );
   }
   return apiKey;
@@ -85,7 +97,7 @@ export async function submitUrlsForIndexing(
     return { success: false, urlCount: 0, error: "No URLs to submit" };
   }
   
-  const apiKey = getSinByteApiKey();
+  const apiKey = await getSinByteApiKey();
   
   try {
     console.log(`[SinByte] Submitting ${urls.length} URLs for indexing: "${taskName}"`);
@@ -134,7 +146,7 @@ export async function submitUrlsForIndexing(
  * Get the status of an indexing task
  */
 export async function getTaskStatus(taskId: string | number): Promise<SinByteTaskStatus | null> {
-  const apiKey = getSinByteApiKey();
+  const apiKey = await getSinByteApiKey();
   
   try {
     const response = await axios.get(
@@ -165,7 +177,7 @@ export async function getTaskStatus(taskId: string | number): Promise<SinByteTas
  * Get the history of all indexing tasks
  */
 export async function getIndexingHistory(): Promise<SinByteTaskStatus[]> {
-  const apiKey = getSinByteApiKey();
+  const apiKey = await getSinByteApiKey();
   
   try {
     const response = await axios.get(

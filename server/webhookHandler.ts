@@ -498,8 +498,20 @@ export function createWebhookRouter(): Router {
           console.log(`[Webhook] Auto-starting indexing for campaign ${campaignId}...`);
           // Use ownerId from the campaign
           const camp = await getCampaignById(campaignId);
-          if (camp) {
+          if (camp && camp.userId != null) {
             await runPipelineStep(campaignId, "indexing", camp.userId);
+          } else if (camp) {
+            // userId is null — get admin user as fallback
+            const { getDb } = await import("./db");
+            const { users } = await import("../drizzle/schema");
+            const { eq } = await import("drizzle-orm");
+            const db = await getDb();
+            if (db) {
+              const admins = await db.select().from(users).where(eq(users.role, "admin")).limit(1);
+              if (admins.length > 0) {
+                await runPipelineStep(campaignId, "indexing", admins[0]!.id);
+              }
+            }
           }
         } catch (err: any) {
           console.error(`[Webhook] Auto-indexing failed for campaign ${campaignId}:`, err.message);

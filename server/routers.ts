@@ -276,6 +276,85 @@ export const appRouter = router({
       }),
   }),
 
+  // Service Keys (DataForSEO, SinByte, Resend) — managed via Settings UI
+  serviceKey: router({
+    list: protectedProcedure.query(async () => {
+      const { getAllServiceKeys } = await import("./db");
+      const keys = await getAllServiceKeys();
+      // Return without encrypted values — just status and service name
+      return keys.map(k => ({
+        id: k.id,
+        service: k.service,
+        status: k.status,
+        lastVerified: k.lastVerified,
+        createdAt: k.createdAt,
+        updatedAt: k.updatedAt,
+        hasKey: !!k.encryptedValue,
+      }));
+    }),
+    save: protectedProcedure
+      .input(z.object({
+        service: z.enum(["dataforseo", "sinbyte", "resend"]),
+        // For dataforseo: pass as JSON string {login, password}
+        // For sinbyte/resend: pass as the API key string
+        value: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        const { upsertServiceKey } = await import("./db");
+        const { encrypt } = await import("./encryption");
+        const encryptedValue = encrypt(input.value);
+        await upsertServiceKey(input.service, encryptedValue);
+        return { success: true };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend"]) }))
+      .mutation(async ({ input }) => {
+        const { deleteServiceKey } = await import("./db");
+        await deleteServiceKey(input.service);
+        return { success: true };
+      }),
+    test: protectedProcedure
+      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend"]) }))
+      .mutation(async ({ input }) => {
+        const { getServiceKey, upsertServiceKey } = await import("./db");
+        const { decrypt } = await import("./encryption");
+        const record = await getServiceKey(input.service);
+        if (!record) throw new Error("No key found for this service. Please save one first.");
+        const value = decrypt(record.encryptedValue);
+        
+        try {
+          if (input.service === "dataforseo") {
+            const creds = JSON.parse(value) as { login: string; password: string };
+            const auth = "Basic " + Buffer.from(`${creds.login}:${creds.password}`).toString("base64");
+            const axios = (await import("axios")).default;
+            const resp = await axios.get("https://api.dataforseo.com/v3/appendix/user_data", {
+              headers: { Authorization: auth },
+              timeout: 10000,
+            });
+            const valid = resp.data?.status_code === 20000;
+            return { success: valid, message: valid ? "DataForSEO credentials verified" : "Invalid credentials" };
+          } else if (input.service === "sinbyte") {
+            const axios = (await import("axios")).default;
+            const resp = await axios.get(`https://app.sinbyte.com/api/indexing/?apikey=${value}`, {
+              timeout: 10000,
+              validateStatus: () => true,
+            });
+            const valid = resp.status === 200 || resp.status === 404;
+            return { success: valid, message: valid ? "SinByte API key verified" : `SinByte returned status ${resp.status}` };
+          } else if (input.service === "resend") {
+            const { Resend } = await import("resend");
+            const resend = new Resend(value);
+            const { error } = await resend.domains.list();
+            const valid = !error;
+            return { success: valid, message: valid ? "Resend API key verified" : (error?.message || "Invalid Resend key") };
+          }
+          return { success: false, message: "Unknown service" };
+        } catch (err: any) {
+          return { success: false, message: err.message || "Connection test failed" };
+        }
+      }),
+  }),
+
   // Training session management
   training: router({
     list: protectedProcedure.query(async () => {
@@ -1224,7 +1303,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { createPromptTemplate } = await import("./db");
         return createPromptTemplate({
           ...input,
-          userId: ctx.user.id,
         });
       }),
 
@@ -1849,7 +1927,102 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           }),
         };
       }),
+   }),
+});
+// ============= LLM Insights — Query Volume Dashboard =============
+export const llmInsightsRouter = router({
+  /**
+   * Get all query × location combos across all campaigns, sorted by AI search volume.
+   * This is the global LLM query volume dashboard.
+   */
+  topQueries: protectedProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(500).default(100),
+      campaignId: z.number().optional(), // Filter to a single campaign
+    }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { campaignQueryLocations, campaigns, businesses } = await import("../drizzle/schema");
+      const { desc, eq, isNotNull } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return [];
+
+      const query = db
+        .select({
+          id: campaignQueryLocations.id,
+          campaignId: campaignQueryLocations.campaignId,
+          searchQuery: campaignQueryLocations.searchQuery,
+          location: campaignQueryLocations.location,
+          aiSearchVolume: campaignQueryLocations.aiSearchVolume,
+          monthlyTrend: campaignQueryLocations.monthlyTrend,
+          currentRankChatGPT: campaignQueryLocations.currentRankChatGPT,
+          currentRankGemini: campaignQueryLocations.currentRankGemini,
+          currentRankAIOverview: campaignQueryLocations.currentRankAIOverview,
+          trainingStatus: campaignQueryLocations.trainingStatus,
+          trainingSessions: campaignQueryLocations.trainingSessions,
+          firstMentionedAt: campaignQueryLocations.firstMentionedAt,
+          lastRankCheckAt: campaignQueryLocations.lastRankCheckAt,
+          businessName: businesses.name,
+          campaignName: campaigns.campaignName,
+          businessType: businesses.businessType,
+        })
+        .from(campaignQueryLocations)
+        .leftJoin(campaigns, eq(campaignQueryLocations.campaignId, campaigns.id))
+        .leftJoin(businesses, eq(campaigns.businessId, businesses.id))
+        .where(
+          input.campaignId
+            ? eq(campaignQueryLocations.campaignId, input.campaignId)
+            : isNotNull(campaignQueryLocations.aiSearchVolume)
+        )
+        .orderBy(desc(campaignQueryLocations.aiSearchVolume))
+        .limit(input.limit);
+
+      return query;
+    }),
+
+  /**
+   * Get aggregate LLM mention stats across all campaigns.
+   * Shows total queries tracked, mention rates per platform, etc.
+   */
+  aggregateStats: protectedProcedure.query(async () => {
+    const { getDb } = await import("./db");
+    const { campaignQueryLocations, campaigns, businesses } = await import("../drizzle/schema");
+    const { sql, eq } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) return null;
+
+    const [stats] = await db
+      .select({
+        totalQueries: sql<number>`count(*)`,
+        totalWithVolume: sql<number>`count(${campaignQueryLocations.aiSearchVolume})`,
+        avgAiVolume: sql<number>`avg(${campaignQueryLocations.aiSearchVolume})`,
+        totalAiVolume: sql<number>`sum(${campaignQueryLocations.aiSearchVolume})`,
+        mentionedChatGPT: sql<number>`sum(case when ${campaignQueryLocations.currentRankChatGPT} = 'mentioned' then 1 else 0 end)`,
+        mentionedGemini: sql<number>`sum(case when ${campaignQueryLocations.currentRankGemini} = 'mentioned' then 1 else 0 end)`,
+        mentionedAIOverview: sql<number>`sum(case when ${campaignQueryLocations.currentRankAIOverview} = 'mentioned' then 1 else 0 end)`,
+        achievedCount: sql<number>`sum(case when ${campaignQueryLocations.trainingStatus} = 'achieved' then 1 else 0 end)`,
+      })
+      .from(campaignQueryLocations);
+
+    return {
+      totalQueries: Number(stats?.totalQueries ?? 0),
+      totalWithVolume: Number(stats?.totalWithVolume ?? 0),
+      avgAiVolume: Math.round(Number(stats?.avgAiVolume ?? 0)),
+      totalAiVolume: Number(stats?.totalAiVolume ?? 0),
+      mentionedChatGPT: Number(stats?.mentionedChatGPT ?? 0),
+      mentionedGemini: Number(stats?.mentionedGemini ?? 0),
+      mentionedAIOverview: Number(stats?.mentionedAIOverview ?? 0),
+      achievedCount: Number(stats?.achievedCount ?? 0),
+    };
   }),
 });
 
+// Merge llmInsights into appRouter
+export const appRouterWithInsights = router({
+  ...appRouter._def.procedures,
+  llmInsights: llmInsightsRouter,
+});
+
 export type AppRouter = typeof appRouter;
+// Re-export the extended router for use in server setup
+export { appRouterWithInsights as extendedAppRouter };
