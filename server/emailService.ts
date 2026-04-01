@@ -1049,50 +1049,46 @@ export async function sendCampaignVisibilityReport(
 
 // ─── Trial Win Payment Email ──────────────────────────────────────────────────
 
-export interface TrialWinPaymentEmailData {
+// ─── Trial Win Admin Notification ────────────────────────────────────────────
+// NOTE: We do NOT send a payment link to the client. Billing is handled in GHL.
+// This email goes to the admin so they can follow up with the client in GHL.
+
+export interface TrialWinAdminNotificationData {
   businessName: string;
   contactName: string;
-  contactEmail: string;
-  packageName: string;
+  contactEmail: string | null;
+  selectedPackage: string;
   monthlyPrice: number;
-  maxQueries: number;
-  maxLocations: number;
-  paymentUrl: string;
+  campaignId: number;
+  adminEmail: string;
 }
 
-export async function sendTrialWinPaymentEmail(data: TrialWinPaymentEmailData): Promise<EmailResult> {
+export async function sendTrialWinAdminNotification(data: TrialWinAdminNotificationData): Promise<EmailResult> {
   const content = `
-    <h1>Your Business Just Showed Up in AI Search Results!</h1>
-    <p class="subtitle">Congratulations, ${data.contactName}! Your 14-day trial is working.</p>
+    <h1>&#127881; Trial Win — Follow Up Now</h1>
+    <p class="subtitle">A trial client just appeared in AI search results for the first time.</p>
 
     <div class="score-card" style="background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);">
-      <p class="score-label" style="color:#94a3b8;">TRIAL RESULT</p>
-      <p class="score-value" style="color:#22c55e;">&#10003; Showing Up</p>
-      <p class="score-label" style="color:#cbd5e1;">${data.businessName} is now appearing in AI search results</p>
+      <p class="score-label" style="color:#94a3b8;">CLIENT</p>
+      <p class="score-value" style="color:#22c55e;">${data.businessName}</p>
+      <p class="score-label" style="color:#cbd5e1;">${data.contactName} &bull; ${data.contactEmail || "no email"}</p>
     </div>
 
-    <p>Your business has been detected in AI search results during your 14-day risk-free trial. This means the system is working — AI platforms are starting to recommend you to potential customers.</p>
-
-    <p>To keep this momentum going and expand to your full package, activate your subscription now:</p>
-
-    <div style="padding: 20px; background: #f8fafc; border-radius: 8px; margin: 20px 0;">
-      <p style="font-weight: 700; font-size: 16px; margin: 0 0 4px;">${data.packageName}</p>
-      <p style="color: #22c55e; font-size: 28px; font-weight: 700; margin: 0 0 4px;">$${data.monthlyPrice}/mo</p>
-      <p style="color: #64748b; font-size: 13px; margin: 0 0 12px;">${data.maxQueries} queries &times; ${data.maxLocations} locations</p>
-      <p style="color: #64748b; font-size: 12px; margin: 0;">Cancel anytime. No long-term contracts.</p>
+    <div style="padding: 16px; background: #f8fafc; border-radius: 8px; margin: 20px 0;">
+      <p style="font-weight: 700; margin: 0 0 4px;">Selected Package: ${data.selectedPackage}</p>
+      <p style="color: #22c55e; font-size: 24px; font-weight: 700; margin: 0 0 4px;">$${data.monthlyPrice}/mo</p>
+      <p style="color: #64748b; font-size: 13px; margin: 0;">Campaign ID: ${data.campaignId}</p>
     </div>
 
-    <div style="text-align: center;">
-      <a href="${data.paymentUrl}" style="display:inline-block;background:#22c55e;color:#ffffff;font-weight:700;font-size:16px;padding:14px 32px;border-radius:8px;text-decoration:none;">Activate My Full Package &rarr;</a>
-    </div>
+    <p>Go to GHL and follow up with this client to close the deal. Once they pay in GHL, send the conversion webhook to upgrade their campaign limits.</p>
 
     <div class="divider"></div>
-    <p style="font-size: 13px; color: #64748b;">If you have any questions, reply to this email or contact your account manager.</p>
+    <p style="font-size: 12px; color: #64748b;">This is an automated admin notification from AI Answer Forge.</p>
   `;
 
   const resend = await getResend();
   if (!resend) {
-    console.warn("[Email] Resend not configured — skipping trial win payment email");
+    console.warn("[Email] Resend not configured — skipping trial win admin notification");
     return { success: false, error: "Email service not configured" };
   }
 
@@ -1100,9 +1096,9 @@ export async function sendTrialWinPaymentEmail(data: TrialWinPaymentEmailData): 
     const fromAddress = process.env.EMAIL_FROM || "AI Answer Forge <noreply@aianswerforge.com>";
     const { data: result, error } = await resend.emails.send({
       from: fromAddress,
-      to: data.contactEmail,
-      subject: `${data.businessName} is showing up in AI search — activate your full package`,
-      html: baseTemplate(content, `Your trial worked! ${data.businessName} is appearing in AI search results.`),
+      to: data.adminEmail,
+      subject: `[ACTION REQUIRED] ${data.businessName} just appeared in AI search — follow up in GHL`,
+      html: baseTemplate(content, `Trial win for ${data.businessName}. Follow up in GHL.`),
     });
 
     if (error) return { success: false, error: error.message };

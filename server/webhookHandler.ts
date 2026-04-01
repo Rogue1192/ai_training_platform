@@ -543,5 +543,41 @@ export function createWebhookRouter(): Router {
     }
   });
 
+  // ─── GHL Trial Conversion Webhook ─────────────────────────────────────────────
+  // GHL calls this after a trial client pays. Upgrades campaign limits to full package.
+  // POST /api/ghl/trial-converted
+  // Body: { campaignId: number, selectedPackage?: string, ghlContactId?: string }
+  router.post("/api/ghl/trial-converted", async (req: Request, res: Response) => {
+    try {
+      // Verify webhook auth
+      const authResult = verifyWebhookAuth(req);
+      if (!authResult.valid) {
+        res.status(401).json({ error: authResult.error });
+        return;
+      }
+
+      const { campaignId, selectedPackage, ghlContactId } = req.body;
+
+      if (!campaignId) {
+        res.status(400).json({ error: "campaignId is required" });
+        return;
+      }
+
+      const { convertTrialToPaid } = await import("./trialManager");
+      const result = await convertTrialToPaid(Number(campaignId), selectedPackage);
+
+      console.log(`[Webhook] GHL trial conversion: campaign ${campaignId} → ${result.tier.name}. GHL contact: ${ghlContactId || "unknown"}`);
+
+      res.status(200).json({
+        success: true,
+        message: `Campaign ${campaignId} converted to ${result.tier.name}`,
+        tier: result.tier,
+      });
+    } catch (err: any) {
+      console.error("[Webhook] Error processing GHL trial conversion:", err);
+      res.status(500).json({ error: err.message || "Internal error" });
+    }
+  });
+
   return router;
 }
