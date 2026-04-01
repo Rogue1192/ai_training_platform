@@ -95,10 +95,12 @@ export default function EmailManagement() {
     try {
       if (type === "win") {
         const result = await winPreview.refetch();
-        setPreviewHtml(result.data?.html || null);
+        const html = result.data?.html;
+        setPreviewHtml(html ?? null);
       } else if (type === "report") {
         const result = await reportPreview.refetch();
-        setPreviewHtml(result.data?.html || null);
+        const html = result.data?.html;
+        setPreviewHtml(html ?? null);
       }
     } catch (err) {
       toast.error("Failed to load preview");

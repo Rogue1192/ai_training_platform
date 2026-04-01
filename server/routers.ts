@@ -1933,7 +1933,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       .query(async ({ input }) => {
         const { previewWinEmail } = await import("./emailService");
         return {
-          html: previewWinEmail({
+          html: await previewWinEmail({
             businessName: "Sample Business",
             contactName: "John",
             contactEmail: "test@example.com",
@@ -1953,7 +1953,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       .query(async () => {
         const { previewVisibilityReportEmail } = await import("./emailService");
         return {
-          html: previewVisibilityReportEmail({
+          html: await previewVisibilityReportEmail({
             businessName: "Sample Business",
             contactName: "John",
             contactEmail: "test@example.com",

@@ -7,8 +7,10 @@
  *  1. Client onboards via GHL → onboarding webhook → trial starts (5q × 3loc)
  *  2. Day 14 arrives → system automatically upgrades to their selected package
  *     (no manual action, no payment confirmation needed — GHL handles billing)
- *  3. ONLY exception: if GHL sends a cancellation webhook before day 14,
- *     the campaign stops and no upgrade happens
+ *  3. After upgrade, run baseline scans for NEW queries/locations (beyond the 5×3 trial set)
+ *     and send a "Your Full Package Has Started" email with before-videos for all new queries.
+ *  4. ONLY exception: if GHL sends a cancellation webhook before day 14,
+ *     the campaign stops and no upgrade happens.
  *
  * Package tier mapping (from GHL webhook `selectedPackage` field):
  *  starter_5loc  → 5 queries × 5 locations  → $697/mo
@@ -20,7 +22,7 @@
  */
 
 import { getDb } from "./db";
-import { campaigns, businesses } from "../drizzle/schema";
+import { campaigns, businesses, clientDashboards } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 
 // ─── Package Tier Definitions ─────────────────────────────────────────────────
@@ -117,7 +119,9 @@ export async function checkAndUpgradeTrials(): Promise<void> {
 
 /**
  * Automatically upgrade a trial campaign to its selected package at day 14.
- * No manual action required — this fires automatically.
+ *
+ * After upgrading the DB limits, this function triggers an async expanded
+ * baseline scan for NEW queries/locations and sends the upgrade email.
  */
 export async function autoUpgradeTrial(
   campaignId: number,
@@ -129,6 +133,7 @@ export async function autoUpgradeTrial(
   const packageKey = selectedPackage || "growth_5loc";
   const tier = PACKAGE_TIERS[packageKey] || PACKAGE_TIERS.growth_5loc;
 
+  // ── Step 1: Upgrade DB limits ──────────────────────────────────────────────
   await db
     .update(campaigns)
     .set({
@@ -143,6 +148,124 @@ export async function autoUpgradeTrial(
     .where(eq(campaigns.id, campaignId));
 
   console.log(`[TrialManager] Campaign ${campaignId} auto-upgraded to ${tier.name} (${tier.maxQueries}q × ${tier.maxLocations}loc).`);
+
+  // ── Step 2: Run expanded baseline for NEW queries/locations (async) ────────
+  runExpandedBaselineAfterUpgrade(campaignId, tier).catch((err: any) => {
+    console.error(`[TrialManager] Expanded baseline failed for campaign ${campaignId}:`, err?.message || err);
+  });
+}
+
+/**
+ * After a trial upgrades to a full package, run baseline scans for the NEW
+ * query-location combos that weren't in the 5×3 trial set, then send the
+ * "Your Full Package Has Started" email.
+ *
+ * Runs asynchronously after the DB upgrade so the scheduler isn't blocked.
+ */
+async function runExpandedBaselineAfterUpgrade(
+  campaignId: number,
+  tier: PackageTier
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    // ── Fetch campaign + business ──────────────────────────────────────────
+    const [campaign] = await db
+      .select()
+      .from(campaigns)
+      .where(eq(campaigns.id, campaignId))
+      .limit(1);
+    if (!campaign) return;
+
+    const [business] = await db
+      .select()
+      .from(businesses)
+      .where(eq(businesses.id, campaign.businessId))
+      .limit(1);
+    if (!business || !business.contactEmail) return;
+
+    // ── Fetch existing query-locations (from trial) ────────────────────────
+    const { getQueryLocationsByCampaignId } = await import("./dbCampaigns");
+    const existingQls = await getQueryLocationsByCampaignId(campaignId);
+
+    // ── Run keyword research to generate the FULL set of query-locations ──
+    // The keyword research pipeline respects maxQueries/maxLocations from the
+    // campaign record (now updated to the full package limits).
+    // It will add NEW query-location rows without touching existing ones.
+    try {
+      const { runCampaignKeywordResearch } = await import("./keywordResearchPipeline");
+      await runCampaignKeywordResearch(campaignId);
+      console.log(`[TrialManager] Keyword research expanded for campaign ${campaignId}`);
+    } catch (kwErr: any) {
+      console.error(`[TrialManager] Keyword research expansion failed (non-fatal):`, kwErr.message);
+    }
+
+    // ── Identify NEW query-locations added by the expanded package ─────────
+    const allQls = await getQueryLocationsByCampaignId(campaignId);
+    const existingIds = new Set(existingQls.map((q) => q.id));
+    const newQls = allQls.filter((q) => !existingIds.has(q.id));
+
+    console.log(`[TrialManager] ${newQls.length} new query-locations added for campaign ${campaignId}`);
+
+    // ── Record "before" baseline videos for new queries ────────────────────
+    if (newQls.length > 0) {
+      try {
+        const { recordBaselineVideos } = await import("./scanVideoRecorder");
+        await recordBaselineVideos(
+          campaignId,
+          newQls.map((ql) => ({
+            id: ql.id,
+            searchQuery: ql.searchQuery,
+            location: ql.location,
+          }))
+        );
+        console.log(`[TrialManager] Baseline videos recorded for ${newQls.length} new queries`);
+      } catch (videoErr: any) {
+        console.error(`[TrialManager] Baseline video recording failed (non-fatal):`, videoErr.message);
+      }
+    }
+
+    // ── Fetch updated query-locations (with video URLs) ────────────────────
+    const updatedQls = await getQueryLocationsByCampaignId(campaignId);
+    const updatedMap = new Map(updatedQls.map((q) => [q.id, q]));
+
+    // ── Get dashboard URL ──────────────────────────────────────────────────
+    const [dashboard] = await db
+      .select()
+      .from(clientDashboards)
+      .where(eq(clientDashboards.campaignId, campaignId))
+      .limit(1);
+    const baseUrl = process.env.APP_BASE_URL ?? "";
+    const dashboardUrl = dashboard?.isActive && baseUrl
+      ? `${baseUrl}/report/${dashboard.accessToken}`
+      : undefined;
+
+    // ── Send "Your Full Package Has Started" email ─────────────────────────
+    const { sendPackageUpgradeEmail } = await import("./emailService");
+    await sendPackageUpgradeEmail({
+      businessName: business.name,
+      contactName: business.contactName || business.name,
+      contactEmail: business.contactEmail,
+      packageName: tier.name,
+      maxQueries: tier.maxQueries,
+      maxLocations: tier.maxLocations,
+      dashboardUrl,
+      newBaselineQueries: newQls.map((ql) => {
+        const updated = updatedMap.get(ql.id);
+        return {
+          query: ql.searchQuery,
+          location: ql.location,
+          beforeVideoChatgpt: updated?.beforeVideoChatgpt || undefined,
+          beforeVideoGoogleAi: updated?.beforeVideoGoogleAi || undefined,
+        };
+      }),
+    });
+
+    console.log(`[TrialManager] Package upgrade email sent to ${business.contactEmail} for campaign ${campaignId}`);
+  } catch (err: any) {
+    console.error(`[TrialManager] runExpandedBaselineAfterUpgrade failed for campaign ${campaignId}:`, err?.message || err);
+  }
 }
 
 // ─── GHL Cancellation Handler ─────────────────────────────────────────────────
