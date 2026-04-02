@@ -83,6 +83,19 @@ export const businesses = pgTable("businesses", {
   warranties: text("warranties"),
   differentiators: text("differentiators"),
   competitors: json("competitors"), // string[]
+  // Social profiles — discovered during credibility research, included in schema.org sameAs
+  facebookUrl: varchar("facebookUrl", { length: 500 }),
+  instagramUrl: varchar("instagramUrl", { length: 500 }),
+  linkedinUrl: varchar("linkedinUrl", { length: 500 }),
+  twitterUrl: varchar("twitterUrl", { length: 500 }),
+  youtubeUrl: varchar("youtubeUrl", { length: 500 }),
+  tiktokUrl: varchar("tiktokUrl", { length: 500 }),
+  yelpUrl: varchar("yelpUrl", { length: 500 }),
+  googleMapsUrl: varchar("googleMapsUrl", { length: 500 }),
+  bbbUrl: varchar("bbbUrl", { length: 500 }),
+  angiesUrl: varchar("angiesUrl", { length: 500 }),
+  thumbtackUrl: varchar("thumbtackUrl", { length: 500 }),
+  houzzUrl: varchar("houzzUrl", { length: 500 }),
   // WordPress credentials (encrypted) for auto-publishing
   wpAdminUrl: text("wpAdminUrl"),
   wpUsername: text("wpUsername"),

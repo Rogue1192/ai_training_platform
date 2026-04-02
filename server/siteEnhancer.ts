@@ -99,12 +99,30 @@ export async function generateOrganizationSchema(businessId: number): Promise<Sc
     schema.award = [business.awards, business.certifications].filter(Boolean).join(", ");
   }
 
-  // Add credibility facts as "knowsAbout" or "description" enhancement
+  // Add credibility facts as "knowsAbout"
   if (cred?.verifiedFacts) {
     const facts = (cred.verifiedFacts as any[]).slice(0, 5).map((f: any) => f.fact).filter(Boolean);
     if (facts.length > 0) {
       schema.knowsAbout = facts;
     }
+  }
+
+  // Build sameAs array from all discovered social profiles and review platforms
+  const sameAs: string[] = [];
+  if (business.facebookUrl) sameAs.push(business.facebookUrl);
+  if (business.instagramUrl) sameAs.push(business.instagramUrl);
+  if (business.linkedinUrl) sameAs.push(business.linkedinUrl);
+  if (business.twitterUrl) sameAs.push(business.twitterUrl);
+  if (business.youtubeUrl) sameAs.push(business.youtubeUrl);
+  if (business.tiktokUrl) sameAs.push(business.tiktokUrl);
+  if (business.yelpUrl) sameAs.push(business.yelpUrl);
+  if (business.googleMapsUrl) sameAs.push(business.googleMapsUrl);
+  if (business.bbbUrl) sameAs.push(business.bbbUrl);
+  if (business.angiesUrl) sameAs.push(business.angiesUrl);
+  if (business.thumbtackUrl) sameAs.push(business.thumbtackUrl);
+  if (business.houzzUrl) sameAs.push(business.houzzUrl);
+  if (sameAs.length > 0) {
+    schema.sameAs = sameAs;
   }
 
   return schema;

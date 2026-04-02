@@ -69,6 +69,7 @@ Research the following categories thoroughly:
 8. INSURANCE & BONDING: Whether they're insured, bonded, licensed
 9. COMMUNITY INVOLVEMENT: Local sponsorships, charity work, community presence
 10. UNIQUE DIFFERENTIATORS: What makes them stand out from competitors
+11. SOCIAL PROFILES: Find all social media and review platform URLs (Facebook, Instagram, LinkedIn, Twitter/X, YouTube, TikTok, Yelp, Google Maps, BBB, Angie's List, Thumbtack, Houzz, etc.)
 
 For each fact found, assess your confidence level:
 - "high": Directly stated on their website or verifiable sources
@@ -104,7 +105,21 @@ Return JSON in this exact format:
       "exists": <boolean>
     }
   ],
-  "researchSummary": "<2-3 sentence summary of findings>"
+  "researchSummary": "<2-3 sentence summary of findings>",
+  "socialProfiles": {
+    "facebook": "<url or null>",
+    "instagram": "<url or null>",
+    "linkedin": "<url or null>",
+    "twitter": "<url or null>",
+    "youtube": "<url or null>",
+    "tiktok": "<url or null>",
+    "yelp": "<url or null>",
+    "googleMaps": "<url or null>",
+    "bbb": "<url or null>",
+    "angiesList": "<url or null>",
+    "thumbtack": "<url or null>",
+    "houzz": "<url or null>"
+  }
 }`;
 
 function buildResearchPrompt(
@@ -315,6 +330,30 @@ export async function runCredibilityResearch(params: {
       researchModel: model,
       researchCompletedAt: new Date(),
     });
+    
+    // Store discovered social profiles in the businesses table
+    const socialProfiles = researchData.socialProfiles || {};
+    const socialUpdates: Record<string, string | null> = {};
+    if (socialProfiles.facebook) socialUpdates.facebookUrl = socialProfiles.facebook;
+    if (socialProfiles.instagram) socialUpdates.instagramUrl = socialProfiles.instagram;
+    if (socialProfiles.linkedin) socialUpdates.linkedinUrl = socialProfiles.linkedin;
+    if (socialProfiles.twitter) socialUpdates.twitterUrl = socialProfiles.twitter;
+    if (socialProfiles.youtube) socialUpdates.youtubeUrl = socialProfiles.youtube;
+    if (socialProfiles.tiktok) socialUpdates.tiktokUrl = socialProfiles.tiktok;
+    if (socialProfiles.yelp) socialUpdates.yelpUrl = socialProfiles.yelp;
+    if (socialProfiles.googleMaps) socialUpdates.googleMapsUrl = socialProfiles.googleMaps;
+    if (socialProfiles.bbb) socialUpdates.bbbUrl = socialProfiles.bbb;
+    if (socialProfiles.angiesList) socialUpdates.angiesUrl = socialProfiles.angiesList;
+    if (socialProfiles.thumbtack) socialUpdates.thumbtackUrl = socialProfiles.thumbtack;
+    if (socialProfiles.houzz) socialUpdates.houzzUrl = socialProfiles.houzz;
+    
+    if (Object.keys(socialUpdates).length > 0) {
+      await db.update(businesses).set({
+        ...socialUpdates,
+        updatedAt: new Date(),
+      }).where(eq(businesses.id, businessId));
+      console.log(`[Credibility Research] Stored ${Object.keys(socialUpdates).length} social profile URLs`);
+    }
     
     // Update campaign status
     await db.update(campaigns).set({
