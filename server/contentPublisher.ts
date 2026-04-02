@@ -26,6 +26,17 @@ import { decrypt, encrypt } from "./encryption";
 import { getDb } from "./db";
 import { businesses, contentPages, campaigns } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
+import {
+  generateOrganizationSchema,
+  generateArticleSchema,
+  generateFAQSchema,
+  generateWebPageSchema,
+  generateLLMTxt,
+  fetchRobotsTxt,
+  checkAndCorrectRobotsTxt,
+  updateRobotsTxtViaWordPress,
+} from "./siteEnhancer";
+import { injectSchemaViaWordPress } from "./contentPublisher_schema_helper";
 
 // ============= Types =============
 
@@ -462,8 +473,133 @@ export async function publishCampaignContent(params: {
     if (!dryRun) await new Promise(resolve => setTimeout(resolve, 2000));
   }
 
-  // Advance campaign status
+  // ─── Post-publish enhancements ───────────────────────────────────────────
   if (published > 0 && !dryRun) {
+    // Open a fresh browser page for the enhancement steps
+    let enhancerBrowser: import("playwright").Browser | null = null;
+    try {
+      enhancerBrowser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+      const enhancerContext = await enhancerBrowser.newContext({
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+      });
+      const enhancerPage = await enhancerContext.newPage();
+
+      // 1. Schema — inject Organization schema on homepage if no schema exists
+      try {
+        const homepageResponse = await enhancerPage.goto(credentials.siteUrl, { waitUntil: "networkidle", timeout: 15000 });
+        if (homepageResponse && homepageResponse.status() < 400) {
+          const existingSchema = await enhancerPage.$('script[type="application/ld+json"]');
+          if (!existingSchema) {
+            const orgSchema = await generateOrganizationSchema(businessId);
+            if (orgSchema) {
+              console.log(`[Publisher] No schema found on homepage — injecting Organization/LocalBusiness schema`);
+              // For WordPress: inject via the Customizer or Additional Scripts plugin
+              // We inject it by adding a new page with the schema in the head via wp-admin
+              const cms = detectCms(credentials.adminUrl);
+              if (cms === "wordpress") {
+                await injectSchemaViaWordPress(enhancerPage, credentials.adminUrl, JSON.stringify(orgSchema, null, 2), "homepage");
+              }
+            }
+          } else {
+            console.log(`[Publisher] Homepage already has schema markup — skipping Organization schema injection`);
+          }
+        }
+      } catch (schemaErr: any) {
+        console.warn(`[Publisher] Schema check failed: ${schemaErr.message}`);
+      }
+
+      // 2. LLM.txt — generate and publish
+      try {
+        const llmContent = await generateLLMTxt(businessId, campaignId);
+        if (llmContent) {
+          const llmHtml = `<pre style="white-space:pre-wrap;font-family:monospace;background:#f9f9f9;padding:20px;">${llmContent.fullText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>`;
+          const cms = detectCms(credentials.adminUrl);
+          if (cms === "wordpress") {
+            // Log in first
+            await enhancerPage.goto(`${credentials.adminUrl}/wp-login.php`, { waitUntil: "networkidle" });
+            await enhancerPage.fill("#user_login", credentials.username);
+            await enhancerPage.fill("#user_pass", credentials.password);
+            await enhancerPage.click("#wp-submit");
+            await enhancerPage.waitForURL(/wp-admin/, { timeout: 15000 }).catch(() => {});
+          }
+          const llmResult = await publishPage(credentials, {
+            title: "LLM Information",
+            content: llmHtml,
+            slug: "llm-txt",
+            metaDescription: `Machine-readable business profile for ${(await getDb())?.select().from(businesses).where(eq(businesses.id, businessId)).limit(1).then(r => r[0]?.name) || "this business"}.`,
+          });
+          if (llmResult.success) {
+            console.log(`[Publisher] LLM.txt published at: ${llmResult.publishedUrl}`);
+            // Store in DB as a content page
+            const db2 = await getDb();
+            if (db2) {
+              const existing = await db2.select().from(contentPages).where(eq(contentPages.campaignId, campaignId));
+              const llmPageExists = existing.find(p => p.pageType === "llm_txt");
+              if (llmPageExists) {
+                await db2.update(contentPages).set({
+                  status: "published",
+                  publishedUrl: llmResult.publishedUrl ?? null,
+                  publishedAt: new Date(),
+                  updatedAt: new Date(),
+                }).where(eq(contentPages.id, llmPageExists.id));
+              } else {
+                await db2.insert(contentPages).values({
+                  businessId,
+                  campaignId,
+                  pageType: "llm_txt",
+                  pageTitle: "LLM Information",
+                  pageSlug: "llm-txt",
+                  pageContent: llmContent.fullText,
+                  status: "published",
+                  publishedUrl: llmResult.publishedUrl ?? null,
+                  publishedAt: new Date(),
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                });
+              }
+            }
+          }
+        }
+      } catch (llmErr: any) {
+        console.warn(`[Publisher] LLM.txt generation/publishing failed: ${llmErr.message}`);
+      }
+
+      // 3. Robots.txt — check and correct AI crawler blocks
+      try {
+        const robotsContent = await fetchRobotsTxt(enhancerPage, credentials.siteUrl);
+        if (robotsContent) {
+          const robotsCheck = checkAndCorrectRobotsTxt(robotsContent);
+          if (robotsCheck.hasBlockedCrawlers) {
+            console.log(`[Publisher] Found blocked AI crawlers: ${robotsCheck.blockedCrawlers.join(", ")} — correcting robots.txt`);
+            const cms = detectCms(credentials.adminUrl);
+            if (cms === "wordpress") {
+              const robotsResult = await updateRobotsTxtViaWordPress(
+                enhancerPage,
+                credentials.adminUrl,
+                robotsCheck.correctedContent
+              );
+              if (robotsResult.success) {
+                console.log(`[Publisher] robots.txt corrected successfully`);
+              } else {
+                console.warn(`[Publisher] robots.txt correction failed: ${robotsResult.error}`);
+              }
+            }
+          } else {
+            console.log(`[Publisher] robots.txt is clean — no AI crawlers blocked`);
+          }
+        } else {
+          console.log(`[Publisher] No robots.txt found — nothing to correct`);
+        }
+      } catch (robotsErr: any) {
+        console.warn(`[Publisher] robots.txt check failed: ${robotsErr.message}`);
+      }
+    } catch (enhancerErr: any) {
+      console.warn(`[Publisher] Site enhancement step failed: ${enhancerErr.message}`);
+    } finally {
+      if (enhancerBrowser) await enhancerBrowser.close();
+    }
+
+    // Advance campaign status
     await db.update(campaigns).set({
       status: "indexing",
       publishingCompletedAt: new Date(),
