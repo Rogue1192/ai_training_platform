@@ -212,14 +212,12 @@ export function expandQueryToPrompts(input: QueryExpansionInput): ExpandedPrompt
   const cappedFollowUp = pickN(followUpVariants, perType);
   const cappedDirect = pickN(directMentionVariants, perType);
 
-  const all = [
-    ...new Set([
-      ...cappedClean,
-      ...cappedSuggestive,
-      ...cappedFollowUp,
-      ...cappedDirect,
-    ]),
-  ];
+  const all = Array.from(new Set([
+    ...cappedClean,
+    ...cappedSuggestive,
+    ...cappedFollowUp,
+    ...cappedDirect,
+  ]));
 
   return {
     rawQuery,
@@ -249,5 +247,5 @@ export function buildTrainingPromptPool(
   }
 
   // Shuffle the final pool
-  return [...allPrompts].sort(() => Math.random() - 0.5);
+  return Array.from(allPrompts).sort(() => Math.random() - 0.5);
 }

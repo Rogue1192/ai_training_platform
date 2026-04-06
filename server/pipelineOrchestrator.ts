@@ -319,7 +319,7 @@ export async function runPipelineStep(
           let trainingPrompts: string[] = [];
           try {
             const queryLocations = await getQueryLocationsByCampaignId(campaignId);
-            const uniqueQueries = [...new Set(queryLocations.map(ql => ql.searchQuery).filter(Boolean))] as string[];
+            const uniqueQueries = Array.from(new Set(queryLocations.map(ql => ql.searchQuery).filter(Boolean))) as string[];
             if (uniqueQueries.length > 0) {
               trainingPrompts = buildTrainingPromptPool(
                 uniqueQueries,
