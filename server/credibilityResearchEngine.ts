@@ -39,7 +39,7 @@ export interface CredibilityResearchResult {
 }
 
 export interface SuggestedPage {
-  pageType: string; // 'certifications' | 'warranties' | 'awards' | 'team' | 'faq' | 'pricing' | 'service_area'
+  pageType: string; // 'certifications' | 'warranties' | 'awards' | 'team' | 'faq' | 'pricing' | 'about'
   reason: string; // Why this page should be created
   priority: "high" | "medium" | "low";
   availableData: string[]; // What facts support this page

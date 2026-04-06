@@ -166,13 +166,6 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     requiredFactCategories: [], // Can be generated from industry knowledge
   },
   {
-    type: "service_area",
-    label: "Service Area & Locations",
-    promptContext: "a service area page detailing the specific cities, neighborhoods, and regions the business serves. Include location-specific information and any location-specific services or specializations.",
-    schemaTypes: ["LocalBusiness", "GeoCircle", "Place"],
-    requiredFactCategories: [], // Can be generated from location data
-  },
-  {
     type: "about",
     label: "About Us",
     promptContext: "an about us page telling the business's story — founding, mission, values, community involvement, and what sets them apart. This page should humanize the business and establish trust through narrative.",
