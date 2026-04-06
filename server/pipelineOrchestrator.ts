@@ -199,6 +199,22 @@ export async function runPipelineStep(
           location: business.location || "",
           credibilityResult: credData.researchResults as any,
         });
+        // Fire outbound webhook to companion platform (non-blocking — failure won't stop the pipeline)
+        try {
+          const { sendCredibilityWebhook } = await import("./credibilityWebhook");
+          const webhookResult = await sendCredibilityWebhook({
+            campaignId,
+            businessId: campaign.businessId,
+          });
+          if (webhookResult.sent) {
+            console.log(`[Pipeline] Credibility webhook sent successfully.`);
+          } else {
+            console.log(`[Pipeline] Credibility webhook skipped: ${webhookResult.error}`);
+          }
+        } catch (webhookErr: any) {
+          console.warn(`[Pipeline] Credibility webhook error (non-fatal): ${webhookErr.message}`);
+        }
+
         result = {
           step,
           success: true,

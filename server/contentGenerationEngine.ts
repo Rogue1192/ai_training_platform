@@ -29,6 +29,7 @@ export interface GeneratedPage {
   metaDescription: string;
   schemaMarkup: string; // JSON-LD schema
   interlinkTargets: string[]; // Page types to link to
+  deliveryType: "new_page" | "inject_existing";
 }
 
 export interface ContentGenerationResult {
@@ -120,6 +121,7 @@ interface PageTypeConfig {
   promptContext: string;
   schemaTypes: string[];
   requiredFactCategories: string[]; // At least one fact from these categories needed
+  deliveryType: "new_page" | "inject_existing"; // Whether to create a new page or inject into an existing one
 }
 
 const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
@@ -129,6 +131,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     promptContext: "a dedicated certifications and credentials page showcasing the business's professional certifications, licenses, and industry credentials. This page should establish the business as a verified, qualified provider in their industry.",
     schemaTypes: ["LocalBusiness", "Person", "Organization"],
     requiredFactCategories: ["certification", "insurance"],
+    deliveryType: "new_page",
   },
   {
     type: "warranties",
@@ -136,6 +139,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     promptContext: "a dedicated warranties and guarantees page detailing the business's warranty policies, satisfaction guarantees, and service commitments. This page should build trust by showing the business stands behind their work.",
     schemaTypes: ["LocalBusiness", "Offer"],
     requiredFactCategories: ["warranty"],
+    deliveryType: "new_page",
   },
   {
     type: "awards",
@@ -143,6 +147,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     promptContext: "a dedicated awards and recognition page highlighting the business's industry awards, local recognition, best-of lists, and notable achievements. This page should establish the business as an industry leader.",
     schemaTypes: ["LocalBusiness", "Organization"],
     requiredFactCategories: ["award"],
+    deliveryType: "new_page",
   },
   {
     type: "team",
@@ -150,6 +155,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     promptContext: "a team page introducing key team members with their names, roles, credentials, years of experience, and specializations. Named attribution increases AI citation likelihood by 340%. Each team member should have a brief but specific bio.",
     schemaTypes: ["Person", "Organization"],
     requiredFactCategories: ["team"],
+    deliveryType: "new_page",
   },
   {
     type: "faq",
@@ -157,6 +163,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     promptContext: "a comprehensive FAQ page covering the most common questions potential customers ask about this type of business. Include questions about pricing, process, availability, qualifications, and what to expect. Use FAQPage schema markup.",
     schemaTypes: ["FAQPage"],
     requiredFactCategories: [], // FAQ pages can always be generated
+    deliveryType: "new_page",
   },
   {
     type: "pricing",
@@ -164,13 +171,15 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     promptContext: "a pricing and cost guide page that explains the business's pricing structure, what affects costs, what's included in different service tiers, and how estimates work. This doesn't need exact prices — it needs pricing LOGIC that helps customers understand value.",
     schemaTypes: ["Service", "Offer"],
     requiredFactCategories: [], // Can be generated from industry knowledge
+    deliveryType: "new_page",
   },
   {
     type: "about",
-    label: "About Us",
-    promptContext: "an about us page telling the business's story — founding, mission, values, community involvement, and what sets them apart. This page should humanize the business and establish trust through narrative.",
+    label: "About Us — Supplemental Content",
+    promptContext: "supplemental credibility content to be injected into an existing About Us page. Focus on the business's founding story, years in business, community involvement, and what sets them apart. Do NOT write a full page — write 2-3 focused paragraphs of trust-building content that can be inserted into an existing About page.",
     schemaTypes: ["LocalBusiness", "Organization"],
     requiredFactCategories: ["years_in_business", "community"],
+    deliveryType: "inject_existing",
   },
 ];
 
@@ -324,6 +333,7 @@ export async function generateSinglePage(params: {
     metaDescription: pageData.metaDescription || "",
     schemaMarkup,
     interlinkTargets: pageData.interlinkSuggestions || [],
+    deliveryType: config.deliveryType,
   };
 }
 

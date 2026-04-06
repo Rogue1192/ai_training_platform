@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search } from "lucide-react";
+import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search, Link2 } from "lucide-react";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
 
 type AIProvider = "openai" | "anthropic" | "google";
@@ -103,6 +103,47 @@ export default function Settings() {
   const [testResults, setTestResults] = useState<
     Record<string, { success: boolean; message: string; model?: string; responseTime?: number } | null>
   >({});
+
+  // Credibility Webhook URL — stored inside the whitelabel service key JSON
+  const whitelabelKey = serviceKeys?.find((k) => k.service === "whitelabel");
+  const savedWebhookUrl: string = (whitelabelKey?.metadata as any)?.credibilityWebhookUrl || "";
+  const [webhookUrlInput, setWebhookUrlInput] = useState("");
+  const [savingWebhook, setSavingWebhook] = useState(false);
+
+  const handleSaveWebhookUrl = async () => {
+    const url = webhookUrlInput.trim();
+    if (!url) { toast.error("Please enter a webhook URL"); return; }
+    if (!url.startsWith("http")) { toast.error("URL must start with http:// or https://"); return; }
+    setSavingWebhook(true);
+    try {
+      const existing = (whitelabelKey?.metadata as Record<string, string>) || {};
+      const merged = { ...existing, credibilityWebhookUrl: url };
+      await saveServiceKey.mutateAsync({ service: "whitelabel", value: JSON.stringify(merged) });
+      await refetchServiceKeys();
+      setWebhookUrlInput("");
+      toast.success("Credibility webhook URL saved");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save webhook URL");
+    } finally {
+      setSavingWebhook(false);
+    }
+  };
+
+  const handleClearWebhookUrl = async () => {
+    try {
+      const existing = (whitelabelKey?.metadata as Record<string, string>) || {};
+      const { credibilityWebhookUrl: _removed, ...rest } = existing;
+      if (Object.keys(rest).length === 0) {
+        await deleteServiceKeyMutation.mutateAsync({ service: "whitelabel" });
+      } else {
+        await saveServiceKey.mutateAsync({ service: "whitelabel", value: JSON.stringify(rest) });
+      }
+      await refetchServiceKeys();
+      toast.success("Webhook URL removed");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to remove webhook URL");
+    }
+  };
 
   const getKeyStatus = (provider: AIProvider) => {
     return apiKeys?.find((k) => k.provider === provider);
@@ -468,6 +509,51 @@ export default function Settings() {
             );
           })}
         </div>
+      </div>
+
+      {/* Credibility Content Webhook */}
+      <div>
+        <h2 className="text-xl font-semibold text-foreground mb-1">Credibility Content Webhook</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          When content generation completes, automatically send all credibility pages to your companion Next.js platform.
+        </p>
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Link2 className="w-6 h-6 text-primary" />
+              <div>
+                <CardTitle className="text-base">Next.js Platform Webhook</CardTitle>
+                <CardDescription>Receives certifications, warranties, awards, team, FAQ, pricing, and about content</CardDescription>
+              </div>
+              {savedWebhookUrl && (
+                <span className="ml-auto flex items-center gap-1 text-xs text-green-500 font-medium">
+                  <Check className="w-3 h-3" /> Configured
+                </span>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {savedWebhookUrl && (
+              <div className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                <span className="text-muted-foreground truncate max-w-xs">{savedWebhookUrl}</span>
+                <Button variant="ghost" size="sm" onClick={handleClearWebhookUrl} className="text-destructive hover:text-destructive ml-2">
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Input
+                placeholder="https://your-nextjs-platform.com/api/credibility-webhook"
+                value={webhookUrlInput}
+                onChange={(e) => setWebhookUrlInput(e.target.value)}
+                className="flex-1"
+              />
+              <Button onClick={handleSaveWebhookUrl} disabled={savingWebhook}>
+                {savingWebhook ? <Loader2 className="w-4 h-4 animate-spin" /> : savedWebhookUrl ? "Update" : "Save"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Two-Factor Authentication */}
