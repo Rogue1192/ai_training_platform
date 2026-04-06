@@ -78,6 +78,48 @@
       "when": 1774820403734,
       "tag": "0011_service_keys_table",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1744000000001,
+      "tag": "0012_trial_and_video_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1744000000002,
+      "tag": "0013_white_label_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1744000000003,
+      "tag": "0014_social_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1744000000004,
+      "tag": "0015_minimax_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1744000000005,
+      "tag": "0016_rename_wp_to_site_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1744000000006,
+      "tag": "0017_agency_portal",
+      "breakpoints": true
     }
   ]
 }
