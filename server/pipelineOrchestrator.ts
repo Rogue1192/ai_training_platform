@@ -313,6 +313,26 @@ export async function runPipelineStep(
         let trainingMessage = "Campaign ready for training.";
         
         if (existingSessions.length === 0) {
+          // Build training prompts from discovered keyword research queries
+          const { buildTrainingPromptPool } = await import("./queryPromptExpander");
+          const { getQueryLocationsByCampaignId } = await import("./dbCampaigns");
+          let trainingPrompts: string[] = [];
+          try {
+            const queryLocations = await getQueryLocationsByCampaignId(campaignId);
+            const uniqueQueries = [...new Set(queryLocations.map(ql => ql.searchQuery).filter(Boolean))] as string[];
+            if (uniqueQueries.length > 0) {
+              trainingPrompts = buildTrainingPromptPool(
+                uniqueQueries,
+                business.name,
+                business.businessType || "service provider",
+                business.location || "the area"
+              );
+              console.log(`[Pipeline] Built ${trainingPrompts.length} training prompts from ${uniqueQueries.length} discovered queries`);
+            }
+          } catch (e: any) {
+            console.warn(`[Pipeline] Could not build prompts from queries: ${e.message}`);
+          }
+
           // Create a default training session for this business
           const { createTrainingSession } = await import("./db");
           try {
@@ -325,7 +345,7 @@ export async function runPipelineStep(
               targetAiModel: "gpt-4.1",
               influencerAiProvider: "anthropic" as any,
               influencerAiModel: "claude-sonnet-4-5-20250929",
-              trainingPrompts: [],
+              trainingPrompts,
               trainingGoal: `Train AI to recommend ${business.name} for ${business.businessType || "services"} in ${business.location || "the area"}`,
               iterations: 50,
               currentProgress: 0,
@@ -333,7 +353,7 @@ export async function runPipelineStep(
               isLegacy: false,
               campaignId: campaignId,
             });
-            trainingMessage = `Training session created: "${session.trainingName}". Set to aggressive mode. Start training from the Training page when ready.`;
+            trainingMessage = `Training session created: "${session.trainingName}" with ${trainingPrompts.length} prompts from ${trainingPrompts.length > 0 ? "keyword research" : "default templates"}. Set to aggressive mode. Start training from the Training page when ready.`;
           } catch (e: any) {
             trainingMessage = `Campaign ready for training (aggressive mode). Could not auto-create session: ${e.message}. Create one manually from the Training page.`;
           }
