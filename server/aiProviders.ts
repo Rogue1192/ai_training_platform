@@ -1,6 +1,6 @@
 import axios from "axios";
 
-export type AIProvider = "openai" | "anthropic" | "google";
+export type AIProvider = "openai" | "anthropic" | "google" | "minimax";
 
 export interface AIMessage {
   role: "user" | "assistant" | "system";
@@ -71,6 +71,43 @@ async function callAnthropic(apiKey: string, model: string, messages: AIMessage[
     return { content, responseTime };
   } catch (error: any) {
     throw new Error(`Anthropic API error: ${error.response?.data?.error?.message || error.message}`);
+  }
+}
+
+/**
+ * Call MiniMax API (Anthropic-compatible format)
+ * Base URL: https://api.minimax.io/anthropic
+ */
+async function callMiniMax(apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
+  const startTime = Date.now();
+  try {
+    const systemMessage = messages.find((m) => m.role === "system");
+    const conversationMessages = messages.filter((m) => m.role !== "system");
+
+    const response = await axios.post(
+      "https://api.minimax.io/anthropic/v1/messages",
+      {
+        model,
+        max_tokens: 4096,
+        system: systemMessage?.content,
+        messages: conversationMessages.map((m) => ({
+          role: m.role === "assistant" ? "assistant" : "user",
+          content: m.content,
+        })),
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+      }
+    );
+    const responseTime = Date.now() - startTime;
+    const content = response.data.content[0]?.text || "";
+    return { content, responseTime };
+  } catch (error: any) {
+    throw new Error(`MiniMax API error: ${error.response?.data?.error?.message || error.message}`);
   }
 }
 
@@ -155,6 +192,8 @@ export async function callAI(
       return callAnthropic(apiKey, resolvedModel, messages);
     case "google":
       return callGoogle(apiKey, resolvedModel, messages);
+    case "minimax":
+      return callMiniMax(apiKey, resolvedModel, messages);
     default:
       throw new Error(`Unsupported AI provider: ${provider}`);
   }
@@ -189,6 +228,13 @@ export function getAvailableModels(provider: AIProvider): string[] {
         "gemini-2.0-flash",
         "gemini-1.5-pro",
         "gemini-1.5-flash",
+      ];
+    case "minimax":
+      return [
+        "MiniMax-M2.7",
+        "MiniMax-M2.7-highspeed",
+        "MiniMax-M2.5",
+        "MiniMax-M2",
       ];
     default:
       return [];

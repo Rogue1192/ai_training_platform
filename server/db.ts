@@ -198,7 +198,7 @@ export async function getAllApiKeys(): Promise<ApiKey[]> {
 }
 
 /** Look up the single global API key for a given provider */
-export async function getApiKeyByProvider(provider: "openai" | "anthropic" | "google"): Promise<ApiKey | undefined> {
+export async function getApiKeyByProvider(provider: "openai" | "anthropic" | "google" | "minimax"): Promise<ApiKey | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
@@ -217,7 +217,7 @@ export async function getApiKeyByProvider(provider: "openai" | "anthropic" | "go
  */
 export async function validateApiKeysForTraining(
   targetProvider: "openai" | "anthropic" | "google",
-  influencerProvider: "openai" | "anthropic" | "google"
+  influencerProvider: "openai" | "anthropic" | "google" | "minimax"
 ): Promise<{ valid: boolean; missingProviders: string[] }> {
   const missingProviders: string[] = [];
 

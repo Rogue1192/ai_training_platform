@@ -176,7 +176,7 @@ export const appRouter = router({
     create: protectedProcedure
       .input(
         z.object({
-          provider: z.enum(["openai", "anthropic", "google"]),
+          provider: z.enum(["openai", "anthropic", "google", "minimax"]),
           apiKey: z.string().min(1),
         })
       )
@@ -209,7 +209,7 @@ export const appRouter = router({
     save: protectedProcedure
       .input(
         z.object({
-          provider: z.enum(["openai", "anthropic", "google"]),
+          provider: z.enum(["openai", "anthropic", "google", "minimax"]),
           apiKey: z.string().min(1),
         })
       )
@@ -249,7 +249,7 @@ export const appRouter = router({
     update: protectedProcedure
       .input(
         z.object({
-          provider: z.enum(["openai", "anthropic", "google"]),
+          provider: z.enum(["openai", "anthropic", "google", "minimax"]),
           apiKey: z.string().min(1),
         })
       )
@@ -277,7 +277,7 @@ export const appRouter = router({
         });
         return { success: true };
       }),
-    delete: protectedProcedure.input(z.object({ provider: z.enum(["openai", "anthropic", "google"]) })).mutation(async ({ input }) => {
+    delete: protectedProcedure.input(z.object({ provider: z.enum(["openai", "anthropic", "google", "minimax"]) })).mutation(async ({ input }) => {
       const { getApiKeyByProvider, deleteApiKey } = await import("./db");
       const existing = await getApiKeyByProvider(input.provider);
       if (existing) {
@@ -286,7 +286,7 @@ export const appRouter = router({
       return { success: true };
     }),
     test: protectedProcedure
-      .input(z.object({ provider: z.enum(["openai", "anthropic", "google"]) }))
+      .input(z.object({ provider: z.enum(["openai", "anthropic", "google", "minimax"]) }))
       .mutation(async ({ input }) => {
         const { getApiKeyByProvider, updateApiKey } = await import("./db");
         const { decrypt } = await import("./encryption");
@@ -440,7 +440,7 @@ export const appRouter = router({
           topic: z.string().min(1),
           targetAiProvider: z.enum(["openai", "anthropic", "google"]),
           targetAiModel: z.string().min(1),
-          influencerAiProvider: z.enum(["openai", "anthropic", "google"]),
+          influencerAiProvider: z.enum(["openai", "anthropic", "google", "minimax"]),
           influencerAiModel: z.string().min(1),
           trainingPrompts: z.array(z.string()).min(1),
           trainingContext: z.string().optional(),
@@ -499,7 +499,7 @@ export const appRouter = router({
           
           const validation = await validateApiKeysForTraining(
             session.targetAiProvider as "openai" | "anthropic" | "google",
-            session.influencerAiProvider as "openai" | "anthropic" | "google"
+            session.influencerAiProvider as "openai" | "anthropic" | "google" | "minimax"
           );
           
           if (!validation.valid) {
@@ -531,7 +531,7 @@ export const appRouter = router({
           topic: z.string().min(1).optional(),
           targetAiProvider: z.enum(["openai", "anthropic", "google"]).optional(),
           targetAiModel: z.string().min(1).optional(),
-          influencerAiProvider: z.enum(["openai", "anthropic", "google"]).optional(),
+          influencerAiProvider: z.enum(["openai", "anthropic", "google", "minimax"]).optional(),
           influencerAiModel: z.string().min(1).optional(),
           trainingPrompts: z.array(z.string()).min(1).optional(),
           trainingContext: z.string().optional(),
@@ -709,7 +709,7 @@ export const appRouter = router({
               // Validate API keys
               const validation = await validateApiKeysForTraining(
                 session.targetAiProvider as "openai" | "anthropic" | "google",
-                session.influencerAiProvider as "openai" | "anthropic" | "google"
+                session.influencerAiProvider as "openai" | "anthropic" | "google" | "minimax"
               );
               
               if (!validation.valid) {
@@ -946,7 +946,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
 
   // AI provider utilities
   aiProvider: router({
-    getModels: protectedProcedure.input(z.object({ provider: z.enum(["openai", "anthropic", "google"]) })).query(async ({ input }) => {
+    getModels: protectedProcedure.input(z.object({ provider: z.enum(["openai", "anthropic", "google", "minimax"]) })).query(async ({ input }) => {
       const { getAvailableModels } = await import("./aiProviders");
       return getAvailableModels(input.provider);
     }),
