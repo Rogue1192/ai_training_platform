@@ -40,9 +40,9 @@ export default function Businesses() {
     warranties: "",
     differentiators: "",
     clientType: "ai_only",
-    wpAdminUrl: "",
-    wpUsername: "",
-    wpPassword: "",
+    siteAdminUrl: "",
+    siteUsername: "",
+    sitePassword: "",
   });
 
   const resetForm = () => {
@@ -65,9 +65,9 @@ export default function Businesses() {
       warranties: "",
       differentiators: "",
       clientType: "ai_only",
-      wpAdminUrl: "",
-      wpUsername: "",
-      wpPassword: "",
+      siteAdminUrl: "",
+      siteUsername: "",
+      sitePassword: "",
     });
     setEditingBusiness(null);
     setActiveTab("basic");
@@ -93,9 +93,9 @@ export default function Businesses() {
       warranties: business.warranties || "",
       differentiators: business.differentiators || "",
       clientType: business.clientType || "ai_only",
-      wpAdminUrl: business.wpAdminUrl || "",
-      wpUsername: business.wpUsername || "",
-      wpPassword: "", // Never populate password field
+      siteAdminUrl: business.siteAdminUrl || "",
+      siteUsername: business.siteUsername || "",
+      sitePassword: "", // Never populate password field
     });
     setEditingBusiness(business.id);
     setActiveTab("basic");
@@ -117,8 +117,8 @@ export default function Businesses() {
       delete payload.yearsInBusiness;
     }
     
-    if (!payload.wpPassword) {
-      delete payload.wpPassword;
+    if (!payload.sitePassword) {
+      delete payload.sitePassword;
     }
 
     try {
@@ -398,33 +398,33 @@ export default function Businesses() {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="wpAdminUrl">Admin URL</Label>
+                    <Label htmlFor="siteAdminUrl">Admin URL</Label>
                     <Input
-                      id="wpAdminUrl"
-                      value={formData.wpAdminUrl}
-                      onChange={(e) => setFormData({ ...formData, wpAdminUrl: e.target.value })}
+                      id="siteAdminUrl"
+                      value={formData.siteAdminUrl}
+                      onChange={(e) => setFormData({ ...formData, siteAdminUrl: e.target.value })}
                       placeholder="e.g., https://example.com/wp-admin or /admin"
                       className="bg-background border-input"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="wpUsername">Username</Label>
+                      <Label htmlFor="siteUsername">Username</Label>
                       <Input
-                        id="wpUsername"
-                        value={formData.wpUsername}
-                        onChange={(e) => setFormData({ ...formData, wpUsername: e.target.value })}
+                        id="siteUsername"
+                        value={formData.siteUsername}
+                        onChange={(e) => setFormData({ ...formData, siteUsername: e.target.value })}
                         placeholder="e.g., admin"
                         className="bg-background border-input"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="wpPassword">Password {editingBusiness && "(Leave blank to keep current)"}</Label>
+                      <Label htmlFor="sitePassword">Password {editingBusiness && "(Leave blank to keep current)"}</Label>
                       <Input
-                        id="wpPassword"
+                        id="sitePassword"
                         type="password"
-                        value={formData.wpPassword}
-                        onChange={(e) => setFormData({ ...formData, wpPassword: e.target.value })}
+                        value={formData.sitePassword}
+                        onChange={(e) => setFormData({ ...formData, sitePassword: e.target.value })}
                         placeholder="••••••••"
                         className="bg-background border-input"
                       />

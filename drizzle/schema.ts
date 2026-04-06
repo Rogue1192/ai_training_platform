@@ -97,9 +97,9 @@ export const businesses = pgTable("businesses", {
   thumbtackUrl: varchar("thumbtackUrl", { length: 500 }),
   houzzUrl: varchar("houzzUrl", { length: 500 }),
   // WordPress credentials (encrypted) for auto-publishing
-  wpAdminUrl: text("wpAdminUrl"),
-  wpUsername: text("wpUsername"),
-  wpPasswordEncrypted: text("wpPasswordEncrypted"),
+  siteAdminUrl: text("siteAdminUrl"),
+  siteUsername: text("siteUsername"),
+  sitePasswordEncrypted: text("sitePasswordEncrypted"),
   // Client type determines the publishing workflow
   clientType: clientTypeEnum("clientType"),
   // Source tracking

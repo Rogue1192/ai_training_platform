@@ -162,9 +162,9 @@ describe("webhook payload validation", () => {
     packageTierId: z.number().optional(),
     clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).default("ai_only"),
     competitors: z.array(z.string()).optional(),
-    wpAdminUrl: z.string().optional(),
-    wpUsername: z.string().optional(),
-    wpPassword: z.string().optional(),
+    siteAdminUrl: z.string().optional(),
+    siteUsername: z.string().optional(),
+    sitePassword: z.string().optional(),
     searchQueries: z.array(z.string()).optional(),
     yearsFounded: z.number().optional(),
     certifications: z.array(z.string()).optional(),
@@ -291,9 +291,9 @@ describe("webhook payload validation", () => {
       locations: ["Austin, TX"],
       packageTierSlug: "growth",
       clientType: "ai_plus_seo",
-      wpAdminUrl: "https://wpclient.com/wp-admin",
-      wpUsername: "admin",
-      wpPassword: "securepass123",
+      siteAdminUrl: "https://wpclient.com/wp-admin",
+      siteUsername: "admin",
+      sitePassword: "securepass123",
     };
 
     const result = onboardingPayloadSchema.safeParse(payload);

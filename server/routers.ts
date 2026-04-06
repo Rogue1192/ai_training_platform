@@ -97,20 +97,20 @@ export const appRouter = router({
           warranties: z.string().optional(),
           differentiators: z.string().optional(),
           clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
-          wpAdminUrl: z.string().optional(),
-          wpUsername: z.string().optional(),
-          wpPassword: z.string().optional(),
+          siteAdminUrl: z.string().optional(),
+          siteUsername: z.string().optional(),
+          sitePassword: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
         const { createBusiness } = await import("./db");
         const { encrypt } = await import("./encryption");
         
-        const { wpPassword, ...restInput } = input;
+        const { sitePassword, ...restInput } = input;
         const businessData: any = { ...restInput, userId: ctx.user.id };
         
-        if (wpPassword) {
-          businessData.wpPasswordEncrypted = encrypt(wpPassword);
+        if (sitePassword) {
+          businessData.sitePasswordEncrypted = encrypt(sitePassword);
         }
         
         // userId stored for audit trail only — nullable, not used for access control
@@ -139,20 +139,20 @@ export const appRouter = router({
           warranties: z.string().optional(),
           differentiators: z.string().optional(),
           clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
-          wpAdminUrl: z.string().optional(),
-          wpUsername: z.string().optional(),
-          wpPassword: z.string().optional(),
+          siteAdminUrl: z.string().optional(),
+          siteUsername: z.string().optional(),
+          sitePassword: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
         const { updateBusiness } = await import("./db");
         const { encrypt } = await import("./encryption");
         
-        const { id, wpPassword, ...updates } = input;
+        const { id, sitePassword, ...updates } = input;
         const updateData: any = { ...updates };
         
-        if (wpPassword) {
-          updateData.wpPasswordEncrypted = encrypt(wpPassword);
+        if (sitePassword) {
+          updateData.sitePasswordEncrypted = encrypt(sitePassword);
         }
         
         await updateBusiness(id, updateData);
@@ -1438,26 +1438,26 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         if (!db) throw new Error("Database not available");
         const biz = (await db.select().from(businesses).where(eq(businesses.id, input.businessId)).limit(1))[0];
         if (!biz) throw new Error("Business not found");
-        if (!biz.wpAdminUrl || !biz.wpUsername || !biz.wpPasswordEncrypted) {
+        if (!biz.siteAdminUrl || !biz.siteUsername || !biz.sitePasswordEncrypted) {
           throw new Error("Site credentials not configured for this business");
         }
         return testSiteConnection({
-          siteUrl: biz.wpAdminUrl.replace(/\/wp-admin.*$/, ""),
-          adminUrl: biz.wpAdminUrl,
-          username: biz.wpUsername,
-          password: decrypt(biz.wpPasswordEncrypted),
+          siteUrl: biz.siteAdminUrl.replace(/\/wp-admin.*$/, ""),
+          adminUrl: biz.siteAdminUrl,
+          username: biz.siteUsername,
+          password: decrypt(biz.sitePasswordEncrypted),
         });
       }),
     storeCredentials: protectedProcedure
       .input(z.object({
         businessId: z.number(),
-        wpAdminUrl: z.string().url(),
-        wpUsername: z.string().min(1),
+        siteAdminUrl: z.string().url(),
+        siteUsername: z.string().min(1),
         wpAppPassword: z.string().min(1),
       }))
       .mutation(async ({ ctx, input }) => {
         const { storeSiteCredentials } = await import("./contentPublisher");
-        await storeSiteCredentials(input.businessId, input.wpAdminUrl, input.wpUsername, input.wpAppPassword);
+        await storeSiteCredentials(input.businessId, input.siteAdminUrl, input.siteUsername, input.wpAppPassword);
         return { success: true };
       }),
     publishCampaign: protectedProcedure

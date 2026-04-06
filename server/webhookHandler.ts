@@ -46,9 +46,9 @@ const onboardingPayloadSchema = z.object({
   competitors: z.array(z.string()).optional(),
 
   // Optional: WordPress credentials for auto-publishing
-  wpAdminUrl: z.string().optional(),
-  wpUsername: z.string().optional(),
-  wpPassword: z.string().optional(),
+  siteAdminUrl: z.string().optional(),
+  siteUsername: z.string().optional(),
+  sitePassword: z.string().optional(),
 
   // Optional: specific search queries (if client/salesperson already knows them)
   searchQueries: z.array(z.string()).optional(),
@@ -107,8 +107,8 @@ function verifyWebhookAuth(req: Request): { valid: boolean; error?: string } {
 }
 
 // ============= Webhook Router =============
-// NOTE: wpUsername is stored PLAINTEXT (not a secret).
-// wpPassword is encrypted using the canonical AES-256-GCM encrypt() from encryption.ts.
+// NOTE: siteUsername is stored PLAINTEXT (not a secret).
+// sitePassword is encrypted using the canonical AES-256-GCM encrypt() from encryption.ts.
 // The old local encryptWpCredentials() (AES-256-CBC) has been removed — it was
 // incompatible with the app's decrypt() function and caused WordPress publish failures.
 
@@ -232,11 +232,11 @@ export function createWebhookRouter(): Router {
         // ISSUE-014 FIX: Store ALL locations as comma-separated string
         if (payload.locations.length > 0) updateFields.location = payload.locations.join(", ");
         // ISSUE-010 FIX: Store WP credentials (encrypted)
-        if (payload.wpAdminUrl) updateFields.wpAdminUrl = payload.wpAdminUrl;
-        // wpUsername stored plaintext — it is not a secret
-        if (payload.wpUsername) updateFields.wpUsername = payload.wpUsername;
-        // wpPassword encrypted with canonical AES-256-GCM encrypt() from encryption.ts
-        if (payload.wpPassword) updateFields.wpPasswordEncrypted = encrypt(payload.wpPassword);
+        if (payload.siteAdminUrl) updateFields.siteAdminUrl = payload.siteAdminUrl;
+        // siteUsername stored plaintext — it is not a secret
+        if (payload.siteUsername) updateFields.siteUsername = payload.siteUsername;
+        // sitePassword encrypted with canonical AES-256-GCM encrypt() from encryption.ts
+        if (payload.sitePassword) updateFields.sitePasswordEncrypted = encrypt(payload.sitePassword);
 
         await db.update(businesses).set(updateFields).where(eq(businesses.id, businessId));
       } else {
@@ -260,10 +260,10 @@ export function createWebhookRouter(): Router {
             certifications: payload.certifications?.join(", ") || null,
             awards: payload.awards?.join(", ") || null,
             bbbRating: payload.bbbRating || null,
-            // wpUsername stored plaintext; wpPassword encrypted with canonical encrypt()
-            wpAdminUrl: payload.wpAdminUrl || null,
-            wpUsername: payload.wpUsername || null,
-            wpPasswordEncrypted: payload.wpPassword ? encrypt(payload.wpPassword) : null,
+            // siteUsername stored plaintext; sitePassword encrypted with canonical encrypt()
+            siteAdminUrl: payload.siteAdminUrl || null,
+            siteUsername: payload.siteUsername || null,
+            sitePasswordEncrypted: payload.sitePassword ? encrypt(payload.sitePassword) : null,
             createdAt: new Date(),
             updatedAt: new Date(),
           })

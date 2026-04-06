@@ -388,7 +388,7 @@ export async function publishCampaignContent(params: {
   const business = businessResults[0];
   if (!business) throw new Error("Business not found");
 
-  if (!business.wpAdminUrl || !business.wpUsername || !business.wpPasswordEncrypted) {
+  if (!business.siteAdminUrl || !business.siteUsername || !business.sitePasswordEncrypted) {
     throw new Error(
       "Site credentials not configured for this business. " +
         "Please add the Admin URL, username, and password in the business settings."
@@ -396,10 +396,10 @@ export async function publishCampaignContent(params: {
   }
 
   const credentials: SiteCredentials = {
-    siteUrl: normalizeSiteUrl(business.wpAdminUrl.replace(/\/wp-admin.*$/, "")),
-    adminUrl: normalizeSiteUrl(business.wpAdminUrl),
-    username: business.wpUsername,
-    password: decrypt(business.wpPasswordEncrypted),
+    siteUrl: normalizeSiteUrl(business.siteAdminUrl.replace(/\/wp-admin.*$/, "")),
+    adminUrl: normalizeSiteUrl(business.siteAdminUrl),
+    username: business.siteUsername,
+    password: decrypt(business.sitePasswordEncrypted),
   };
 
   // Test connection first (skip in dry run)
@@ -634,15 +634,15 @@ export async function publishLlmTxt(params: {
   const businessResults = await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1);
   const business = businessResults[0];
 
-  if (!business?.wpAdminUrl || !business?.wpUsername || !business?.wpPasswordEncrypted) {
+  if (!business?.siteAdminUrl || !business?.siteUsername || !business?.sitePasswordEncrypted) {
     return { success: false, error: "Site credentials not configured" };
   }
 
   const credentials: SiteCredentials = {
-    siteUrl: normalizeSiteUrl(business.wpAdminUrl.replace(/\/wp-admin.*$/, "")),
-    adminUrl: normalizeSiteUrl(business.wpAdminUrl),
-    username: business.wpUsername,
-    password: decrypt(business.wpPasswordEncrypted),
+    siteUrl: normalizeSiteUrl(business.siteAdminUrl.replace(/\/wp-admin.*$/, "")),
+    adminUrl: normalizeSiteUrl(business.siteAdminUrl),
+    username: business.siteUsername,
+    password: decrypt(business.sitePasswordEncrypted),
   };
 
   const llmContent = `<pre style="white-space: pre-wrap; font-family: monospace;">\n${llmPage.pageContent}\n</pre>`;
@@ -682,22 +682,22 @@ export async function getPublishedUrls(campaignId: number): Promise<string[]> {
 
 /**
  * Store site credentials for a business (password encrypted with AES-256-GCM).
- * wpUsername is stored plaintext (not a secret).
- * wpAdminUrl is the CMS admin login URL (e.g., https://site.com/wp-admin).
+ * siteUsername is stored plaintext (not a secret).
+ * siteAdminUrl is the CMS admin login URL (e.g., https://site.com/wp-admin).
  */
 export async function storeSiteCredentials(
   businessId: number,
-  wpAdminUrl: string,
-  wpUsername: string,
-  wpPassword: string
+  siteAdminUrl: string,
+  siteUsername: string,
+  sitePassword: string
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   await db.update(businesses).set({
-    wpAdminUrl: normalizeSiteUrl(wpAdminUrl),
-    wpUsername,
-    wpPasswordEncrypted: encrypt(wpPassword),
+    siteAdminUrl: normalizeSiteUrl(siteAdminUrl),
+    siteUsername,
+    sitePasswordEncrypted: encrypt(sitePassword),
     updatedAt: new Date(),
   }).where(eq(businesses.id, businessId));
 }
