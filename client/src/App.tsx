@@ -21,6 +21,10 @@ import PromptTemplates from "./pages/PromptTemplates";
 import KeywordCache from "./pages/KeywordCache";
 import EmailManagement from "./pages/EmailManagement";
 import LLMInsights from "./pages/LLMInsights";
+import AgencyManagement from "./pages/AgencyManagement";
+import AgencyPortal from "./pages/AgencyPortal";
+import AgencySettings from "./pages/AgencySettings";
+import AgencyClientDetail from "./pages/AgencyClientDetail";
 import {
   LayoutDashboard,
   Building2,
@@ -34,9 +38,11 @@ import {
   Database,
   Mail,
   BarChart3,
+  Users,
 } from "lucide-react";
 
-const navigationItems = [
+// Admin navigation — full platform access
+const adminNavigationItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/campaigns", label: "Campaigns", icon: Rocket },
   { href: "/businesses", label: "Businesses", icon: Building2 },
@@ -49,6 +55,13 @@ const navigationItems = [
   { href: "/llm-insights", label: "LLM Insights", icon: BarChart3 },
   { href: "/emails", label: "Emails", icon: Mail },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
+  { href: "/agencies", label: "Agencies", icon: Users },
+];
+
+// Agency navigation — limited to their portal
+const agencyNavigationItems = [
+  { href: "/agency", label: "My Clients", icon: Building2 },
+  { href: "/agency/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 function Router() {
@@ -58,70 +71,93 @@ function Router() {
       <Route path="/2fa-verify" component={TwoFactorVerify} />
       <Route path="/report/:token" component={ClientDashboard} />
       <Route path="/">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <Dashboard />
         </DashboardLayout>
       </Route>
       <Route path="/campaigns">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <Campaigns />
         </DashboardLayout>
       </Route>
       <Route path="/businesses">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <Businesses />
         </DashboardLayout>
       </Route>
       <Route path="/training">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <TrainingSessions />
         </DashboardLayout>
       </Route>
       <Route path="/schedule">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <ScheduledJobs />
         </DashboardLayout>
       </Route>
       <Route path="/packages">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <PackageTiers />
         </DashboardLayout>
       </Route>
       <Route path="/settings">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <Settings />
         </DashboardLayout>
       </Route>
       <Route path="/client-dashboards">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <ClientDashboards />
         </DashboardLayout>
       </Route>
       <Route path="/campaigns/:id">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <CampaignDetail />
         </DashboardLayout>
       </Route>
       <Route path="/prompts">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <PromptTemplates />
         </DashboardLayout>
       </Route>
       <Route path="/keyword-cache">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <KeywordCache />
         </DashboardLayout>
       </Route>
       <Route path="/emails">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <EmailManagement />
         </DashboardLayout>
       </Route>
       <Route path="/llm-insights">
-        <DashboardLayout navigationItems={navigationItems}>
+        <DashboardLayout navigationItems={adminNavigationItems}>
           <LLMInsights />
         </DashboardLayout>
       </Route>
+      <Route path="/agencies">
+        <DashboardLayout navigationItems={adminNavigationItems}>
+          <AgencyManagement />
+        </DashboardLayout>
+      </Route>
+
+      {/* ── Agency portal routes ── */}
+      <Route path="/agency">
+        <DashboardLayout navigationItems={agencyNavigationItems}>
+          <AgencyPortal />
+        </DashboardLayout>
+      </Route>
+      <Route path="/agency/settings">
+        <DashboardLayout navigationItems={agencyNavigationItems}>
+          <AgencySettings />
+        </DashboardLayout>
+      </Route>
+      <Route path="/agency/clients/:id">
+        <DashboardLayout navigationItems={agencyNavigationItems}>
+          <AgencyClientDetail />
+        </DashboardLayout>
+      </Route>
+
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
