@@ -7,7 +7,7 @@ import { integer, pgEnum, pgTable, serial, text, timestamp, varchar, json, boole
  */
 
 // Enums
-export const roleEnum = pgEnum("role", ["user", "admin"]);
+export const roleEnum = pgEnum("role", ["user", "admin", "agency"]);
 export const aiProviderEnum = pgEnum("ai_provider", ["openai", "anthropic", "google", "minimax"]);
 export const apiKeyStatusEnum = pgEnum("api_key_status", ["connected", "disconnected"]);
 export const trainingStatusEnum = pgEnum("training_status", ["paused", "in_progress", "completed", "error"]);
@@ -57,6 +57,33 @@ export const users = pgTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// Agencies table — reseller/white-label agency accounts
+export const agencies = pgTable("agencies", {
+  id: serial("id").primaryKey(),
+  // The user account that owns/manages this agency
+  userId: integer("userId").references(() => users.id, { onDelete: "set null" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  contactEmail: varchar("contactEmail", { length: 320 }).notNull(),
+  contactName: varchar("contactName", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  packageTier: varchar("packageTier", { length: 50 }).default("starter").notNull(),
+  // Branding fields for white-label emails
+  brandName: varchar("brandName", { length: 255 }),
+  brandLogoUrl: varchar("brandLogoUrl", { length: 500 }),
+  brandFromName: varchar("brandFromName", { length: 255 }),
+  // Stripe billing
+  stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
+  stripePaymentMethodId: varchar("stripePaymentMethodId", { length: 255 }),
+  hasPaymentMethod: boolean("hasPaymentMethod").default(false).notNull(),
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type Agency = typeof agencies.$inferSelect;
+export type InsertAgency = typeof agencies.$inferInsert;
+
 // Businesses table (enhanced with credibility fields)
 export const businesses = pgTable("businesses", {
   id: serial("id").primaryKey(),
@@ -64,6 +91,9 @@ export const businesses = pgTable("businesses", {
   // onDelete: set null so deleting an employee account does NOT destroy client data.
   userId: integer("userId")
     .references(() => users.id, { onDelete: "set null" }),
+  // Agency that owns this client (null = direct/internal client)
+  agencyId: integer("agencyId")
+    .references(() => agencies.id, { onDelete: "set null" }),
   name: varchar("name", { length: 255 }).notNull(),
   businessType: varchar("businessType", { length: 100 }),
   location: varchar("location", { length: 255 }),

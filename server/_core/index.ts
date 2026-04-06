@@ -4,7 +4,7 @@ import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
-import { appRouter, llmInsightsRouter } from "../routers";
+import { appRouter, llmInsightsRouter, agencyRouter } from "../routers";
 import { router } from "./trpc";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -13,10 +13,11 @@ import { startTrainingWorkerV2 } from "../trainingQueueV2";
 import { startScheduler } from "../scheduler";
 import { createWebhookRouter } from "../webhookHandler";
 
-// Combined router with all sub-routers including llmInsights
+// Combined router with all sub-routers including llmInsights and agency
 const combinedRouter = router({
   ...appRouter._def.procedures,
   llmInsights: llmInsightsRouter,
+  agency: agencyRouter,
 });
 export type CombinedRouter = typeof combinedRouter;
 

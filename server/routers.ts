@@ -2087,6 +2087,112 @@ export const llmInsightsRouter = router({
   }),
 });
 
+// ─── Agency Router ───────────────────────────────────────────────────────────
+export const agencyRouter = router({
+  // Admin: list all agencies
+  list: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.role !== 'admin') throw new Error('Forbidden');
+    const { getAllAgencies } = await import('./dbAgencies');
+    return getAllAgencies();
+  }),
+
+  // Admin: get a single agency by id
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Forbidden');
+      const { getAgencyById } = await import('./dbAgencies');
+      return getAgencyById(input.id);
+    }),
+
+  // Agency user: get their own agency record
+  myAgency: protectedProcedure.query(async ({ ctx }) => {
+    const { getAgencyByUserId } = await import('./dbAgencies');
+    return getAgencyByUserId(ctx.user.id);
+  }),
+
+  // Admin: create a new agency
+  create: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      contactEmail: z.string().email(),
+      contactName: z.string().optional(),
+      phone: z.string().optional(),
+      packageTier: z.string().optional(),
+      brandName: z.string().optional(),
+      brandLogoUrl: z.string().optional(),
+      brandFromName: z.string().optional(),
+      notes: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Forbidden');
+      const { createAgency } = await import('./dbAgencies');
+      return createAgency({
+        ...input,
+        packageTier: input.packageTier ?? 'starter',
+      });
+    }),
+
+  // Admin: update an agency
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).optional(),
+      contactEmail: z.string().email().optional(),
+      contactName: z.string().optional(),
+      phone: z.string().optional(),
+      packageTier: z.string().optional(),
+      brandName: z.string().optional(),
+      brandLogoUrl: z.string().optional(),
+      brandFromName: z.string().optional(),
+      notes: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Forbidden');
+      const { updateAgency } = await import('./dbAgencies');
+      const { id, ...updates } = input;
+      return updateAgency(id, updates);
+    }),
+
+  // Admin: delete an agency
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Forbidden');
+      const { deleteAgency } = await import('./dbAgencies');
+      await deleteAgency(input.id);
+      return { success: true };
+    }),
+
+  // Agency user: get their own clients (businesses linked to their agency)
+  myClients: protectedProcedure.query(async ({ ctx }) => {
+    const { getAgencyByUserId } = await import('./dbAgencies');
+    const { getDb } = await import('./db');
+    const { businesses } = await import('../drizzle/schema');
+    const { eq } = await import('drizzle-orm');
+    const agency = await getAgencyByUserId(ctx.user.id);
+    if (!agency) return [];
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(businesses).where(eq(businesses.agencyId, agency.id));
+  }),
+
+  // Admin: get clients for a specific agency
+  getClients: protectedProcedure
+    .input(z.object({ agencyId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Forbidden');
+      const { getDb } = await import('./db');
+      const { businesses } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(businesses).where(eq(businesses.agencyId, input.agencyId));
+    }),
+});
+
 // Merge llmInsights into appRouter
 export const appRouterWithInsights = router({
   ...appRouter._def.procedures,
