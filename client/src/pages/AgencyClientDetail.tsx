@@ -18,12 +18,11 @@ export default function AgencyClientDetail() {
   const { data: clients, isLoading: clientsLoading } = trpc.agency.myClients.useQuery();
   const client = clients?.find((c: any) => c.id === clientId);
 
-  // Fetch campaigns for this business
-  const { data: campaigns, isLoading: campaignsLoading } = trpc.campaign.list.useQuery(
-    undefined,
-    { enabled: !!client }
+  // Fetch campaigns for this business (scoped to agency's clients only)
+  const { data: clientCampaigns = [], isLoading: campaignsLoading } = trpc.agency.clientCampaigns.useQuery(
+    { businessId: clientId },
+    { enabled: !!client && clientId > 0 }
   );
-  const clientCampaigns = campaigns?.filter((c: any) => c.businessId === clientId) ?? [];
 
   const isLoading = clientsLoading || campaignsLoading;
 

@@ -2198,6 +2198,29 @@ export const agencyRouter = router({
       if (!db) return [];
       return db.select().from(businesses).where(eq(businesses.agencyId, input.agencyId));
     }),
+
+  // Agency user: get campaigns for a specific client business (must belong to their agency)
+  clientCampaigns: protectedProcedure
+    .input(z.object({ businessId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { businesses, campaigns } = await import('../drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+      const { getDb } = await import('./db');
+      const db = await getDb();
+      if (!db) return [];
+      // Verify this business belongs to the agency
+      const agency = await getAgencyByUserId(ctx.user.id);
+      if (!agency && ctx.user.role !== 'admin') return [];
+      if (agency) {
+        const [biz] = await db.select({ agencyId: businesses.agencyId })
+          .from(businesses)
+          .where(eq(businesses.id, input.businessId))
+          .limit(1);
+        if (!biz || biz.agencyId !== agency.id) throw new Error('Forbidden');
+      }
+      return db.select().from(campaigns).where(eq(campaigns.businessId, input.businessId));
+    }),
 });
 
 // Merge llmInsights into appRouter
