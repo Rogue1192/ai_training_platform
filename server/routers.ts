@@ -2150,10 +2150,17 @@ export const agencyRouter = router({
       isActive: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== 'admin') throw new Error('Forbidden');
-      const { updateAgency } = await import('./dbAgencies');
+      const { getAgencyByUserId, updateAgency } = await import('./dbAgencies');
       const { id, ...updates } = input;
-      return updateAgency(id, updates);
+      if (ctx.user.role === 'admin') {
+        // Admin can update any field on any agency
+        return updateAgency(id, updates);
+      }
+      // Agency user can only update their own agency's branding fields
+      const myAgency = await getAgencyByUserId(ctx.user.id);
+      if (!myAgency || myAgency.id !== id) throw new Error('Forbidden');
+      const { brandName, brandLogoUrl, brandFromName } = updates;
+      return updateAgency(id, { brandName, brandLogoUrl, brandFromName });
     }),
 
   // Admin: delete an agency
@@ -2169,11 +2176,11 @@ export const agencyRouter = router({
   // Agency user: get their own clients (businesses linked to their agency)
   myClients: protectedProcedure.query(async ({ ctx }) => {
     const { getAgencyByUserId } = await import('./dbAgencies');
-    const { getDb } = await import('./db');
     const { businesses } = await import('../drizzle/schema');
     const { eq } = await import('drizzle-orm');
     const agency = await getAgencyByUserId(ctx.user.id);
     if (!agency) return [];
+    const { getDb } = await import('./db');
     const db = await getDb();
     if (!db) return [];
     return db.select().from(businesses).where(eq(businesses.agencyId, agency.id));
@@ -2184,9 +2191,9 @@ export const agencyRouter = router({
     .input(z.object({ agencyId: z.number() }))
     .query(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') throw new Error('Forbidden');
-      const { getDb } = await import('./db');
       const { businesses } = await import('../drizzle/schema');
       const { eq } = await import('drizzle-orm');
+      const { getDb } = await import('./db');
       const db = await getDb();
       if (!db) return [];
       return db.select().from(businesses).where(eq(businesses.agencyId, input.agencyId));
