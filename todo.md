@@ -358,6 +358,8 @@
 - [x] Run tests and compile check (328 tests passing, 0 TS errors)
 
 ## User-Reported Issues
-- [ ] BUG: All prompts doubled up in admin Prompts section
-- [ ] BUG: AI model lists are outdated — missing Gemini 2.5/2.5 Flash, possibly outdated GPT and Claude models
-- [ ] Sweep for other basic issues across the platform
+- [x] BUG: All prompts doubled up in admin Prompts section — FIXED: ran dedup SQL (SUPABASE_RUN_THIS_SQL.sql Step 1), removed userId column from promptTemplates, no duplicates remain (29 templates, all unique)
+- [x] BUG: AI model lists are outdated — FIXED: updated aiProviders.ts getAvailableModels (gpt-4.1, gpt-4.1-mini, o3, o3-mini, claude-*-4-5-*, gemini-2.5-flash, MiniMax), updated ScheduledJobs.tsx MODEL_LABELS map, updated deprecated model map with missing Claude entries
+- [x] BUG: PromptTemplateType in db.ts was missing 4 types — FIXED: added content_generation, credibility_research, injection_system, injection_citation
+- [x] BUG: injection_system and injection_citation templates missing from DB — FIXED: inserted both templates directly into Supabase
+- [x] Sweep for other basic issues across the platform — DONE: full code audit completed, no additional critical issues found
