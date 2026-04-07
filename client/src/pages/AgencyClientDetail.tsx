@@ -16,7 +16,7 @@ export default function AgencyClientDetail() {
 
   // Fetch the client's business record
   const { data: clients, isLoading: clientsLoading } = trpc.agency.myClients.useQuery();
-  const client = clients?.find((c: any) => c.id === clientId);
+  const client = clients?.find((c: any) => c.id === clientId) as any;
 
   // Fetch campaigns for this business (scoped to agency's clients only)
   const { data: clientCampaigns = [], isLoading: campaignsLoading } = trpc.agency.clientCampaigns.useQuery(

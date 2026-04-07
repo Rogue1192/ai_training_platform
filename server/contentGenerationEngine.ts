@@ -641,6 +641,7 @@ export async function regenerateContentPage(params: {
     metaDescription: pageData.metaDescription || "",
     schemaMarkup: existingPage.schemaMarkup || "",
     interlinkTargets: pageData.interlinkSuggestions || [],
+    deliveryType: config.deliveryType,
   };
   
   // Update in database

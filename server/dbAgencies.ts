@@ -32,6 +32,12 @@ export async function getAgencyByUserId(userId: number): Promise<Agency | undefi
   return agency;
 }
 
+export async function getAgencyByIntakeToken(token: string): Promise<Agency | undefined> {
+  const db = await requireDb();
+  const [agency] = await db.select().from(agencies).where(eq(agencies.intakeToken, token)).limit(1);
+  return agency;
+}
+
 // ─── Create ──────────────────────────────────────────────────────────────────
 
 export async function createAgency(data: InsertAgency): Promise<Agency> {

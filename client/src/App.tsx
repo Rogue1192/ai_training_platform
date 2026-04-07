@@ -25,6 +25,7 @@ import AgencyManagement from "./pages/AgencyManagement";
 import AgencyPortal from "./pages/AgencyPortal";
 import AgencySettings from "./pages/AgencySettings";
 import AgencyClientDetail from "./pages/AgencyClientDetail";
+import ClientIntakeForm from "./pages/ClientIntakeForm";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Redirect } from "wouter";
 import {
@@ -166,6 +167,8 @@ function Router() {
         </DashboardLayout>
       </Route>
 
+      {/* Public client intake form — no auth required */}
+      <Route path="/intake/:token" component={ClientIntakeForm} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

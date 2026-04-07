@@ -2241,12 +2241,44 @@ export const agencyRouter = router({
   addClient: protectedProcedure
     .input(z.object({
       agencyId: z.number(),
-      businessId: z.number(),
       packageTier: z.enum(['starter', 'growth', 'pro']),
+      // ── Core business info ──
+      name: z.string().min(1),
+      businessType: z.string().optional(),
+      website: z.string().optional(),
+      location: z.string().optional(),
+      address: z.string().optional(),
+      phone: z.string().optional(),
+      description: z.string().optional(),
+      notes: z.string().optional(),
+      // ── Contact info ──
+      contactName: z.string().optional(),
+      contactEmail: z.string().optional(),
+      // ── Credibility data (feeds the webhook payload) ──
+      yearsInBusiness: z.number().int().positive().optional(),
+      certifications: z.string().optional(),
+      licenses: z.string().optional(),
+      awards: z.string().optional(),
+      warranties: z.string().optional(),
+      bbbRating: z.string().optional(),
+      differentiators: z.string().optional(),
+      // ── Social profiles ──
+      facebookUrl: z.string().optional(),
+      instagramUrl: z.string().optional(),
+      linkedinUrl: z.string().optional(),
+      twitterUrl: z.string().optional(),
+      youtubeUrl: z.string().optional(),
+      tiktokUrl: z.string().optional(),
+      yelpUrl: z.string().optional(),
+      googleMapsUrl: z.string().optional(),
+      bbbUrl: z.string().optional(),
+      angiesUrl: z.string().optional(),
+      thumbtackUrl: z.string().optional(),
+      houzzUrl: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { getAgencyById, getAgencyByUserId } = await import('./dbAgencies');
-      const { updateBusiness } = await import('./db');
+      const { createBusiness, updateBusiness } = await import('./db');
       // Verify access
       let agency;
       if (ctx.user.role === 'admin') {
@@ -2256,26 +2288,34 @@ export const agencyRouter = router({
         if (!agency || agency.id !== input.agencyId) throw new Error('Forbidden');
       }
       if (!agency) throw new Error('Agency not found');
-      // Link the business to the agency with the selected tier
-      await updateBusiness(input.businessId, {
-        agencyId: input.agencyId,
-        agencyPackageTier: input.packageTier,
+      // Create the business record with all collected fields
+      const { agencyId, packageTier, ...businessFields } = input;
+      const newBusiness = await createBusiness({
+        ...businessFields,
+        agencyId,
+        agencyPackageTier: packageTier,
+        userId: ctx.user.id,
       });
       // Create Stripe subscription for this client (non-blocking)
       try {
-        const { createClientSubscription } = await import('./stripeAgency');
-        const subscriptionId = await createClientSubscription({
-          agency,
-          businessId: input.businessId,
-          packageTier: input.packageTier,
-        });
-        if (subscriptionId) {
-          await updateBusiness(input.businessId, { stripeSubscriptionId: subscriptionId });
+        if (agency.stripeCustomerId) {
+          const { createClientSubscription } = await import('./stripeAgency');
+          const result = await createClientSubscription({
+            stripeCustomerId: agency.stripeCustomerId,
+            packageSlug: packageTier,
+            agencyName: agency.brandName || agency.name,
+            clientBusinessName: input.name,
+            agencyId: agency.id,
+            businessId: newBusiness.id,
+          });
+          if (result?.subscriptionId) {
+            await updateBusiness(newBusiness.id, { stripeSubscriptionId: result.subscriptionId });
+          }
         }
       } catch (stripeErr) {
         console.warn('[agency.addClient] Stripe subscription creation skipped:', stripeErr);
       }
-      return { success: true };
+      return { success: true, businessId: newBusiness.id };
     }),
 
   // Agency user or admin: remove a client from an agency (cancel subscription)
@@ -2336,6 +2376,186 @@ export const agencyRouter = router({
         if (!biz || biz.agencyId !== agency.id) throw new Error('Forbidden');
       }
       return db.select().from(campaigns).where(eq(campaigns.businessId, input.businessId));
+    }),
+
+  // ── Intake token management ──────────────────────────────────────────────────────────────────
+
+  // Agency user or admin: get (or generate) the agency's permanent intake token
+  getIntakeToken: protectedProcedure.query(async ({ ctx }) => {
+    const { getAgencyByUserId, updateAgency } = await import('./dbAgencies');
+    const crypto = await import('crypto');
+    let agency;
+    if (ctx.user.role === 'admin') {
+      // Admin calling on behalf — not typical, return null
+      return { intakeToken: null, intakeUrl: null };
+    }
+    agency = await getAgencyByUserId(ctx.user.id);
+    if (!agency) throw new Error('Agency not found');
+    // Generate token if not yet set
+    if (!agency.intakeToken) {
+      const token = crypto.randomBytes(24).toString('hex');
+      agency = await updateAgency(agency.id, { intakeToken: token });
+    }
+    return {
+      intakeToken: agency.intakeToken,
+      intakeUrl: `/intake/${agency.intakeToken}`,
+    };
+  }),
+
+  // Admin: generate/reset intake token for a specific agency
+  generateIntakeToken: protectedProcedure
+    .input(z.object({ agencyId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Forbidden');
+      const { getAgencyById, updateAgency } = await import('./dbAgencies');
+      const crypto = await import('crypto');
+      const agency = await getAgencyById(input.agencyId);
+      if (!agency) throw new Error('Agency not found');
+      const token = crypto.randomBytes(24).toString('hex');
+      const updated = await updateAgency(agency.id, { intakeToken: token });
+      return { intakeToken: updated.intakeToken, intakeUrl: `/intake/${updated.intakeToken}` };
+    }),
+
+  // PUBLIC: look up agency branding by intake token (no auth required)
+  getIntakeBranding: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .query(async ({ input }) => {
+      const { getAgencyByIntakeToken } = await import('./dbAgencies');
+      const agency = await getAgencyByIntakeToken(input.token);
+      if (!agency || !agency.isActive) throw new Error('Invalid or inactive intake link');
+      return {
+        agencyId: agency.id,
+        brandName: agency.brandName || agency.name,
+        brandLogoUrl: agency.brandLogoUrl || null,
+        contactEmail: agency.contactEmail,
+      };
+    }),
+
+  // PUBLIC: submit the client intake form (no auth required)
+  submitIntakeForm: publicProcedure
+    .input(z.object({
+      token: z.string(),
+      // ── Core business info ──
+      name: z.string().min(1),
+      businessType: z.string().optional(),
+      website: z.string().optional(),
+      location: z.string().optional(),
+      address: z.string().optional(),
+      phone: z.string().optional(),
+      description: z.string().optional(),
+      // ── Contact info ──
+      contactName: z.string().optional(),
+      contactEmail: z.string().optional(),
+      // ── Credibility data ──
+      yearsInBusiness: z.number().int().positive().optional(),
+      certifications: z.string().optional(),
+      licenses: z.string().optional(),
+      awards: z.string().optional(),
+      warranties: z.string().optional(),
+      bbbRating: z.string().optional(),
+      differentiators: z.string().optional(),
+      // ── Social profiles ──
+      facebookUrl: z.string().optional(),
+      instagramUrl: z.string().optional(),
+      linkedinUrl: z.string().optional(),
+      twitterUrl: z.string().optional(),
+      youtubeUrl: z.string().optional(),
+      tiktokUrl: z.string().optional(),
+      yelpUrl: z.string().optional(),
+      googleMapsUrl: z.string().optional(),
+      bbbUrl: z.string().optional(),
+      angiesUrl: z.string().optional(),
+      thumbtackUrl: z.string().optional(),
+      houzzUrl: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { getAgencyByIntakeToken } = await import('./dbAgencies');
+      const { createBusiness } = await import('./db');
+      const { getDb } = await import('./db');
+      const { users } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+
+      // Validate the intake token
+      const { token, ...businessFields } = input;
+      const agency = await getAgencyByIntakeToken(token);
+      if (!agency || !agency.isActive) throw new Error('Invalid or inactive intake link');
+
+      // Assign to the platform admin user for audit trail
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const [adminUser] = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
+      const ownerId = adminUser?.id ?? null;
+
+      // Create the business record linked to this agency
+      // agencyPackageTier is intentionally null — agency assigns it after reviewing the submission
+      const newBusiness = await createBusiness({
+        ...businessFields,
+        agencyId: agency.id,
+        agencyPackageTier: null,
+        userId: ownerId,
+      });
+
+      // Send notification email to the agency (non-blocking)
+      try {
+        const { sendAgencyIntakeNotification } = await import('./agencyIntakeEmail');
+        await sendAgencyIntakeNotification({
+          agency,
+          businessName: input.name,
+          contactName: input.contactName,
+          contactEmail: input.contactEmail,
+          website: input.website,
+          location: input.location,
+          businessId: newBusiness.id,
+        });
+      } catch (emailErr) {
+        console.warn('[intake] Notification email failed (non-blocking):', emailErr);
+      }
+
+      return { success: true, businessId: newBusiness.id };
+    }),
+
+  // Agency user or admin: assign a package tier to a pending intake client and start their campaign
+  assignClientTier: protectedProcedure
+    .input(z.object({
+      agencyId: z.number(),
+      businessId: z.number(),
+      packageTier: z.enum(['starter', 'growth', 'pro']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyById, getAgencyByUserId } = await import('./dbAgencies');
+      const { updateBusiness } = await import('./db');
+      // Verify access
+      let agency;
+      if (ctx.user.role === 'admin') {
+        agency = await getAgencyById(input.agencyId);
+      } else {
+        agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency || agency.id !== input.agencyId) throw new Error('Forbidden');
+      }
+      if (!agency) throw new Error('Agency not found');
+      // Set the tier and create Stripe subscription
+      await updateBusiness(input.businessId, { agencyPackageTier: input.packageTier });
+      try {
+        if (agency.stripeCustomerId) {
+          const { createClientSubscription } = await import('./stripeAgency');
+          const { getBusinessById } = await import('./db');
+          const business = await getBusinessById(input.businessId);
+          const result = await createClientSubscription({
+            stripeCustomerId: agency.stripeCustomerId,
+            packageSlug: input.packageTier,
+            agencyName: agency.brandName || agency.name,
+            clientBusinessName: business?.name ?? 'Client',
+            agencyId: agency.id,
+            businessId: input.businessId,
+          });
+          if (result?.subscriptionId) {
+            await updateBusiness(input.businessId, { stripeSubscriptionId: result.subscriptionId });
+          }
+        }
+      } catch (stripeErr) {
+        console.warn('[agency.assignClientTier] Stripe skipped:', stripeErr);
+      }
+      return { success: true };
     }),
 });
 

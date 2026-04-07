@@ -52,7 +52,7 @@ async function getStripeClient(): Promise<Stripe> {
     );
   }
 
-  return new Stripe(key, { apiVersion: "2024-06-20" });
+  return new Stripe(key, { apiVersion: "2026-03-25.dahlia" });
 }
 
 // ─── Customer ────────────────────────────────────────────────────────────────

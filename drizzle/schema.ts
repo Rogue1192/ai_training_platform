@@ -75,6 +75,9 @@ export const agencies = pgTable("agencies", {
   stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
   stripePaymentMethodId: varchar("stripePaymentMethodId", { length: 255 }),
   hasPaymentMethod: boolean("hasPaymentMethod").default(false).notNull(),
+  // Client intake form — permanent reusable token for the branded intake URL
+  // URL: /intake/{intakeToken} — shared with clients to self-onboard
+  intakeToken: varchar("intakeToken", { length: 64 }).unique(),
   // Status
   isActive: boolean("isActive").default(true).notNull(),
   notes: text("notes"),

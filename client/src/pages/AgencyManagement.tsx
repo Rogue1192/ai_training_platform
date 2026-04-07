@@ -11,21 +11,23 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
   Loader2, Plus, Building2, Mail, Phone, Pencil, Trash2,
-  ChevronDown, ChevronRight, Users, CreditCard, CheckCircle, XCircle
+  ChevronDown, ChevronRight, Users, CreditCard, CheckCircle, XCircle,
+  Package
 } from "lucide-react";
 
-const PACKAGE_TIERS = [
-  { value: "starter", label: "Starter — 5 keywords × 3 locations" },
-  { value: "growth",  label: "Growth — 5 keywords × 5 locations" },
-  { value: "pro",     label: "Pro — 10 keywords × 5 locations" },
-];
+// Package tier is selected PER CLIENT when the agency adds a client — NOT at agency level.
+// This constant is used only in the client list display.
+const TIER_LABELS: Record<string, string> = {
+  starter: "Starter",
+  growth: "Growth",
+  pro: "Pro",
+};
 
 const defaultForm = {
   name: "",
   contactEmail: "",
   contactName: "",
   phone: "",
-  packageTier: "starter",
   brandName: "",
   brandLogoUrl: "",
   brandFromName: "",
@@ -34,19 +36,34 @@ const defaultForm = {
 };
 
 export default function AgencyManagement() {
-  const { data: agencies, isLoading, refetch } = trpc.agency.list.useQuery();
+  const { data: agencies, isLoading } = trpc.agency.list.useQuery();
   const utils = trpc.useUtils();
 
   const createMutation = trpc.agency.create.useMutation({
-    onSuccess: () => { toast.success("Agency created"); utils.agency.list.invalidate(); setIsDialogOpen(false); resetForm(); },
+    onSuccess: () => {
+      toast.success("Agency created");
+      utils.agency.list.invalidate();
+      setIsDialogOpen(false);
+      resetForm();
+    },
     onError: (err) => toast.error(err.message),
   });
+
   const updateMutation = trpc.agency.update.useMutation({
-    onSuccess: () => { toast.success("Agency updated"); utils.agency.list.invalidate(); setIsDialogOpen(false); resetForm(); },
+    onSuccess: () => {
+      toast.success("Agency updated");
+      utils.agency.list.invalidate();
+      setIsDialogOpen(false);
+      resetForm();
+    },
     onError: (err) => toast.error(err.message),
   });
+
   const deleteMutation = trpc.agency.delete.useMutation({
-    onSuccess: () => { toast.success("Agency deleted"); utils.agency.list.invalidate(); },
+    onSuccess: () => {
+      toast.success("Agency deleted");
+      utils.agency.list.invalidate();
+    },
     onError: (err) => toast.error(err.message),
   });
 
@@ -55,9 +72,15 @@ export default function AgencyManagement() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ ...defaultForm });
 
-  const resetForm = () => { setFormData({ ...defaultForm }); setEditingId(null); };
+  const resetForm = () => {
+    setFormData({ ...defaultForm });
+    setEditingId(null);
+  };
 
-  const openCreate = () => { resetForm(); setIsDialogOpen(true); };
+  const openCreate = () => {
+    resetForm();
+    setIsDialogOpen(true);
+  };
 
   const openEdit = (agency: any) => {
     setFormData({
@@ -65,7 +88,6 @@ export default function AgencyManagement() {
       contactEmail: agency.contactEmail || "",
       contactName: agency.contactName || "",
       phone: agency.phone || "",
-      packageTier: agency.packageTier || "starter",
       brandName: agency.brandName || "",
       brandLogoUrl: agency.brandLogoUrl || "",
       brandFromName: agency.brandFromName || "",
@@ -119,7 +141,9 @@ export default function AgencyManagement() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Building2 className="h-10 w-10 text-muted-foreground mb-3" />
             <p className="font-medium">No agencies yet</p>
-            <p className="text-sm text-muted-foreground mt-1">Add your first reseller agency to get started.</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Add your first reseller agency to get started.
+            </p>
             <Button className="mt-4" onClick={openCreate}>
               <Plus className="h-4 w-4 mr-2" /> Add Agency
             </Button>
@@ -146,9 +170,11 @@ export default function AgencyManagement() {
                         <Badge variant={agency.isActive ? "default" : "secondary"}>
                           {agency.isActive ? "Active" : "Inactive"}
                         </Badge>
-                        <Badge variant="outline" className="capitalize">
-                          {agency.packageTier}
-                        </Badge>
+                        {agency.brandName && (
+                          <Badge variant="outline" className="text-xs">
+                            {agency.brandName}
+                          </Badge>
+                        )}
                       </div>
                       <CardDescription className="mt-1 flex items-center gap-3 flex-wrap">
                         <span className="flex items-center gap-1">
@@ -168,7 +194,7 @@ export default function AgencyManagement() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground" title="Payment method">
                       <CreditCard className="h-3 w-3" />
                       {agency.hasPaymentMethod
                         ? <CheckCircle className="h-3 w-3 text-green-500" />
@@ -199,12 +225,19 @@ export default function AgencyManagement() {
       )}
 
       {/* Create / Edit Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) { setIsDialogOpen(false); resetForm(); } }}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) { setIsDialogOpen(false); resetForm(); }
+        }}
+      >
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId !== null ? "Edit Agency" : "Add Agency"}</DialogTitle>
             <DialogDescription>
-              {editingId !== null ? "Update agency details." : "Create a new white-label reseller agency."}
+              {editingId !== null
+                ? "Update agency details."
+                : "Create a new white-label reseller agency. Package tier is selected per client when you add them."}
             </DialogDescription>
           </DialogHeader>
 
@@ -244,24 +277,6 @@ export default function AgencyManagement() {
                   placeholder="(555) 555-5555"
                 />
               </div>
-            </div>
-
-            {/* Package tier */}
-            <div className="space-y-1.5">
-              <Label>Package Tier</Label>
-              <Select
-                value={formData.packageTier}
-                onValueChange={(v) => setFormData({ ...formData, packageTier: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PACKAGE_TIERS.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             {/* White-label branding */}
@@ -352,7 +367,9 @@ function AgencyClients({ agencyId, agencyName }: { agencyId: number; agencyName:
   if (!clients?.length) {
     return (
       <CardContent className="pt-0 pb-4">
-        <p className="text-sm text-muted-foreground pl-7">No clients assigned to {agencyName} yet.</p>
+        <p className="text-sm text-muted-foreground pl-7">
+          No clients assigned to {agencyName} yet.
+        </p>
       </CardContent>
     );
   }
@@ -370,12 +387,18 @@ function AgencyClients({ agencyId, agencyName }: { agencyId: number; agencyName:
               className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
             >
               <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="font-medium truncate">{client.name}</p>
                 {client.location && (
                   <p className="text-xs text-muted-foreground truncate">{client.location}</p>
                 )}
               </div>
+              {client.agencyPackageTier && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                  <Package className="h-3 w-3" />
+                  <span className="capitalize">{TIER_LABELS[client.agencyPackageTier] ?? client.agencyPackageTier}</span>
+                </div>
+              )}
             </div>
           ))}
         </div>

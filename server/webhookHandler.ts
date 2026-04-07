@@ -65,6 +65,14 @@ const onboardingPayloadSchema = z.object({
   // e.g., 'starter_5loc' | 'growth_5loc' | 'pro_5loc' | 'starter_10loc' | 'growth_10loc' | 'pro_10loc'
   selectedPackage: z.string().optional(),
 
+  // ── Agency linkage (optional) ──────────────────────────────────────────────
+  // When provided, the business is linked to this agency (white-label client).
+  // When omitted, the business is treated as a direct/retail client (agencyId = null).
+  agencyId: z.number().int().positive().optional(),
+  // Agency billing tier — used to set agencyPackageTier on the business record.
+  // Accepts 'starter' | 'growth' | 'pro'. Falls back to packageTierSlug if omitted.
+  agencyPackageTier: z.enum(['starter', 'growth', 'pro']).optional(),
+
   // Optional: webhook secret for authentication
   webhookSecret: z.string().optional(),
 });
