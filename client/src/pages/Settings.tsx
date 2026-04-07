@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search, Link2 } from "lucide-react";
+import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search, Link2, Eye, EyeOff } from "lucide-react";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
 
 type AIProvider = "openai" | "anthropic" | "google" | "minimax";
@@ -122,11 +122,14 @@ export default function Settings() {
     Record<string, { success: boolean; message: string; model?: string; responseTime?: number } | null>
   >({});
 
-  // Credibility Webhook URL — stored inside the whitelabel service key JSON
+  // Credibility Webhook — URL and signing secret stored inside the whitelabel service key JSON
   const whitelabelKey = serviceKeys?.find((k) => k.service === "whitelabel");
   const savedWebhookUrl: string = (whitelabelKey?.metadata as any)?.credibilityWebhookUrl || "";
+  const savedWebhookSecret: string = (whitelabelKey?.metadata as any)?.credibilityWebhookSecret || "";
   const [webhookUrlInput, setWebhookUrlInput] = useState("");
+  const [webhookSecretInput, setWebhookSecretInput] = useState("");
   const [savingWebhook, setSavingWebhook] = useState(false);
+  const [showWebhookSecret, setShowWebhookSecret] = useState(false);
 
   const handleSaveWebhookUrl = async () => {
     const url = webhookUrlInput.trim();
@@ -144,6 +147,21 @@ export default function Settings() {
       toast.error(err.message || "Failed to save webhook URL");
     } finally {
       setSavingWebhook(false);
+    }
+  };
+
+  const handleSaveWebhookSecret = async () => {
+    const secret = webhookSecretInput.trim();
+    if (!secret) { toast.error("Please enter a webhook secret"); return; }
+    try {
+      const existing = (whitelabelKey?.metadata as Record<string, string>) || {};
+      const merged = { ...existing, credibilityWebhookSecret: secret };
+      await saveServiceKey.mutateAsync({ service: "whitelabel", value: JSON.stringify(merged) });
+      await refetchServiceKeys();
+      setWebhookSecretInput("");
+      toast.success("Webhook signing secret saved");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save webhook secret");
     }
   };
 
@@ -577,6 +595,38 @@ export default function Settings() {
               <Button onClick={handleSaveWebhookUrl} disabled={savingWebhook}>
                 {savingWebhook ? <Loader2 className="w-4 h-4 animate-spin" /> : savedWebhookUrl ? "Update" : "Save"}
               </Button>
+            </div>
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs font-medium text-muted-foreground mb-2">
+                Signing Secret
+                {savedWebhookSecret && (
+                  <span className="ml-2 text-green-500"><Check className="w-3 h-3 inline" /> Configured</span>
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground mb-2">
+                The receiving platform uses this to verify requests are genuinely from AI Answer Forge.
+                We sign every request with HMAC-SHA256 and send it in the <code className="bg-muted px-1 rounded">X-Webhook-Signature</code> header.
+              </p>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    type={showWebhookSecret ? "text" : "password"}
+                    placeholder={savedWebhookSecret ? "Secret already configured — enter new value to update" : "Paste the secret from your Next.js platform"}
+                    value={webhookSecretInput}
+                    onChange={(e) => setWebhookSecretInput(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowWebhookSecret(!showWebhookSecret)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showWebhookSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <Button onClick={handleSaveWebhookSecret} variant="outline">
+                  {savedWebhookSecret ? "Update" : "Save"}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

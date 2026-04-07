@@ -94,9 +94,14 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-// ─── Webhook URL Retrieval ────────────────────────────────────────────────────
+// ─── Webhook Config Retrieval ────────────────────────────────────────────────
 
-async function getWebhookUrl(): Promise<string | null> {
+interface WebhookConfig {
+  url: string;
+  secret: string | null;
+}
+
+async function getWebhookConfig(): Promise<WebhookConfig | null> {
   try {
     const db = await getDb();
     if (!db) return null;
@@ -110,10 +115,32 @@ async function getWebhookUrl(): Promise<string | null> {
     if (!record) return null;
     const raw = decrypt(record.encryptedValue);
     const parsed = JSON.parse(raw) as Record<string, string>;
-    return parsed.credibilityWebhookUrl || null;
+    if (!parsed.credibilityWebhookUrl) return null;
+    return {
+      url: parsed.credibilityWebhookUrl,
+      secret: parsed.credibilityWebhookSecret || null,
+    };
   } catch {
     return null;
   }
+}
+
+/**
+ * Generates an HMAC-SHA256 signature for the webhook payload.
+ * The receiving platform should verify this to confirm the request is genuine.
+ *
+ * Verification (Node.js example on the Next.js side):
+ *   const crypto = require('crypto');
+ *   const sig = req.headers['x-webhook-signature'];
+ *   const expected = 'sha256=' + crypto.createHmac('sha256', WEBHOOK_SECRET)
+ *     .update(rawBody).digest('hex');
+ *   const valid = crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+ */
+function signPayload(payloadJson: string, secret: string): string {
+  const crypto = require("crypto") as typeof import("crypto");
+  const hmac = crypto.createHmac("sha256", secret);
+  hmac.update(payloadJson);
+  return "sha256=" + hmac.digest("hex");
 }
 
 // ─── Main Webhook Function ────────────────────────────────────────────────────
@@ -131,12 +158,13 @@ export async function sendCredibilityWebhook(params: {
   const { campaignId, businessId } = params;
 
   try {
-    // 1. Get the webhook URL from settings
-    const webhookUrl = await getWebhookUrl();
-    if (!webhookUrl) {
+    // 1. Get the webhook URL and secret from settings
+    const webhookConfig = await getWebhookConfig();
+    if (!webhookConfig) {
       console.log(`[Credibility Webhook] No webhook URL configured — skipping.`);
       return { sent: false, error: "No webhook URL configured" };
     }
+    const { url: webhookUrl, secret: webhookSecret } = webhookConfig;
 
     // 2. Load business and campaign data
     const db = await getDb();
@@ -218,13 +246,21 @@ export async function sendCredibilityWebhook(params: {
       `[Credibility Webhook] Sending ${webhookPages.length} pages to ${webhookUrl}`
     );
 
+    const payloadJson = JSON.stringify(payload);
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Source": "ai-answer-forge",
+      "X-Campaign-Id": String(campaignId),
+    };
+
+    // Add HMAC-SHA256 signature if a secret is configured
+    if (webhookSecret) {
+      headers["X-Webhook-Signature"] = signPayload(payloadJson, webhookSecret);
+    }
+
     const axios = (await import("axios")).default;
-    const response = await axios.post(webhookUrl, payload, {
-      headers: {
-        "Content-Type": "application/json",
-        "X-Source": "ai-answer-forge",
-        "X-Campaign-Id": String(campaignId),
-      },
+    const response = await axios.post(webhookUrl, payloadJson, {
+      headers,
       timeout: 15000,
     });
 
