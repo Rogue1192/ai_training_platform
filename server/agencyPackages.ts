@@ -14,6 +14,11 @@
  * Example: keyword "fence installation" →
  *   "best fence installation company in Dallas",
  *   "top rated fence contractor near me", etc.
+ *
+ * Suggested agency retail pricing (what the agency charges their client):
+ *   Starter  $297–$347/mo
+ *   Growth   $397–$497/mo
+ *   Pro      $697–$797/mo
  */
 
 export interface AgencyPackage {
@@ -38,8 +43,8 @@ export const AGENCY_PACKAGES: AgencyPackage[] = [
     maxLocations: 3,
     variationsPerKeyword: 8,
     monthlyPrice: 99,
-    suggestedRetailLow: 197,
-    suggestedRetailHigh: 297,
+    suggestedRetailLow: 297,
+    suggestedRetailHigh: 347,
     stripeProductId: "prod_UHzHvtGJerqC96",
     stripePriceId: "price_1TJQNbCtHfUq3SHJrproNUkD",
     description:
@@ -53,8 +58,8 @@ export const AGENCY_PACKAGES: AgencyPackage[] = [
     maxLocations: 5,
     variationsPerKeyword: 8,
     monthlyPrice: 149,
-    suggestedRetailLow: 297,
-    suggestedRetailHigh: 397,
+    suggestedRetailLow: 397,
+    suggestedRetailHigh: 497,
     stripeProductId: "prod_UHzHIjjVlQ2Ztg",
     stripePriceId: "price_1TJQNgCtHfUq3SHJn8clZJ3o",
     description:
@@ -68,8 +73,8 @@ export const AGENCY_PACKAGES: AgencyPackage[] = [
     maxLocations: 5,
     variationsPerKeyword: 8,
     monthlyPrice: 179,
-    suggestedRetailLow: 397,
-    suggestedRetailHigh: 497,
+    suggestedRetailLow: 697,
+    suggestedRetailHigh: 797,
     stripeProductId: "prod_UHzHXq8GJRXGq6",
     stripePriceId: "price_1TJQNnCtHfUq3SHJOeYlcVHG",
     description:
