@@ -8,8 +8,8 @@ import { toast } from "sonner";
 import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search, Link2 } from "lucide-react";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
 
-type AIProvider = "openai" | "anthropic" | "google";
-type ServiceType = "dataforseo" | "sinbyte" | "resend";
+type AIProvider = "openai" | "anthropic" | "google" | "minimax";
+type ServiceType = "dataforseo" | "sinbyte" | "resend" | "stripe";
 
 const PROVIDERS: {
   id: AIProvider;
@@ -34,6 +34,12 @@ const PROVIDERS: {
     label: "Google AI",
     description: "Gemini 2.5 Flash, Gemini 2.0 Flash, Gemini 1.5 Pro, Gemini 1.5 Flash",
     placeholder: "AIza...",
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    description: "MiniMax-M2.7, MiniMax-M2.7-highspeed, MiniMax-M2.5 — used as the influencer model",
+    placeholder: "eyJ...",
   },
 ];
 
@@ -72,6 +78,16 @@ const SERVICE_CONFIGS: {
       { key: "apiKey", label: "API Key", placeholder: "re_...", type: "password" },
     ],
   },
+  {
+    id: "stripe",
+    label: "Stripe",
+    description: "Agency billing — charges agencies when clients are added",
+    icon: <Key className="w-6 h-6 text-primary" />,
+    fields: [
+      { key: "liveKey", label: "Live Secret Key", placeholder: "sk_live_...", type: "password" },
+      { key: "testKey", label: "Test Secret Key", placeholder: "sk_test_...", type: "password" },
+    ],
+  },
 ];
 
 export default function Settings() {
@@ -90,12 +106,14 @@ export default function Settings() {
     openai: "",
     anthropic: "",
     google: "",
+    minimax: "",
   });
 
   const [serviceInputs, setServiceInputs] = useState<Record<ServiceType, Record<string, string>>>({
     dataforseo: { login: "", password: "" },
     sinbyte: { apiKey: "" },
     resend: { apiKey: "" },
+    stripe: { liveKey: "", testKey: "" },
   });
 
   const [testingProvider, setTestingProvider] = useState<AIProvider | null>(null);
@@ -210,28 +228,36 @@ export default function Settings() {
   const handleSaveServiceKey = async (service: ServiceType) => {
     const inputs = serviceInputs[service];
     let value: string;
-
+    let resetState: Record<string, string>;
     if (service === "dataforseo") {
       if (!inputs.login?.trim() || !inputs.password?.trim()) {
         toast.error("Please enter both DataForSEO login and password");
         return;
       }
       value = JSON.stringify({ login: inputs.login.trim(), password: inputs.password.trim() });
+      resetState = { login: "", password: "" };
+    } else if (service === "stripe") {
+      if (!inputs.liveKey?.trim() && !inputs.testKey?.trim()) {
+        toast.error("Please enter at least one Stripe key (live or test)");
+        return;
+      }
+      value = JSON.stringify({
+        ...(inputs.liveKey?.trim() ? { liveKey: inputs.liveKey.trim() } : {}),
+        ...(inputs.testKey?.trim() ? { testKey: inputs.testKey.trim() } : {}),
+      });
+      resetState = { liveKey: "", testKey: "" };
     } else {
       if (!inputs.apiKey?.trim()) {
         toast.error("Please enter an API key");
         return;
       }
       value = inputs.apiKey.trim();
+      resetState = { apiKey: "" };
     }
-
     try {
       await saveServiceKey.mutateAsync({ service, value });
       toast.success(`${service} credentials saved successfully`);
-      setServiceInputs((prev) => ({
-        ...prev,
-        [service]: service === "dataforseo" ? { login: "", password: "" } : { apiKey: "" },
-      }));
+      setServiceInputs((prev) => ({ ...prev, [service]: resetState }));
       setTestResults((prev) => ({ ...prev, [service]: null }));
       refetchServiceKeys();
     } catch (error: any) {

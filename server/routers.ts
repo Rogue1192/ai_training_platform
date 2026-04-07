@@ -341,6 +341,12 @@ export const appRouter = router({
               const parsed = JSON.parse(raw) as Record<string, string>;
               metadata = parsed;
             }
+            // stripe stores JSON {liveKey, testKey} — expose masked versions only
+            if (k.service === "stripe") {
+              const parsed = JSON.parse(raw) as { liveKey?: string; testKey?: string };
+              if (parsed.liveKey) metadata.liveKey = parsed.liveKey.substring(0, 12) + "...";
+              if (parsed.testKey) metadata.testKey = parsed.testKey.substring(0, 12) + "...";
+            }
           } catch { /* ignore decrypt/parse errors */ }
         }
         return {
@@ -357,7 +363,7 @@ export const appRouter = router({
     }),
     save: protectedProcedure
       .input(z.object({
-        service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel"]),
+        service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]),
         // For dataforseo: pass as JSON string {login, password}
         // For sinbyte/resend: pass as the API key string
         value: z.string().min(1),
@@ -370,14 +376,14 @@ export const appRouter = router({
         return { success: true };
       }),
     delete: protectedProcedure
-      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel"]) }))
+      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]) }))
       .mutation(async ({ input }) => {
         const { deleteServiceKey } = await import("./db");
         await deleteServiceKey(input.service);
         return { success: true };
       }),
     test: protectedProcedure
-      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel"]) }))
+      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]) }))
       .mutation(async ({ input }) => {
         const { getServiceKey, upsertServiceKey } = await import("./db");
         const { decrypt } = await import("./encryption");
@@ -414,6 +420,24 @@ export const appRouter = router({
             // White-label settings are always valid if they exist
             const parsed = JSON.parse(value) as { companyName?: string };
             return { success: true, message: `White-label settings verified (company: ${parsed.companyName || "set"})` };
+          } else if (input.service === "stripe") {
+            const parsed = JSON.parse(value) as { liveKey?: string; testKey?: string };
+            const keyToTest = parsed.liveKey || parsed.testKey;
+            if (!keyToTest) return { success: false, message: "No Stripe key found" };
+            const axios = (await import("axios")).default;
+            const resp = await axios.get("https://api.stripe.com/v1/account", {
+              headers: { Authorization: `Bearer ${keyToTest}` },
+              timeout: 10000,
+              validateStatus: () => true,
+            });
+            const valid = resp.status === 200;
+            const mode = keyToTest.startsWith("sk_live") ? "live" : "test";
+            return {
+              success: valid,
+              message: valid
+                ? `Stripe ${mode} key verified — account: ${resp.data?.email || resp.data?.id || "connected"}`
+                : `Stripe returned HTTP ${resp.status}: ${resp.data?.error?.message || "Invalid key"}`,
+            };
           }
           return { success: false, message: "Unknown service" };
         } catch (err: any) {

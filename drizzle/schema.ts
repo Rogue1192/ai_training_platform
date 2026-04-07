@@ -158,7 +158,7 @@ export type InsertApiKey = typeof apiKeys.$inferInsert;
 // Service Keys table — global keys for external services (DataForSEO, SinByte, Resend)
 // These are stored encrypted in the database so they can be managed via the Settings UI
 // instead of requiring manual Railway env var configuration.
-export const serviceKeyServiceEnum = pgEnum("service_key_service", ["dataforseo", "sinbyte", "resend", "whitelabel"]);
+export const serviceKeyServiceEnum = pgEnum("service_key_service", ["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]);
 export const serviceKeys = pgTable("serviceKeys", {
   id: serial("id").primaryKey(),
   service: serviceKeyServiceEnum("service").notNull().unique(),
