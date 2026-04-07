@@ -1300,26 +1300,30 @@ export async function sendCampaignWinEmails(
     previousScore,
     dashboardUrl,
   });
-  // Also notify the white-label agency if this is an agency client
+  // Also notify the white-label agency if this is an agency client and they haven't opted out
   if (business.agencyId) {
-    try {
-      const { getAgencyById } = await import('./dbAgencies');
-      const agency = await getAgencyById(business.agencyId);
-      if (agency?.contactEmail) {
-        await sendWinNotificationEmail({
-          businessName: business.name,
-          contactName: agency.contactName || agency.brandName || agency.name,
-          contactEmail: agency.contactEmail,
-          totalWins: wins.length,
-          wins,
-          currentScore,
-          previousScore,
-          dashboardUrl,
-        });
-        console.log(`[Email] Agency win notification sent to ${agency.contactEmail} for client ${business.name}`);
+    if (business.agencyWinEmailsEnabled === false) {
+      console.log(`[Email] Agency win emails disabled for client ${business.name} (agencyId ${business.agencyId}), skipping agency notification`);
+    } else {
+      try {
+        const { getAgencyById } = await import('./dbAgencies');
+        const agency = await getAgencyById(business.agencyId);
+        if (agency?.contactEmail) {
+          await sendWinNotificationEmail({
+            businessName: business.name,
+            contactName: agency.contactName || agency.brandName || agency.name,
+            contactEmail: agency.contactEmail,
+            totalWins: wins.length,
+            wins,
+            currentScore,
+            previousScore,
+            dashboardUrl,
+          });
+          console.log(`[Email] Agency win notification sent to ${agency.contactEmail} for client ${business.name}`);
+        }
+      } catch (agencyEmailErr: any) {
+        console.warn(`[Email] Failed to send agency win notification:`, agencyEmailErr.message);
       }
-    } catch (agencyEmailErr: any) {
-      console.warn(`[Email] Failed to send agency win notification:`, agencyEmailErr.message);
     }
   }
   return result;

@@ -142,6 +142,9 @@ export const businesses = pgTable("businesses", {
   // Agency billing — Stripe subscription for this client (billed to the agency)
   stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
   agencyPackageTier: varchar("agencyPackageTier", { length: 50 }),
+  // Agency notification preference — if false, win emails are sent to the business only,
+  // not to the agency. Defaults to true (agency receives all win emails by default).
+  agencyWinEmailsEnabled: boolean("agencyWinEmailsEnabled").default(true).notNull(),
   // Source tracking
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

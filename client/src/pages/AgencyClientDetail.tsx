@@ -1,13 +1,16 @@
 import { useParams } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Loader2, ArrowLeft, Building2, Globe, MapPin, Phone,
-  Mail, TrendingUp, CheckCircle, Clock, AlertCircle
+  Mail, TrendingUp, CheckCircle, Clock, AlertCircle, Bell
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 
 export default function AgencyClientDetail() {
   const params = useParams<{ id: string }>();
@@ -15,7 +18,7 @@ export default function AgencyClientDetail() {
   const [, navigate] = useLocation();
 
   // Fetch the client's business record
-  const { data: clients, isLoading: clientsLoading } = trpc.agency.myClients.useQuery();
+  const { data: clients, isLoading: clientsLoading, refetch: refetchClients } = trpc.agency.myClients.useQuery();
   const client = clients?.find((c: any) => c.id === clientId) as any;
 
   // Fetch campaigns for this business (scoped to agency's clients only)
@@ -23,6 +26,19 @@ export default function AgencyClientDetail() {
     { businessId: clientId },
     { enabled: !!client && clientId > 0 }
   );
+
+  // Win email toggle mutation
+  const setWinEmailsMutation = trpc.agency.setClientWinEmails.useMutation({
+    onSuccess: (data) => {
+      refetchClients();
+      if (data.enabled) {
+        toast.success("Win emails enabled — you'll receive a copy of every win email for this client.");
+      } else {
+        toast.success("Win emails disabled — the client still receives their own emails.");
+      }
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const isLoading = clientsLoading || campaignsLoading;
 
@@ -45,6 +61,9 @@ export default function AgencyClientDetail() {
       </div>
     );
   }
+
+  // Default to true if field is null/undefined (existing clients before migration)
+  const winEmailsEnabled = client.agencyWinEmailsEnabled !== false;
 
   return (
     <div className="space-y-6">
@@ -132,6 +151,38 @@ export default function AgencyClientDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Notification Preferences */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            Notification Preferences
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor={`win-emails-${clientId}`} className="text-sm font-medium">
+                Win email notifications
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {winEmailsEnabled
+                  ? "You receive a copy of every win email sent to this client."
+                  : "Win emails go to the client only — you won't be CC'd."}
+              </p>
+            </div>
+            <Switch
+              id={`win-emails-${clientId}`}
+              checked={winEmailsEnabled}
+              disabled={setWinEmailsMutation.isPending}
+              onCheckedChange={(checked) =>
+                setWinEmailsMutation.mutate({ businessId: clientId, enabled: checked })
+              }
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Campaigns */}
       <div className="space-y-3">

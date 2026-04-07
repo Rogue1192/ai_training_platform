@@ -2634,6 +2634,26 @@ export const agencyRouter = router({
       });
       return { success: true };
     }),
+
+  // Toggle whether the agency receives win emails for a specific client.
+  // Defaults to true (agency gets all win emails). Set to false to silence them.
+  setClientWinEmails: protectedProcedure
+    .input(z.object({
+      businessId: z.number(),
+      enabled: z.boolean(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getBusinessById, updateBusiness } = await import('./db');
+      const business = await getBusinessById(input.businessId);
+      if (!business) throw new Error('Client not found');
+      if (ctx.user.role !== 'admin') {
+        const agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency || business.agencyId !== agency.id) throw new Error('Forbidden');
+      }
+      await updateBusiness(input.businessId, { agencyWinEmailsEnabled: input.enabled });
+      return { success: true, enabled: input.enabled };
+    }),
 });
 
 // Merge llmInsights into appRouter
