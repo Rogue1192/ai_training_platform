@@ -316,14 +316,17 @@ export async function searchLLMMentions(
 /**
  * Full keyword research pipeline for a new client:
  * 1. Get keywords from their website
- * 2. Check AI search volume for those keywords
- * 3. Merge and rank by AI volume
- * 4. Return the top N keywords (capped by package tier)
+ * 2. Filter to ONLY commercial and transactional intent — informational/navigational are useless for AI citation
+ * 3. Check AI search volume for those buyer-intent keywords
+ * 4. Sort by AI search volume desc and return up to maxKeywords
+ *
+ * NOTE: If fewer than maxKeywords commercial/transactional keywords exist, we return only what's available.
+ * We do NOT fall back to informational keywords — they are not relevant to purchase-intent AI queries.
  */
 export async function runKeywordResearchPipeline(
   domain: string,
   options: {
-    maxKeywords: number; // Cap from package tier
+    maxKeywords: number; // Cap from package tier (e.g. 5 or 10)
     locationCode?: number;
     languageCode?: string;
   }
@@ -332,32 +335,46 @@ export async function runKeywordResearchPipeline(
 
   console.log(`[DataForSEO] Starting keyword research pipeline for ${domain} (max: ${maxKeywords})`);
 
-  // Step 1: Get keywords from the website
+  // Step 1: Fetch a broad set of keywords from the site — we pull more than needed so filtering has room to work
   const siteKeywords = await getKeywordsForSite(domain, {
     locationCode,
     languageCode,
-    limit: Math.min(maxKeywords * 10, 500), // Get 10x more than needed so we can filter
+    limit: Math.min(maxKeywords * 20, 500), // Pull 20x so we have enough after filtering
   });
-
-  console.log(`[DataForSEO] Got ${siteKeywords.length} keywords from site`);
 
   if (siteKeywords.length === 0) {
     return { keywords: [], aiVolumes: [], topKeywords: [] };
   }
 
-  // Step 2: Check AI search volume for the top keywords
-  const keywordStrings = siteKeywords.map((k) => k.keyword);
+  // Step 2: Filter to ONLY commercial and transactional intent keywords
+  // Informational ("how does X work") and navigational ("X brand website") are irrelevant for
+  // AI citation campaigns — we only want buyer-intent queries like "best X near me" or "X service cost"
+  const buyerIntentKeywords = siteKeywords.filter(
+    (k) => k.searchIntent === "commercial" || k.searchIntent === "transactional"
+  );
+
+  console.log(
+    `[DataForSEO] Intent filter: ${buyerIntentKeywords.length} commercial/transactional out of ${siteKeywords.length} total keywords`
+  );
+
+  if (buyerIntentKeywords.length === 0) {
+    console.warn(`[DataForSEO] WARNING: No commercial/transactional keywords found for ${domain}. Returning empty.`);
+    return { keywords: siteKeywords, aiVolumes: [], topKeywords: [] };
+  }
+
+  // Step 3: Check AI search volume only for buyer-intent keywords (saves API credits)
+  const keywordStrings = buyerIntentKeywords.map((k) => k.keyword);
   const aiVolumes = await getAIKeywordSearchVolume(keywordStrings, {
     locationCode,
     languageCode,
   });
 
-  console.log(`[DataForSEO] Got AI search volume for ${aiVolumes.length} keywords`);
+  console.log(`[DataForSEO] Got AI search volume for ${aiVolumes.length} buyer-intent keywords`);
 
-  // Step 3: Merge and rank
+  // Step 4: Merge AI volume data back into buyer-intent keyword list
   const aiVolumeMap = new Map(aiVolumes.map((v) => [v.keyword.toLowerCase(), v]));
 
-  const merged = siteKeywords.map((k) => {
+  const merged = buyerIntentKeywords.map((k) => {
     const aiData = aiVolumeMap.get(k.keyword.toLowerCase());
     return {
       keyword: k.keyword,
@@ -367,18 +384,18 @@ export async function runKeywordResearchPipeline(
     };
   });
 
-  // Sort by AI search volume first, then regular search volume as tiebreaker
+  // Step 5: Sort by AI search volume desc, then regular search volume as tiebreaker
   merged.sort((a, b) => {
     if (b.aiSearchVolume !== a.aiSearchVolume) return b.aiSearchVolume - a.aiSearchVolume;
     return b.searchVolume - a.searchVolume;
   });
 
-  // Filter to only keywords with some AI volume, then cap
-  const withAIVolume = merged.filter((k) => k.aiSearchVolume > 0);
-  const topKeywords = (withAIVolume.length >= maxKeywords ? withAIVolume : merged).slice(0, maxKeywords);
+  // Step 6: Cap at maxKeywords — if fewer buyer-intent keywords exist, we use fewer (no informational fallback)
+  const topKeywords = merged.slice(0, maxKeywords);
 
   console.log(
-    `[DataForSEO] Pipeline complete: ${topKeywords.length} top keywords selected (${withAIVolume.length} had AI volume)`
+    `[DataForSEO] Pipeline complete: ${topKeywords.length} keywords selected ` +
+    `(${buyerIntentKeywords.length} commercial/transactional available, capped at ${maxKeywords})`
   );
 
   return {
@@ -430,24 +447,18 @@ export async function checkRankForQueries(
   const { languageCode = "en" } = options;
   const results = new Map<string, LLMMentionResult | null>();
 
-  console.log(`[DataForSEO] Checking rank for ${queries.length} query+location combos`);
-
-  // For now, we use LLM Mentions search per domain and match against our queries
-  // This is more cost-effective than individual LLM Response calls
-  const mentions = await searchLLMMentions(domain, {
-    languageCode,
-    limit: 500,
-  });
-
-  const mentionsByKeyword = new Map(
-    mentions.map((m) => [m.keyword.toLowerCase(), m])
-  );
-
-  for (const { query, location } of queries) {
-    const key = `${query}|||${location}`;
-    // Try exact match first, then partial match
-    const mention = mentionsByKeyword.get(query.toLowerCase()) || null;
-    results.set(key, mention);
+  for (const { query } of queries) {
+    try {
+      const mentions = await searchLLMMentions(domain, {
+        languageCode,
+        limit: 1,
+        targetType: "domain",
+      });
+      results.set(query, mentions[0] || null);
+    } catch (err) {
+      console.error(`[DataForSEO] Failed to check rank for query "${query}":`, err);
+      results.set(query, null);
+    }
   }
 
   return results;
