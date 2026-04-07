@@ -132,6 +132,9 @@ export const businesses = pgTable("businesses", {
   sitePasswordEncrypted: text("sitePasswordEncrypted"),
   // Client type determines the publishing workflow
   clientType: clientTypeEnum("clientType"),
+  // Agency billing — Stripe subscription for this client (billed to the agency)
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
+  agencyPackageTier: varchar("agencyPackageTier", { length: 50 }),
   // Source tracking
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

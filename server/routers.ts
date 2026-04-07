@@ -2135,7 +2135,7 @@ export const agencyRouter = router({
     return getAgencyByUserId(ctx.user.id);
   }),
 
-  // Admin: create a new agency
+  // Admin: create a new agency (also creates a Stripe customer)
   create: protectedProcedure
     .input(z.object({
       name: z.string().min(1),
@@ -2151,11 +2151,25 @@ export const agencyRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') throw new Error('Forbidden');
-      const { createAgency } = await import('./dbAgencies');
-      return createAgency({
+      const { createAgency, updateAgency } = await import('./dbAgencies');
+      // 1. Create the agency record
+      const agency = await createAgency({
         ...input,
         packageTier: input.packageTier ?? 'starter',
       });
+      // 2. Create Stripe customer (non-blocking — don't fail if Stripe not configured yet)
+      try {
+        const { createOrGetStripeCustomer } = await import('./stripeAgency');
+        const stripeCustomerId = await createOrGetStripeCustomer({
+          agencyId: agency.id,
+          name: input.name,
+          email: input.contactEmail,
+        });
+        return updateAgency(agency.id, { stripeCustomerId });
+      } catch (stripeErr) {
+        console.warn('[agency.create] Stripe customer creation skipped:', stripeErr);
+        return agency;
+      }
     }),
 
   // Admin: update an agency
@@ -2221,6 +2235,84 @@ export const agencyRouter = router({
       const db = await getDb();
       if (!db) return [];
       return db.select().from(businesses).where(eq(businesses.agencyId, input.agencyId));
+    }),
+
+  // Agency user or admin: add a client to an agency and create a Stripe subscription
+  addClient: protectedProcedure
+    .input(z.object({
+      agencyId: z.number(),
+      businessId: z.number(),
+      packageTier: z.enum(['starter', 'growth', 'pro']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyById, getAgencyByUserId } = await import('./dbAgencies');
+      const { updateBusiness } = await import('./db');
+      // Verify access
+      let agency;
+      if (ctx.user.role === 'admin') {
+        agency = await getAgencyById(input.agencyId);
+      } else {
+        agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency || agency.id !== input.agencyId) throw new Error('Forbidden');
+      }
+      if (!agency) throw new Error('Agency not found');
+      // Link the business to the agency with the selected tier
+      await updateBusiness(input.businessId, {
+        agencyId: input.agencyId,
+        agencyPackageTier: input.packageTier,
+      });
+      // Create Stripe subscription for this client (non-blocking)
+      try {
+        const { createClientSubscription } = await import('./stripeAgency');
+        const subscriptionId = await createClientSubscription({
+          agency,
+          businessId: input.businessId,
+          packageTier: input.packageTier,
+        });
+        if (subscriptionId) {
+          await updateBusiness(input.businessId, { stripeSubscriptionId: subscriptionId });
+        }
+      } catch (stripeErr) {
+        console.warn('[agency.addClient] Stripe subscription creation skipped:', stripeErr);
+      }
+      return { success: true };
+    }),
+
+  // Agency user or admin: remove a client from an agency (cancel subscription)
+  removeClient: protectedProcedure
+    .input(z.object({
+      agencyId: z.number(),
+      businessId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyById, getAgencyByUserId } = await import('./dbAgencies');
+      const { updateBusiness, getBusinessById } = await import('./db');
+      // Verify access
+      let agency;
+      if (ctx.user.role === 'admin') {
+        agency = await getAgencyById(input.agencyId);
+      } else {
+        agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency || agency.id !== input.agencyId) throw new Error('Forbidden');
+      }
+      if (!agency) throw new Error('Agency not found');
+      // Cancel Stripe subscription if one exists
+      try {
+        const biz = await getBusinessById(input.businessId);
+        if (biz?.stripeSubscriptionId) {
+          const { cancelClientSubscription } = await import('./stripeAgency');
+          await cancelClientSubscription({ subscriptionId: biz.stripeSubscriptionId });
+        }
+      } catch (stripeErr) {
+        console.warn('[agency.removeClient] Stripe cancellation skipped:', stripeErr);
+      }
+      // Unlink the business from the agency
+      await updateBusiness(input.businessId, {
+        agencyId: null,
+        agencyPackageTier: null,
+        stripeSubscriptionId: null,
+      });
+      return { success: true };
     }),
 
   // Agency user: get campaigns for a specific client business (must belong to their agency)
