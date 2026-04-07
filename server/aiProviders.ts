@@ -156,6 +156,8 @@ export const DEPRECATED_MODEL_MAP: Record<string, string> = {
   "claude-3-opus-20240229": "claude-opus-4-5-20251101",
   "claude-3-sonnet-20240229": "claude-sonnet-4-5-20250929",
   "claude-3-haiku-20240307": "claude-haiku-4-5-20251001",
+  "claude-3-5-sonnet-20241022": "claude-sonnet-4-5-20250929",
+  "claude-sonnet-4-20250514": "claude-sonnet-4-5-20250929",
   // OpenAI
   "gpt-4-turbo-preview": "gpt-4o",
   "gpt-4": "gpt-4o",

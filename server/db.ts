@@ -460,7 +460,7 @@ export async function getAllTodayMetrics(): Promise<{
 
 // ============= Prompt Template Operations =============
 
-export type PromptTemplateType = 'clean' | 'suggestive' | 'follow_up' | 'category_based';
+export type PromptTemplateType = 'clean' | 'suggestive' | 'follow_up' | 'category_based' | 'content_generation' | 'credibility_research' | 'injection_system' | 'injection_citation';
 
 /**
  * Get all prompt templates, optionally filtered by type.
