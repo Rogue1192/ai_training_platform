@@ -23,6 +23,8 @@ import {
   getActiveRunBySessionId,
   updateScheduledJobRun,
 } from "./db";
+import { getAgencyById } from "./dbAgencies";
+import { sendAgencyKeyErrorEmail } from "./agencyKeyErrorEmail";
 import {
   generateCleanPromptAsync,
   generateSuggestivePromptAsync,
@@ -103,6 +105,74 @@ function extractBusinessName(session: any, business: any): string {
 }
 
 /**
+ * Resolve the target AI API key for a training session.
+ * If the business belongs to an agency AND that agency has provided their own key
+ * for this provider, use the agency's key.
+ * Otherwise use the platform key.
+ * HARD STOP: if an agency key is expected but missing/invalid, throw — never fall back.
+ */
+async function resolveTargetApiKey(
+  session: any,
+  business: any | null,
+  provider: AIProvider
+): Promise<{ key: string; agencyId: number | null }> {
+  const agencyId: number | null = business?.agencyId ?? null;
+
+  if (agencyId) {
+    const agency = await getAgencyById(agencyId);
+    if (agency) {
+      const encryptedAgencyKey =
+        provider === 'openai' ? agency.agencyOpenAiKey :
+        provider === 'google'  ? agency.agencyGeminiKey :
+        null;
+
+      if (encryptedAgencyKey) {
+        // Agency has provided their own key — use it, no fallback
+        try {
+          const key = decrypt(encryptedAgencyKey);
+          return { key, agencyId };
+        } catch (err: any) {
+          // Decryption failed — notify agency and hard stop
+          await sendAgencyKeyErrorEmail({
+            agencyName: agency.name,
+            agencyEmail: agency.contactEmail,
+            provider: provider === 'openai' ? 'openai' : 'gemini',
+            businessName: business?.name ?? 'Unknown Client',
+            sessionId: session.id,
+            errorReason: 'API key could not be decrypted. Please re-enter your key in Agency Settings.',
+          }).catch(() => {});
+          throw new Error(
+            `Agency API key decryption failed for provider ${provider}. ` +
+            `Agency ${agency.name} has been notified to update their key in Settings.`
+          );
+        }
+      }
+
+      // Agency exists but has NOT provided a key for this provider — hard stop
+      await sendAgencyKeyErrorEmail({
+        agencyName: agency.name,
+        agencyEmail: agency.contactEmail,
+        provider: provider === 'openai' ? 'openai' : 'gemini',
+        businessName: business?.name ?? 'Unknown Client',
+        sessionId: session.id,
+        errorReason: `No ${provider === 'openai' ? 'OpenAI' : 'Gemini'} API key configured. Please add your key in Agency Settings.`,
+      }).catch(() => {});
+      throw new Error(
+        `Agency ${agency.name} has not configured a ${provider} API key. ` +
+        `Training stopped. Agency has been notified to add their key in Settings.`
+      );
+    }
+  }
+
+  // No agency — use platform key
+  const platformKeyRecord = await getApiKeyByProvider(provider);
+  if (!platformKeyRecord) {
+    throw new Error(`Platform API key for ${provider} not configured. Please add it in Settings.`);
+  }
+  return { key: decrypt(platformKeyRecord.encryptedKey), agencyId: null };
+}
+
+/**
  * Check if a response mentions the business name (unprompted detection)
  */
 function checkBusinessMention(response: string, businessName: string): { mentioned: boolean; confidence: number } {
@@ -154,15 +224,15 @@ async function executeBaselineTest(sessionId: number, userId: number): Promise<v
     description: session.topic,
   };
   
-  // Get API keys
-  const targetApiKeyRecord = await getApiKeyByProvider(session.targetAiProvider as AIProvider);
-  if (!targetApiKeyRecord) throw new Error("Target API key not configured. Please add it in Settings.");
-
-  let targetApiKey = "";
+  // Resolve API key — uses agency key if business belongs to an agency, else platform key
+  const { key: targetApiKey } = await resolveTargetApiKey(
+    session,
+    business,
+    session.targetAiProvider as AIProvider
+  );
+  let _targetApiKey = targetApiKey; // mutable ref for clearSensitiveData
 
   try {
-    targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
-
     // Use suggestive promptsm prompt and generate CLEAN version
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
     const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo);
@@ -264,14 +334,14 @@ async function executeTrainingIteration(
     description: session.topic,
   };
   
-  const targetApiKeyRecord = await getApiKeyByProvider(session.targetAiProvider as AIProvider);
-  if (!targetApiKeyRecord) throw new Error("Target API key not configured. Please add it in Settings.");
-
-  let targetApiKey = "";
+  // Resolve API key — uses agency key if business belongs to an agency, else platform key
+  const { key: targetApiKey } = await resolveTargetApiKey(
+    session,
+    business,
+    session.targetAiProvider as AIProvider
+  );
 
   try {
-    targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
-
     // Build suggestive prompt for training phase
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
     const { prompt: suggestivePrompt } = await generateSuggestivePromptAsync(basePrompt, businessInfo);
@@ -450,14 +520,14 @@ async function executeEvaluationTest(sessionId: number, userId: number): Promise
     location: business?.location,
     description: session.topic,
   };
-  const targetApiKeyRecord = await getApiKeyByProvider(session.targetAiProvider as AIProvider);
-  if (!targetApiKeyRecord) throw new Error("Target API key not configured. Please add it in Settings.");
+  // Resolve API key — uses agency key if business belongs to an agency, else platform key
+  const { key: targetApiKey } = await resolveTargetApiKey(
+    session,
+    business,
+    session.targetAiProvider as AIProvider
+  );
 
-  let targetApiKey = "";
-  
   try {
-    targetApiKey = decrypt(targetApiKeyRecord.encryptedKey);
-
     // Build clean promptsandom prompt and generate CLEAN version (same as baseline)
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
     const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo);

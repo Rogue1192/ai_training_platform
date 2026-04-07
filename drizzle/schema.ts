@@ -78,6 +78,10 @@ export const agencies = pgTable("agencies", {
   // Client intake form — permanent reusable token for the branded intake URL
   // URL: /intake/{intakeToken} — shared with clients to self-onboard
   intakeToken: varchar("intakeToken", { length: 64 }).unique(),
+  // Agency-provided API keys for training queries (agency absorbs OpenAI + Gemini costs)
+  // Stored encrypted; pipeline falls back to platform keys if not set
+  agencyOpenAiKey: text("agencyOpenAiKey"),
+  agencyGeminiKey: text("agencyGeminiKey"),
   // Status
   isActive: boolean("isActive").default(true).notNull(),
   notes: text("notes"),

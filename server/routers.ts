@@ -2186,19 +2186,26 @@ export const agencyRouter = router({
       brandFromName: z.string().optional(),
       notes: z.string().optional(),
       isActive: z.boolean().optional(),
+      // Agency-provided API keys for training queries (agency absorbs OpenAI + Gemini costs)
+      agencyOpenAiKey: z.string().optional().nullable(),
+      agencyGeminiKey: z.string().optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { getAgencyByUserId, updateAgency } = await import('./dbAgencies');
+      const { encrypt } = await import('./encryption');
       const { id, ...updates } = input;
+      // Encrypt API keys before storing
+      const processedUpdates: any = { ...updates };
+      if (updates.agencyOpenAiKey) processedUpdates.agencyOpenAiKey = encrypt(updates.agencyOpenAiKey);
+      if (updates.agencyGeminiKey) processedUpdates.agencyGeminiKey = encrypt(updates.agencyGeminiKey);
       if (ctx.user.role === 'admin') {
-        // Admin can update any field on any agency
-        return updateAgency(id, updates);
+        return updateAgency(id, processedUpdates);
       }
-      // Agency user can only update their own agency's branding fields
+      // Agency user can update their own branding + API keys
       const myAgency = await getAgencyByUserId(ctx.user.id);
       if (!myAgency || myAgency.id !== id) throw new Error('Forbidden');
-      const { brandName, brandLogoUrl, brandFromName } = updates;
-      return updateAgency(id, { brandName, brandLogoUrl, brandFromName });
+      const { brandName, brandLogoUrl, brandFromName, agencyOpenAiKey, agencyGeminiKey } = processedUpdates;
+      return updateAgency(id, { brandName, brandLogoUrl, brandFromName, agencyOpenAiKey, agencyGeminiKey });
     }),
 
   // Admin: delete an agency
