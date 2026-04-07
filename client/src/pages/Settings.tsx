@@ -126,8 +126,11 @@ export default function Settings() {
   const whitelabelKey = serviceKeys?.find((k) => k.service === "whitelabel");
   const savedWebhookUrl: string = (whitelabelKey?.metadata as any)?.credibilityWebhookUrl || "";
   const savedWebhookSecret: string = (whitelabelKey?.metadata as any)?.credibilityWebhookSecret || "";
+  const savedInboundSecret: string = (whitelabelKey?.metadata as any)?.inboundWebhookSecret || "";
   const [webhookUrlInput, setWebhookUrlInput] = useState("");
   const [webhookSecretInput, setWebhookSecretInput] = useState("");
+  const [inboundSecretInput, setInboundSecretInput] = useState("");
+  const [showInboundSecret, setShowInboundSecret] = useState(false);
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [showWebhookSecret, setShowWebhookSecret] = useState(false);
 
@@ -162,6 +165,21 @@ export default function Settings() {
       toast.success("Webhook signing secret saved");
     } catch (err: any) {
       toast.error(err.message || "Failed to save webhook secret");
+    }
+  };
+
+  const handleSaveInboundSecret = async () => {
+    const secret = inboundSecretInput.trim();
+    if (!secret) { toast.error("Please enter an inbound webhook secret"); return; }
+    try {
+      const existing = (whitelabelKey?.metadata as Record<string, string>) || {};
+      const merged = { ...existing, inboundWebhookSecret: secret };
+      await saveServiceKey.mutateAsync({ service: "whitelabel", value: JSON.stringify(merged) });
+      await refetchServiceKeys();
+      setInboundSecretInput("");
+      toast.success("Inbound webhook secret saved");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save inbound webhook secret");
     }
   };
 
@@ -627,6 +645,57 @@ export default function Settings() {
                   {savedWebhookSecret ? "Update" : "Save"}
                 </Button>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Inbound Webhook Security */}
+      <div>
+        <h2 className="text-xl font-semibold text-foreground mb-1">Inbound Webhook Security</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Protect the <code className="bg-muted px-1 rounded">/api/webhooks/onboarding</code> endpoint from unauthorized requests.
+          When set, every inbound webhook call must include this secret in the <code className="bg-muted px-1 rounded">x-webhook-secret</code> header.
+        </p>
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Key className="w-6 h-6 text-primary" />
+              <div>
+                <CardTitle className="text-base">Inbound Webhook Secret</CardTitle>
+                <CardDescription>Set this in your GHL workflow as the <code>x-webhook-secret</code> header value</CardDescription>
+              </div>
+              {savedInboundSecret && (
+                <span className="ml-auto flex items-center gap-1 text-xs text-green-500 font-medium">
+                  <Check className="w-3 h-3" /> Configured
+                </span>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground mb-3">
+              If no secret is configured here and <code className="bg-muted px-1 rounded">WEBHOOK_SECRET</code> is not set as a Railway env var,
+              the endpoint is open (development mode). Set a secret here to lock it down without touching Railway.
+            </p>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  type={showInboundSecret ? "text" : "password"}
+                  placeholder={savedInboundSecret ? "Secret already configured — enter new value to update" : "Enter a strong random secret"}
+                  value={inboundSecretInput}
+                  onChange={(e) => setInboundSecretInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowInboundSecret(!showInboundSecret)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showInboundSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Button onClick={handleSaveInboundSecret} variant="outline">
+                {savedInboundSecret ? "Update" : "Save"}
+              </Button>
             </div>
           </CardContent>
         </Card>

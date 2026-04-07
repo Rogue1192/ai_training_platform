@@ -776,6 +776,14 @@ export function startScheduler(): void {
     checkPendingTrainingKickoffs().catch((err: Error) => console.error("[Scheduler] Training kickoff check failed:", err));
   }, 6 * 60 * 60 * 1000);
 
+  // Advance training cycles every hour:
+  // - Fires 24h LLM polls after each run, advances to next run, detects wins
+  // - Handles weekly monitoring polls and recovery runs
+  checkTrainingCycleAdvances().catch((err: Error) => console.error("[Scheduler] Training cycle advance failed:", err));
+  setInterval(() => {
+    checkTrainingCycleAdvances().catch((err: Error) => console.error("[Scheduler] Training cycle advance failed:", err));
+  }, 60 * 60 * 1000); // every hour
+
   console.log("[Scheduler] Scheduler started successfully");
 }
 
@@ -828,6 +836,68 @@ export async function checkPendingTrainingKickoffs(): Promise<void> {
     }
   } catch (err: any) {
     console.error('[Scheduler] checkPendingTrainingKickoffs error:', err.message);
+  }
+}
+
+/**
+ * Advance training cycles for all active campaigns.
+ * Runs every hour. Processes any combos whose nextPollAt has elapsed:
+ *   - Initial phase: runs LLM poll, detects wins, fires next run (up to 4)
+ *   - Monitoring phase: weekly LLM poll, fires recovery run if dropped out
+ */
+async function checkTrainingCycleAdvances(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    const { advanceCampaignCycle } = await import('./trainingCycleOrchestrator');
+    const { campaignQueryLocations: cqlTable } = await import('../drizzle/schema');
+    const { lte: lteOp, or: orOp, eq: eqOp } = await import('drizzle-orm');
+
+    // Get admin user for system-triggered sessions
+    const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
+    const systemUserId = adminUsers[0]?.id ?? 0;
+
+    const now = new Date();
+
+    // Find distinct campaignIds that have combos with a due poll
+    const dueCombos = await db
+      .selectDistinct({ campaignId: cqlTable.campaignId })
+      .from(cqlTable)
+      .where(
+        and(
+          lteOp(cqlTable.nextPollAt, now),
+          orOp(
+            eqOp(cqlTable.trainingStatus, 'training'),
+            eqOp(cqlTable.trainingStatus, 'monitoring'),
+            eqOp(cqlTable.trainingStatus, 'recovering'),
+          ),
+        ),
+      );
+
+    if (dueCombos.length === 0) return;
+
+    console.log(`[Scheduler] Advancing training cycles for ${dueCombos.length} campaign(s)`);
+
+    for (const { campaignId } of dueCombos) {
+      try {
+        const result = await advanceCampaignCycle(campaignId, systemUserId);
+        if (result.combosPolled > 0 || result.runsStarted > 0) {
+          console.log(
+            `[Scheduler] Campaign ${campaignId}: polled=${result.combosPolled}, wins=${result.newWins}, ` +
+            `runsStarted=${result.runsStarted}, enteredMonitoring=${result.combosEnteredMonitoring}, ` +
+            `recoveryRuns=${result.recoveryRunsStarted}`
+          );
+        }
+        if (result.errors.length > 0) {
+          console.warn(`[Scheduler] Campaign ${campaignId} cycle errors:`, result.errors);
+        }
+      } catch (err: any) {
+        console.error(`[Scheduler] Cycle advance failed for campaign ${campaignId}:`, err.message);
+      }
+    }
+  } catch (err: any) {
+    console.error('[Scheduler] checkTrainingCycleAdvances error:', err.message);
   }
 }
 

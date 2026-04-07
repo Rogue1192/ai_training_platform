@@ -88,7 +88,6 @@ export interface LLMMentionResult {
     };
   };
   relatedQueries: string[];
-  competitorMentions: string[];
 }
 
 export interface KeywordResearchResult {
@@ -284,16 +283,6 @@ export async function searchLLMMentions(
       }
     }
 
-    // Extract competitor mentions from the same responses
-    const competitorMentions: Set<string> = new Set();
-    if (item.brands_mentioned) {
-      for (const brand of item.brands_mentioned) {
-        if (brand.name && brand.name.toLowerCase() !== target.toLowerCase()) {
-          competitorMentions.add(brand.name);
-        }
-      }
-    }
-
     return {
       keyword: item.keyword || "",
       aiSearchVolume: item.ai_search_volume || 0,
@@ -306,7 +295,6 @@ export async function searchLLMMentions(
         : null,
       llmResponses,
       relatedQueries: item.related_queries?.map((q: any) => q.keyword || q).filter(Boolean) || [],
-      competitorMentions: Array.from(competitorMentions),
     };
   });
 }

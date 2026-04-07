@@ -370,13 +370,53 @@ export function parseTrainingPrompts(prompts: unknown): string[] {
 }
 
 /**
- * Select a random prompt from the training prompts array.
- * Uses parseTrainingPrompts to safely handle double-encoded JSON.
+ * Select a prompt for a given iteration using a shuffled-cycle strategy.
+ *
+ * Instead of pure random selection (which can repeat prompts and skip others),
+ * this divides the iteration space into full cycles through the prompt pool.
+ * Within each cycle the prompts are deterministically shuffled using the cycle
+ * number as a seed, so the order varies between cycles but every prompt is
+ * used exactly once before any is repeated.
+ *
+ * Example: 8 prompts, 50 iterations
+ *   Cycle 1 (iter 1-8):  shuffled order A of all 8 prompts
+ *   Cycle 2 (iter 9-16): shuffled order B of all 8 prompts
+ *   ...and so on
+ *
+ * Falls back to pure random when iterationNumber is not provided (legacy callers).
+ *
+ * @param prompts          Raw trainingPrompts value from the DB session
+ * @param iterationNumber  1-based iteration index (optional; omit for random)
  */
-export function selectRandomPrompt(prompts: unknown): string {
+export function selectRandomPrompt(prompts: unknown, iterationNumber?: number): string {
   const parsed = parseTrainingPrompts(prompts);
   if (parsed.length === 0) {
     throw new Error('No prompts available');
   }
-  return parsed[Math.floor(Math.random() * parsed.length)];
+  if (parsed.length === 1) return parsed[0];
+
+  // Legacy / baseline callers that don't pass iterationNumber get pure random
+  if (iterationNumber === undefined || iterationNumber === null) {
+    return parsed[Math.floor(Math.random() * parsed.length)];
+  }
+
+  const n = parsed.length;
+  const idx = Math.max(0, iterationNumber - 1); // convert to 0-based
+  const positionInCycle = idx % n;
+  const cycleNumber = Math.floor(idx / n);
+
+  // Deterministic Fisher-Yates shuffle seeded by cycleNumber
+  // Uses a simple LCG so the shuffle is consistent within a cycle
+  const shuffled = [...parsed];
+  let seed = (cycleNumber * 1000003 + n * 7) >>> 0;
+  const rand = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 0x100000000;
+  };
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  return shuffled[positionInCycle];
 }

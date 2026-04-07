@@ -17,7 +17,7 @@ import {
   updateContentPage,
   getCampaignsByBusinessId,
 } from "./dbCampaigns";
-import { getDb } from "./db";
+import { getDb, getServiceKey } from "./db";
 import { businesses, users } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 
@@ -41,9 +41,6 @@ const onboardingPayloadSchema = z.object({
 
   // Client type for the campaign
   clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).default("ai_only"),
-
-  // Optional: competitor tracking
-  competitors: z.array(z.string()).optional(),
 
   // Optional: WordPress credentials for auto-publishing
   siteAdminUrl: z.string().optional(),
@@ -82,14 +79,32 @@ export type OnboardingPayload = z.infer<typeof onboardingPayloadSchema>;
 // ============= Webhook Authentication =============
 
 /**
- * Verify webhook secret if configured.
- * Checks x-webhook-secret header against WEBHOOK_SECRET env var.
- * If WEBHOOK_SECRET is not set, authentication is skipped (open mode).
+ * Verify inbound webhook secret.
+ * Priority order:
+ *   1. DB-stored inbound secret (serviceKeys, service='whitelabel', metadata.inboundWebhookSecret)
+ *   2. WEBHOOK_SECRET environment variable (Railway fallback)
+ * If neither is configured, authentication is skipped (open/dev mode).
+ * Uses timing-safe comparison to prevent timing attacks.
  */
-function verifyWebhookAuth(req: Request): { valid: boolean; error?: string } {
-  const configuredSecret = process.env.WEBHOOK_SECRET;
+async function verifyWebhookAuth(req: Request): Promise<{ valid: boolean; error?: string }> {
+  // 1. Try DB-stored inbound secret first (stored as JSON inside encryptedValue)
+  let configuredSecret: string | undefined;
+  try {
+    const wlKey = await getServiceKey("whitelabel");
+    if (wlKey?.encryptedValue) {
+      const { decrypt } = await import("./encryption");
+      const parsed = JSON.parse(decrypt(wlKey.encryptedValue)) as Record<string, string>;
+      configuredSecret = parsed.inboundWebhookSecret || undefined;
+    }
+  } catch {
+    // DB unavailable or decrypt failed — fall through to env var
+  }
+  // 2. Fall back to WEBHOOK_SECRET env var
   if (!configuredSecret) {
-    // No secret configured — open mode (acceptable for development)
+    configuredSecret = process.env.WEBHOOK_SECRET;
+  }
+  if (!configuredSecret) {
+    // No secret configured anywhere — open mode (acceptable for development)
     return { valid: true };
   }
 
@@ -101,7 +116,7 @@ function verifyWebhookAuth(req: Request): { valid: boolean; error?: string } {
     return { valid: false, error: "Missing webhook secret. Provide x-webhook-secret header or webhookSecret in body." };
   }
 
-  // BUG-007 fix: use timing-safe comparison to prevent timing attacks
+  // Timing-safe comparison to prevent timing attacks
   const provided = Buffer.from(providedSecret);
   const expected = Buffer.from(configuredSecret);
   const isValid =
@@ -148,8 +163,8 @@ export function createWebhookRouter(): Router {
     }
 
     try {
-      // ISSUE-008 FIX: Verify webhook authentication
-      const authResult = verifyWebhookAuth(req);
+      // ISSUE-008 FIX: Verify webhook authentication (async — checks DB then env var)
+      const authResult = await verifyWebhookAuth(req);
       if (!authResult.valid) {
         await updateWebhookLog(webhookLog.id, {
           status: "failed",
@@ -231,7 +246,6 @@ export function createWebhookRouter(): Router {
         };
         if (payload.contactName) updateFields.contactName = payload.contactName;
         if (payload.contactPhone) updateFields.phone = payload.contactPhone;
-        if (payload.competitors) updateFields.competitors = payload.competitors;
         if (payload.yearsFounded) updateFields.yearsInBusiness = payload.yearsFounded;
         if (payload.certifications) updateFields.certifications = payload.certifications.join(", ");
         if (payload.awards) updateFields.awards = payload.awards.join(", ");
@@ -263,7 +277,6 @@ export function createWebhookRouter(): Router {
             location: payload.locations.join(", "),
             description: null,
             clientType: payload.clientType,
-            competitors: payload.competitors || null,
             yearsInBusiness: payload.yearsFounded || null,
             certifications: payload.certifications?.join(", ") || null,
             awards: payload.awards?.join(", ") || null,
@@ -441,8 +454,8 @@ export function createWebhookRouter(): Router {
     }
 
     try {
-      // Verify webhook auth
-      const authResult = verifyWebhookAuth(req);
+      // Verify webhook auth (async — checks DB then env var)
+      const authResult = await verifyWebhookAuth(req);
       if (!authResult.valid) {
         await updateWebhookLog(webhookLog.id, {
           status: "failed",
@@ -451,7 +464,6 @@ export function createWebhookRouter(): Router {
         res.status(401).json({ error: authResult.error });
         return;
       }
-
       await updateWebhookLog(webhookLog.id, { status: "processing" });
 
       const { campaignId, publishedUrls, llmTxtUrl, schemaMarkup } = req.body;
@@ -558,8 +570,8 @@ export function createWebhookRouter(): Router {
   // Body: { campaignId: number, ghlContactId?: string, reason?: string }
   router.post("/api/ghl/cancel-trial", async (req: Request, res: Response) => {
     try {
-      // Verify webhook auth
-      const authResult = verifyWebhookAuth(req);
+      // Verify webhook auth (async — checks DB then env var)
+      const authResult = await verifyWebhookAuth(req);
       if (!authResult.valid) {
         res.status(401).json({ error: authResult.error });
         return;

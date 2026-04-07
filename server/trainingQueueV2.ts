@@ -342,8 +342,10 @@ async function executeTrainingIteration(
   );
 
   try {
-    // Build suggestive prompt for training phase
-    const basePrompt = selectRandomPrompt(session.trainingPrompts);
+    // Build suggestive prompt for training phase.
+    // Pass iterationNumber so the shuffled-cycle strategy cycles through ALL
+    // prompt variations evenly instead of picking randomly (which can repeat).
+    const basePrompt = selectRandomPrompt(session.trainingPrompts, iterationNumber);
     const { prompt: suggestivePrompt } = await generateSuggestivePromptAsync(basePrompt, businessInfo);
     
     console.log(`[Training V2] Training suggestive prompt: "${suggestivePrompt.substring(0, 100)}..."`);

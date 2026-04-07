@@ -8,7 +8,6 @@
  * - Historical trend analysis with comparison periods
  * - Win detection (new mentions, position improvements)
  * - Per-platform breakdown (ChatGPT, Gemini, AI Overview)
- * - Competitor tracking
  */
 
 import { getDb } from "./db";
@@ -95,8 +94,6 @@ export interface CampaignRankReport {
   queryDetails: QueryRankDetail[];
   // Wins
   recentWins: WinDetection[];
-  // Competitors
-  topCompetitors: { name: string; mentionCount: number }[];
   // Metadata
   lastCheckAt: string | null;
   baselineCheckAt: string | null;
@@ -657,14 +654,6 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
     }
   }
 
-  // Get competitor data from latest mentions
-  const competitorMap = new Map<string, number>();
-  for (const snap of currentSnaps) {
-    const sources = (snap.sourcesCited as string[] | null) || [];
-    // We'd need to parse competitor names from the mentions data
-    // For now, we track based on stored data
-  }
-
   // Count total checks
   const allSnapshotCount = await db.select({ count: sql<number>`count(*)` })
     .from(rankSnapshots)
@@ -680,10 +669,6 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
     trends,
     queryDetails,
     recentWins,
-    topCompetitors: Array.from(competitorMap.entries())
-      .map(([name, count]) => ({ name, mentionCount: count }))
-      .sort((a, b) => b.mentionCount - a.mentionCount)
-      .slice(0, 10),
     lastCheckAt: currentSnaps.length > 0
       ? currentSnaps.reduce((latest, s) => s.checkedAt > latest ? s.checkedAt : latest, currentSnaps[0].checkedAt).toISOString()
       : null,

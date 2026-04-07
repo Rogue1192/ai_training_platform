@@ -253,10 +253,17 @@ export async function runPipelineStep(
             await publishLlmTxt({ campaignId, businessId: campaign.businessId });
           }
           
+          // Publishing is best-effort: even if Playwright fails to publish some
+          // or all pages, the pipeline MUST continue to indexing and training.
+          // Failed pages are stored in the DB with publishError set so an admin
+          // can manually publish them via the Businesses page credentials.
+          const publishMessage = pubResult.published > 0
+            ? `WordPress publishing: ${pubResult.published}/${pubResult.totalPages} pages published, ${pubResult.failed} failed.`
+            : `WordPress publishing failed for all ${pubResult.totalPages} pages — manual publishing required. Check the Businesses page for site credentials. Pipeline continuing to indexing.`;
           result = {
             step,
-            success: pubResult.published > 0,
-            message: `WordPress publishing: ${pubResult.published}/${pubResult.totalPages} pages published, ${pubResult.failed} failed.`,
+            success: true, // Always true — pipeline continues regardless of publish outcome
+            message: publishMessage,
             data: pubResult,
             nextStep: "indexing",
           };
@@ -318,79 +325,94 @@ export async function runPipelineStep(
         } catch (e: any) {
           console.log(`[Pipeline] Smart scheduler mode change skipped: ${e.message}`);
         }
-        
-        // Auto-create a training session for this business if none exists
-        // No userId filter — sessions are team-wide, any employee can see/continue them
-        const { trainingSessions: tsTable } = await import("../drizzle/schema");
-        const existingSessions = await db.select().from(tsTable)
-          .where(eq(tsTable.businessId, campaign.businessId))
-          .limit(1);
-        
-        let trainingMessage = "Campaign ready for training.";
-        
-        if (existingSessions.length === 0) {
-          // Build training prompts from discovered keyword research queries
-          const { buildTrainingPromptPool } = await import("./queryPromptExpander");
-          const { getQueryLocationsByCampaignId } = await import("./dbCampaigns");
-          let trainingPrompts: string[] = [];
-          try {
-            const queryLocations = await getQueryLocationsByCampaignId(campaignId);
-            const uniqueQueries = Array.from(new Set(queryLocations.map(ql => ql.searchQuery).filter(Boolean))) as string[];
-            if (uniqueQueries.length > 0) {
-              trainingPrompts = buildTrainingPromptPool(
-                uniqueQueries,
-                business.name,
-                business.businessType || "service provider",
-                business.location || "the area"
-              );
-              console.log(`[Pipeline] Built ${trainingPrompts.length} training prompts from ${uniqueQueries.length} discovered queries`);
-            }
-          } catch (e: any) {
-            console.warn(`[Pipeline] Could not build prompts from queries: ${e.message}`);
+
+        // ── Create one training session per keyword × location × AI model ──────────
+        // Each session has exactly 8 prompt variations for that specific query+location.
+        // This keeps context windows tight and token costs low vs. one giant pooled session.
+        const { trainingSessions: tsTable, campaignQueryLocations: cqlTable } = await import("../drizzle/schema");
+        const { expandQueryToPrompts } = await import("./queryPromptExpander");
+        const { createTrainingSession } = await import("./db");
+
+        // Fetch all query-location combos for this campaign
+        const queryLocations = await db.select().from(cqlTable)
+          .where(eq(cqlTable.campaignId, campaignId));
+
+        // Check which combos already have sessions to avoid duplicates on re-runs
+        const existingSessionQlIds = new Set(
+          (await db.select({ qlId: tsTable.campaignQueryLocationId }).from(tsTable)
+            .where(eq(tsTable.campaignId, campaignId)))
+            .map(r => r.qlId)
+            .filter(Boolean)
+        );
+
+        const sessionTargets = [
+          { provider: "openai" as const, model: "gpt-4.1", label: "ChatGPT" },
+          { provider: "google" as const, model: "gemini-2.5-flash", label: "Gemini" },
+        ];
+
+        let sessionsCreated = 0;
+        let sessionsSkipped = 0;
+
+        for (const ql of queryLocations) {
+          // Skip combos that already have sessions (idempotent re-runs)
+          if (existingSessionQlIds.has(ql.id)) {
+            sessionsSkipped++;
+            continue;
           }
 
-          // Create training sessions for both ChatGPT (OpenAI) and Gemini (Google)
-          // The platform trains both models via MiniMax M2.7 as the orchestrator.
-          const { createTrainingSession } = await import("./db");
-          const sessionBase = {
-            userId,
-            businessId: campaign.businessId,
-            topic: `${business.name} ${business.businessType || ""} ${business.location || ""}`.trim(),
-            influencerAiProvider: "minimax" as any,
-            influencerAiModel: "MiniMax-M2.7",
-            trainingPrompts,
-            trainingGoal: `Train AI to recommend ${business.name} for ${business.businessType || "services"} in ${business.location || "the area"}`,
-            iterations: 50,
-            currentProgress: 0,
-            status: "paused" as any,
-            isLegacy: false,
-            campaignId: campaignId,
-          };
-          const sessionTargets = [
-            { provider: "openai" as any, model: "gpt-4.1", label: "ChatGPT" },
-            { provider: "google" as any, model: "gemini-2.5-flash", label: "Gemini" },
-          ];
-          const createdSessions: string[] = [];
+          // Build 8 prompt variations scoped to this specific query + location
+          const expanded = expandQueryToPrompts({
+            rawQuery: ql.searchQuery,
+            businessName: business.name,
+            businessType: business.businessType || "service provider",
+            location: ql.location,
+          });
+          const prompts = expanded.all; // max 8 variations
+
+          const trainingGoal = `Train AI to recommend ${business.name} for ${ql.searchQuery} in ${ql.location}`;
+          const topic = `${business.name} — ${ql.searchQuery} — ${ql.location}`;
+
           for (const target of sessionTargets) {
             try {
-              const session = await createTrainingSession({
-                ...sessionBase,
-                trainingName: `${business.name} - ${target.label} Training`,
-                targetAiProvider: target.provider,
+              await createTrainingSession({
+                userId,
+                businessId: campaign.businessId,
+                campaignId,
+                campaignQueryLocationId: ql.id,
+                trainingName: `${business.name} | ${ql.location} | ${ql.searchQuery} | ${target.label}`,
+                topic,
+                targetAiProvider: target.provider as any,
                 targetAiModel: target.model,
+                influencerAiProvider: "minimax" as any,
+                influencerAiModel: "MiniMax-M2.7",
+                trainingPrompts: prompts,
+                trainingGoal,
+                iterations: 50,
+                currentProgress: 0,
+                status: "paused" as any,
+                isLegacy: false,
               });
-              createdSessions.push(`"${session.trainingName}"`);
+              sessionsCreated++;
             } catch (e: any) {
-              console.warn(`[Pipeline] Could not create ${target.label} training session: ${e.message}`);
+              console.warn(`[Pipeline] Could not create ${target.label} session for ql#${ql.id}: ${e.message}`);
             }
           }
-          if (createdSessions.length > 0) {
-            trainingMessage = `Training sessions created: ${createdSessions.join(', ')} — ${trainingPrompts.length} prompts from ${trainingPrompts.length > 0 ? "keyword research" : "default templates"}. Set to aggressive mode. Start training from the Training page when ready.`;
-          } else {
-            trainingMessage = `Campaign ready for training (aggressive mode). Could not auto-create sessions. Create them manually from the Training page.`;
-          }
+
+          // Mark this combo as ready for its first training run
+          await db.update(cqlTable).set({
+            trainingStatus: "training",
+            updatedAt: new Date(),
+          }).where(eq(cqlTable.id, ql.id));
+        }
+
+        const totalCombos = queryLocations.length;
+        let trainingMessage: string;
+        if (sessionsCreated > 0) {
+          trainingMessage = `Created ${sessionsCreated} training sessions across ${totalCombos} keyword×location combos (2 models each). ${sessionsSkipped > 0 ? `${sessionsSkipped} combos already had sessions and were skipped.` : ""} Training cycle will start automatically — Run 1 fires immediately, then 24h LLM polls between runs 2–4.`;
+        } else if (sessionsSkipped === totalCombos * 2) {
+          trainingMessage = `All ${totalCombos} keyword×location combos already have training sessions. Training cycle continuing.`;
         } else {
-          trainingMessage = `Campaign ready for training (aggressive mode). Existing training session found for this business.`;
+          trainingMessage = `Campaign ready for training (aggressive mode). Could not auto-create sessions — create them manually from the Training page.`;
         }
         
         // Update campaign status

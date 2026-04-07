@@ -119,7 +119,6 @@ export const businesses = pgTable("businesses", {
   licenses: text("licenses"),
   warranties: text("warranties"),
   differentiators: text("differentiators"),
-  competitors: json("competitors"), // string[]
   // Social profiles — discovered during credibility research, included in schema.org sameAs
   facebookUrl: varchar("facebookUrl", { length: 500 }),
   instagramUrl: varchar("instagramUrl", { length: 500 }),
@@ -434,8 +433,16 @@ export const campaignQueryLocations = pgTable("campaignQueryLocations", {
   lastRankCheckAt: timestamp("lastRankCheckAt"),
   firstMentionedAt: timestamp("firstMentionedAt"), // When the client first appeared for this combo
   // Training status for this specific combo
-  trainingStatus: varchar("trainingStatus", { length: 20 }).default("pending").notNull(), // 'pending' | 'training' | 'achieved' | 'monitoring' | 'recovering'
-  trainingSessions: integer("trainingSessions").default(0).notNull(), // Count of sessions run for this combo
+  // trainingStatus: 'pending' | 'before_capture' | 'training' | 'achieved' | 'monitoring' | 'recovering'
+  trainingStatus: varchar("trainingStatus", { length: 20 }).default("pending").notNull(),
+  trainingSessions: integer("trainingSessions").default(0).notNull(), // Count of full 50-iteration runs completed
+  // Cycle orchestration — drives the 4-run initial cycle and weekly monitoring
+  trainingRunCount: integer("trainingRunCount").default(0).notNull(),       // Full runs fired so far (max 4 in initial phase)
+  lastRunCompletedAt: timestamp("lastRunCompletedAt"),                       // When the last 50-iteration run finished
+  nextPollAt: timestamp("nextPollAt"),                                        // When to next run the LLM poll (24h after run, or weekly in monitoring)
+  monitoringStartedAt: timestamp("monitoringStartedAt"),                     // When combo entered weekly monitoring state
+  lastMonitoringPollAt: timestamp("lastMonitoringPollAt"),                   // Last weekly monitoring poll timestamp
+  beforeVideoCapturedAt: timestamp("beforeVideoCapturedAt"),                 // Set once when before video is captured at campaign start
   // Before/after scan video URLs (uploaded to Supabase Storage)
   beforeVideoChatgpt: text("beforeVideoChatgpt"),    // "Before" recording on ChatGPT
   beforeVideoGoogleAi: text("beforeVideoGoogleAi"),  // "Before" recording on Google AI
