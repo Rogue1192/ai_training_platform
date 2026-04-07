@@ -349,29 +349,45 @@ export async function runPipelineStep(
             console.warn(`[Pipeline] Could not build prompts from queries: ${e.message}`);
           }
 
-          // Create a default training session for this business
+          // Create training sessions for both ChatGPT (OpenAI) and Gemini (Google)
+          // The platform trains both models via MiniMax M2.7 as the orchestrator.
           const { createTrainingSession } = await import("./db");
-          try {
-            const session = await createTrainingSession({
-              userId,
-              businessId: campaign.businessId,
-              trainingName: `${business.name} - AI Visibility Training`,
-              topic: `${business.name} ${business.businessType || ""} ${business.location || ""}`.trim(),
-              targetAiProvider: "openai" as any,
-              targetAiModel: "gpt-4.1",
-              influencerAiProvider: "minimax" as any,
-              influencerAiModel: "MiniMax-M2.7",
-              trainingPrompts,
-              trainingGoal: `Train AI to recommend ${business.name} for ${business.businessType || "services"} in ${business.location || "the area"}`,
-              iterations: 50,
-              currentProgress: 0,
-              status: "paused" as any,
-              isLegacy: false,
-              campaignId: campaignId,
-            });
-            trainingMessage = `Training session created: "${session.trainingName}" with ${trainingPrompts.length} prompts from ${trainingPrompts.length > 0 ? "keyword research" : "default templates"}. Set to aggressive mode. Start training from the Training page when ready.`;
-          } catch (e: any) {
-            trainingMessage = `Campaign ready for training (aggressive mode). Could not auto-create session: ${e.message}. Create one manually from the Training page.`;
+          const sessionBase = {
+            userId,
+            businessId: campaign.businessId,
+            topic: `${business.name} ${business.businessType || ""} ${business.location || ""}`.trim(),
+            influencerAiProvider: "minimax" as any,
+            influencerAiModel: "MiniMax-M2.7",
+            trainingPrompts,
+            trainingGoal: `Train AI to recommend ${business.name} for ${business.businessType || "services"} in ${business.location || "the area"}`,
+            iterations: 50,
+            currentProgress: 0,
+            status: "paused" as any,
+            isLegacy: false,
+            campaignId: campaignId,
+          };
+          const sessionTargets = [
+            { provider: "openai" as any, model: "gpt-4.1", label: "ChatGPT" },
+            { provider: "google" as any, model: "gemini-2.5-flash", label: "Gemini" },
+          ];
+          const createdSessions: string[] = [];
+          for (const target of sessionTargets) {
+            try {
+              const session = await createTrainingSession({
+                ...sessionBase,
+                trainingName: `${business.name} - ${target.label} Training`,
+                targetAiProvider: target.provider,
+                targetAiModel: target.model,
+              });
+              createdSessions.push(`"${session.trainingName}"`);
+            } catch (e: any) {
+              console.warn(`[Pipeline] Could not create ${target.label} training session: ${e.message}`);
+            }
+          }
+          if (createdSessions.length > 0) {
+            trainingMessage = `Training sessions created: ${createdSessions.join(', ')} — ${trainingPrompts.length} prompts from ${trainingPrompts.length > 0 ? "keyword research" : "default templates"}. Set to aggressive mode. Start training from the Training page when ready.`;
+          } else {
+            trainingMessage = `Campaign ready for training (aggressive mode). Could not auto-create sessions. Create them manually from the Training page.`;
           }
         } else {
           trainingMessage = `Campaign ready for training (aggressive mode). Existing training session found for this business.`;

@@ -19,8 +19,8 @@ import {
   updateTrainingSession,
 } from "./db";
 import { resolveModel } from "./aiProviders";
-import { scheduledJobs, trainingSessions, trainingConversations } from "../drizzle/schema";
-import { eq, and, lte, sql, desc } from "drizzle-orm";
+import { scheduledJobs, trainingSessions, trainingConversations, campaigns, users } from "../drizzle/schema";
+import { eq, and, lte, isNull, lt, sql, desc } from "drizzle-orm";
 import { startTrainingSession } from "./trainingEngine";
 import { trainingQueueV2 } from "./trainingQueueV2";
 
@@ -770,7 +770,65 @@ export function startScheduler(): void {
     });
   }, 24 * 60 * 60 * 1000);
 
+  // Check for campaigns ready for training kickoff (2-day indexing wait) — runs every 6 hours
+  checkPendingTrainingKickoffs().catch((err: Error) => console.error("[Scheduler] Training kickoff check failed:", err));
+  setInterval(() => {
+    checkPendingTrainingKickoffs().catch((err: Error) => console.error("[Scheduler] Training kickoff check failed:", err));
+  }, 6 * 60 * 60 * 1000);
+
   console.log("[Scheduler] Scheduler started successfully");
+}
+
+/**
+ * Check for campaigns that are ready to begin training.
+ *
+ * Logic: indexingSubmittedAt is set (indexing was submitted), trainingStartedAt is null
+ * (training has not started yet), and at least 2 days have passed since indexing submission
+ * to give the links time to index before training begins.
+ *
+ * Runs once per day. Finds qualifying campaigns and executes the "training" pipeline step
+ * for each, which auto-creates the training session and sets aggressive mode.
+ */
+export async function checkPendingTrainingKickoffs(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+  try {
+    // Find campaigns where indexing was submitted 2+ days ago but training hasn't started
+    const readyCampaigns = await db
+      .select()
+      .from(campaigns)
+      .where(
+        and(
+          isNull(campaigns.trainingStartedAt),
+          lt(campaigns.indexingSubmittedAt, twoDaysAgo)
+        )
+      );
+
+    if (readyCampaigns.length === 0) return;
+
+    console.log(`[Scheduler] Found ${readyCampaigns.length} campaign(s) ready for training kickoff (2-day indexing wait elapsed)`);
+
+    // Get an admin user to own the auto-created training sessions
+    const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
+    const ownerId = adminUsers[0]?.id ?? 0;
+
+    const { runPipelineStep } = await import('./pipelineOrchestrator');
+
+    for (const campaign of readyCampaigns) {
+      try {
+        console.log(`[Scheduler] Kicking off training for campaign ${campaign.id} (indexing submitted ${campaign.indexingSubmittedAt?.toISOString()})`);
+        const result = await runPipelineStep(campaign.id, 'training', ownerId);
+        console.log(`[Scheduler] Training kickoff for campaign ${campaign.id}: ${result.message}`);
+      } catch (err: any) {
+        console.error(`[Scheduler] Training kickoff failed for campaign ${campaign.id}:`, err.message);
+      }
+    }
+  } catch (err: any) {
+    console.error('[Scheduler] checkPendingTrainingKickoffs error:', err.message);
+  }
 }
 
 /**

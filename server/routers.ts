@@ -2562,6 +2562,76 @@ export const agencyRouter = router({
       } catch (stripeErr) {
         console.warn('[agency.assignClientTier] Stripe skipped:', stripeErr);
       }
+      // --- CRITICAL: Trigger campaign creation and pipeline ---
+      // After tier is assigned, create the campaign and kick off the full pipeline
+      // (keyword research → credibility → content → publishing → indexing → training)
+      setImmediate(async () => {
+        try {
+          const { getDb: _getDb, getBusinessById } = await import('./db');
+          const db = await _getDb();
+          if (!db) return;
+          const { getPackageTierBySlug, seedDefaultPackageTiers } = await import('./dbCampaigns');
+          const { createCampaign, createClientDashboard, getCampaignsByBusinessId } = await import('./dbCampaigns');
+          const { runFullPipeline } = await import('./pipelineOrchestrator');
+          const { users } = await import('../drizzle/schema');
+          const { eq } = await import('drizzle-orm');
+          // Get admin user as campaign owner
+          const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
+          if (!adminUsers[0]) { console.error('[assignClientTier] No admin user found for campaign creation'); return; }
+          const ownerId = adminUsers[0].id;
+          // Check if campaign already exists for this business
+          const existingCampaigns = await getCampaignsByBusinessId(input.businessId);
+          const activeCampaign = existingCampaigns.find(
+            (c) => c.status !== 'monitoring' && c.status !== 'error' && c.status !== 'paused'
+          );
+          if (activeCampaign) {
+            console.log(`[assignClientTier] Campaign already exists (ID: ${activeCampaign.id}) for business ${input.businessId}. Skipping.`);
+            return;
+          }
+          // Resolve package tier
+          await seedDefaultPackageTiers();
+          const packageTier = await getPackageTierBySlug(input.packageTier);
+          if (!packageTier) { console.error(`[assignClientTier] Package tier '${input.packageTier}' not found`); return; }
+          const business = await getBusinessById(input.businessId);
+          if (!business) { console.error(`[assignClientTier] Business ${input.businessId} not found`); return; }
+          // Create campaign
+          const campaign = await createCampaign({
+            userId: ownerId,
+            businessId: input.businessId,
+            packageTierId: packageTier.id,
+            campaignName: `${business.name} - AI Visibility`,
+            status: 'pending',
+            clientType: 'ai_only',
+            trainingAggressiveness: 'aggressive',
+            rankCheckFrequency: 'weekly',
+            errorCount: 0,
+            trialStatus: 'trial',
+            maxQueries: packageTier.maxQueries,
+            maxLocations: packageTier.maxLocations,
+            selectedPackage: input.packageTier,
+          });
+          // Initialize trial
+          const { initializeTrial } = await import('./trialManager');
+          await initializeTrial(campaign.id, input.packageTier);
+          // Create client dashboard
+          const crypto = await import('crypto');
+          const accessToken = crypto.randomBytes(32).toString('hex');
+          await createClientDashboard({
+            businessId: input.businessId,
+            campaignId: campaign.id,
+            accessToken,
+            isActive: true,
+            dashboardTitle: `${business.name} - AI Visibility Report`,
+            accessCount: 0,
+          });
+          console.log(`[assignClientTier] Campaign ${campaign.id} created for agency client ${business.name}. Starting pipeline...`);
+          // Kick off the full pipeline
+          const result = await runFullPipeline(campaign.id, ownerId);
+          console.log(`[assignClientTier] Pipeline started for campaign ${campaign.id}:`, result.reason);
+        } catch (pipelineErr: any) {
+          console.error(`[assignClientTier] Pipeline auto-start failed for business ${input.businessId}:`, pipelineErr.message);
+        }
+      });
       return { success: true };
     }),
 });

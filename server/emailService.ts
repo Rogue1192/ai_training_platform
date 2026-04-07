@@ -1289,7 +1289,8 @@ export async function sendCampaignWinEmails(
     dashboardUrl = baseUrl ? `${baseUrl}/report/${dashboard.accessToken}` : undefined;
   }
 
-  return sendWinNotificationEmail({
+  // Send win notification to the business contact
+  const result = await sendWinNotificationEmail({
     businessName: business.name,
     contactName: business.contactName || business.name,
     contactEmail: business.contactEmail,
@@ -1299,8 +1300,30 @@ export async function sendCampaignWinEmails(
     previousScore,
     dashboardUrl,
   });
+  // Also notify the white-label agency if this is an agency client
+  if (business.agencyId) {
+    try {
+      const { getAgencyById } = await import('./dbAgencies');
+      const agency = await getAgencyById(business.agencyId);
+      if (agency?.contactEmail) {
+        await sendWinNotificationEmail({
+          businessName: business.name,
+          contactName: agency.contactName || agency.brandName || agency.name,
+          contactEmail: agency.contactEmail,
+          totalWins: wins.length,
+          wins,
+          currentScore,
+          previousScore,
+          dashboardUrl,
+        });
+        console.log(`[Email] Agency win notification sent to ${agency.contactEmail} for client ${business.name}`);
+      }
+    } catch (agencyEmailErr: any) {
+      console.warn(`[Email] Failed to send agency win notification:`, agencyEmailErr.message);
+    }
+  }
+  return result;
 }
-
 export async function sendCampaignVisibilityReport(
   campaignId: number,
   reportData: {
