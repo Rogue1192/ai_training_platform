@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
@@ -935,6 +936,7 @@ export default function CampaignDetail() {
 
 // Separate component for content tab to keep things clean
 function ContentTab({ campaignId }: { campaignId: number }) {
+  const utils = trpc.useUtils();
   const { data: contentPages, isLoading } = trpc.campaign.getContentPages.useQuery(
     { campaignId },
     { enabled: !!campaignId }
@@ -947,6 +949,18 @@ function ContentTab({ campaignId }: { campaignId: number }) {
     { campaignId },
     { enabled: !!campaignId }
   );
+  const [urlInputs, setUrlInputs] = useState<Record<number, string>>({});
+  const setContentPageUrl = trpc.campaign.setContentPageUrl.useMutation({
+    onSuccess: (data) => {
+      utils.campaign.getContentPages.invalidate({ campaignId });
+      if (data.allUrlsEntered) {
+        toast.success("All URLs saved — indexing started automatically.");
+      } else {
+        toast.success("URL saved.");
+      }
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   if (isLoading) {
     return (
@@ -955,6 +969,8 @@ function ContentTab({ campaignId }: { campaignId: number }) {
       </div>
     );
   }
+
+  const hasUnpublished = contentPages?.some((p: any) => !p.publishedUrl);
 
   return (
     <div className="space-y-4">
@@ -982,6 +998,23 @@ function ContentTab({ campaignId }: { campaignId: number }) {
         </Card>
       )}
 
+      {/* Manual URL entry banner — shown when Playwright failed */}
+      {hasUnpublished && contentPages && contentPages.length > 0 && (
+        <Card className="bg-amber-500/10 border-amber-500/30">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+              <div className="text-sm text-amber-200">
+                <p className="font-medium">Manual publishing required</p>
+                <p className="text-xs text-amber-300/80 mt-0.5">
+                  Playwright could not publish one or more pages automatically. Publish them manually on the client’s website, then paste each live URL below. Indexing will start automatically once all URLs are saved.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Content Pages */}
       {contentPages && contentPages.length > 0 ? (
         <Card className="bg-card border-border">
@@ -992,38 +1025,63 @@ function ContentTab({ campaignId }: { campaignId: number }) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {contentPages.map((page: any) => {
-                const published = publishedUrls?.find((u: string) => u.includes(page.slug));
+                const published = page.publishedUrl || publishedUrls?.find((u: string) => u.includes(page.slug));
                 return (
-                  <div key={page.id} className="flex items-center gap-3 p-3 rounded-md bg-muted/30">
-                    <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground font-medium truncate">{page.title}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <Badge variant="outline" className="text-xs">{page.pageType}</Badge>
-                        <span className="text-xs text-muted-foreground">/{page.slug}</span>
+                  <div key={page.id} className="p-3 rounded-md bg-muted/30 space-y-2">
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground font-medium truncate">{page.pageTitle}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <Badge variant="outline" className="text-xs">{page.pageType}</Badge>
+                          {page.pageSlug && <span className="text-xs text-muted-foreground">/{page.pageSlug}</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {published ? (
+                          <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30 text-xs">
+                            Published
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-xs">Needs URL</Badge>
+                        )}
+                        {published && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => window.open(published, "_blank")}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {page.publishedUrl || published ? (
-                        <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30 text-xs">
-                          Published
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-xs">Draft</Badge>
-                      )}
-                      {(page.publishedUrl || published) && (
+                    {/* Manual URL entry row — only shown for unpublished pages */}
+                    {!published && (
+                      <div className="flex items-center gap-2 pl-7">
+                        <Input
+                          placeholder="https://client-site.com/page-slug"
+                          value={urlInputs[page.id] ?? ""}
+                          onChange={(e) => setUrlInputs(prev => ({ ...prev, [page.id]: e.target.value }))}
+                          className="h-8 text-xs"
+                        />
                         <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => window.open(page.publishedUrl || published, "_blank")}
+                          size="sm"
+                          className="h-8 text-xs shrink-0"
+                          disabled={!urlInputs[page.id] || setContentPageUrl.isPending}
+                          onClick={() => {
+                            const url = urlInputs[page.id];
+                            if (!url) return;
+                            setContentPageUrl.mutate({ pageId: page.id, publishedUrl: url });
+                          }}
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />
+                          Save URL
                         </Button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

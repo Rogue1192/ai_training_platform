@@ -1226,6 +1226,54 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { getContentPagesForCampaign } = await import("./contentGenerationEngine");
         return getContentPagesForCampaign(input.campaignId);
       }),
+    setContentPageUrl: protectedProcedure
+      .input(z.object({
+        pageId: z.number(),
+        publishedUrl: z.string().url("Must be a valid URL"),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Admin access required");
+        }
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const { contentPages } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        // Save the manually-entered URL and mark the page as published
+        const [updatedPage] = await db
+          .update(contentPages)
+          .set({
+            publishedUrl: input.publishedUrl,
+            status: "published",
+            publishedAt: new Date(),
+            publishError: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(contentPages.id, input.pageId))
+          .returning();
+        if (!updatedPage) throw new Error("Content page not found");
+        // Check if ALL pages for this campaign now have a publishedUrl
+        const allPages = await db
+          .select({ id: contentPages.id, publishedUrl: contentPages.publishedUrl })
+          .from(contentPages)
+          .where(eq(contentPages.campaignId, updatedPage.campaignId!));
+        const allHaveUrls = allPages.length > 0 && allPages.every((p: { id: number; publishedUrl: string | null }) => !!p.publishedUrl);
+        if (allHaveUrls && updatedPage.campaignId) {
+          // All pages now have URLs — auto-kick off indexing step
+          setImmediate(async () => {
+            try {
+              const { runPipelineStep } = await import("./pipelineOrchestrator");
+              await runPipelineStep(updatedPage.campaignId!, "indexing", ctx.user.id);
+              console.log(`[setContentPageUrl] Auto-triggered indexing for campaign ${updatedPage.campaignId} after all URLs entered manually`);
+            } catch (err: any) {
+              console.error(`[setContentPageUrl] Auto-indexing failed for campaign ${updatedPage.campaignId}:`, err.message);
+            }
+          });
+        }
+        return { success: true, allUrlsEntered: allHaveUrls };
+      }),
+
     regenerateContentPage: protectedProcedure
       .input(z.object({ pageId: z.number(), customPrompt: z.string().optional() }))
       .mutation(async ({ ctx, input }) => {

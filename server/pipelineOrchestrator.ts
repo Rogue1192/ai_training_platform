@@ -253,20 +253,79 @@ export async function runPipelineStep(
             await publishLlmTxt({ campaignId, businessId: campaign.businessId });
           }
           
-          // Publishing is best-effort: even if Playwright fails to publish some
-          // or all pages, the pipeline MUST continue to indexing and training.
-          // Failed pages are stored in the DB with publishError set so an admin
-          // can manually publish them via the Businesses page credentials.
-          const publishMessage = pubResult.published > 0
-            ? `WordPress publishing: ${pubResult.published}/${pubResult.totalPages} pages published, ${pubResult.failed} failed.`
-            : `WordPress publishing failed for all ${pubResult.totalPages} pages — manual publishing required. Check the Businesses page for site credentials. Pipeline continuing to indexing.`;
-          result = {
-            step,
-            success: true, // Always true — pipeline continues regardless of publish outcome
-            message: publishMessage,
-            data: pubResult,
-            nextStep: "indexing",
-          };
+          if (pubResult.published === 0 && pubResult.totalPages > 0) {
+            // Complete publishing failure — stop the pipeline and alert super admins
+            // so they can manually publish the content and enter the URLs in the dashboard.
+            const failedPageList = pubResult.results
+              .map(r => `  • ${r.pageTitle} (/${r.pageType}) — ${r.result.error ?? "unknown error"}`)
+              .join("\n");
+            const adminUrl = `${process.env.APP_BASE_URL ?? ""}/campaigns/${campaignId}`;
+            try {
+              const { notifyOwner } = await import("./_core/notification");
+              await notifyOwner({
+                title: `Publishing Failed — Manual Action Required: ${business.name}`,
+                content: [
+                  `Playwright failed to publish ALL ${pubResult.totalPages} content page(s) for ${business.name}.`,
+                  "",
+                  "Action required:",
+                  "1. Log into the client's website and manually publish the pages listed below.",
+                  "2. Open the campaign in the dashboard and enter the live URLs for each page.",
+                  "3. The system will automatically submit them for indexing once URLs are saved.",
+                  "",
+                  `Campaign: ${adminUrl}`,
+                  "",
+                  "Pages that need manual publishing:",
+                  failedPageList,
+                ].join("\n"),
+              });
+            } catch (emailErr: any) {
+              console.error("[Pipeline] Failed to send publishing failure alert:", emailErr.message);
+            }
+            result = {
+              step,
+              success: false,
+              message: `Publishing failed for all ${pubResult.totalPages} pages. Super admins have been notified. Manually publish the content and enter the URLs in the campaign dashboard to continue.`,
+              data: pubResult,
+              // nextStep intentionally omitted — pipeline stops here until admin enters URLs manually
+            };
+          } else {
+            // Partial or full success — continue to indexing
+            // (partially failed pages are stored with publishError in DB for reference)
+            const publishMessage = pubResult.failed > 0
+              ? `Publishing: ${pubResult.published}/${pubResult.totalPages} pages published. ${pubResult.failed} failed — admin notified.`
+              : `Publishing: ${pubResult.published}/${pubResult.totalPages} pages published successfully.`;
+            if (pubResult.failed > 0) {
+              // Partial failure — notify admin but keep going
+              const failedPageList = pubResult.results
+                .filter(r => !r.result.success)
+                .map(r => `  • ${r.pageTitle} (/${r.pageType}) — ${r.result.error ?? "unknown error"}`)
+                .join("\n");
+              try {
+                const { notifyOwner } = await import("./_core/notification");
+                await notifyOwner({
+                  title: `Partial Publishing Failure: ${business.name}`,
+                  content: [
+                    `${pubResult.failed} of ${pubResult.totalPages} page(s) failed to publish for ${business.name}.`,
+                    `${pubResult.published} page(s) published successfully — pipeline continuing to indexing.`,
+                    "",
+                    "Pages that need manual publishing:",
+                    failedPageList,
+                    "",
+                    `Campaign: ${process.env.APP_BASE_URL ?? ""}/campaigns/${campaignId}`,
+                  ].join("\n"),
+                });
+              } catch (emailErr: any) {
+                console.error("[Pipeline] Failed to send partial failure alert:", emailErr.message);
+              }
+            }
+            result = {
+              step,
+              success: true,
+              message: publishMessage,
+              data: pubResult,
+              nextStep: "indexing",
+            };
+          }
         }
         break;
       }
