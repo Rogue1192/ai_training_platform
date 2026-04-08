@@ -149,7 +149,7 @@ function DashboardLayoutContent({
           className="border-r-0"
           disableTransition={isResizing}
         >
-          <SidebarHeader className="h-16 justify-center">
+          <SidebarHeader className="h-28 justify-center">
             <div className="flex items-center gap-3 px-2 transition-all w-full">
               <button
                 onClick={toggleSidebar}
@@ -160,7 +160,7 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center min-w-0">
-                  <img src="/logo.png" alt="AI AnswerForge" className="h-8 w-auto max-w-[160px] object-contain" />
+                  <img src="/logo.png" alt="AI AnswerForge" className="h-24 w-auto max-w-[220px] object-contain" />
                 </div>
               ) : null}
             </div>
