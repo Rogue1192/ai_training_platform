@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Loader2, Plus, Building2, MapPin, Phone, Globe, Trash2, Pencil, Shield, Key } from "lucide-react";
 
@@ -43,6 +44,7 @@ export default function Businesses() {
     siteAdminUrl: "",
     siteUsername: "",
     sitePassword: "",
+    useWebhookForContent: false,
   });
 
   const resetForm = () => {
@@ -68,6 +70,7 @@ export default function Businesses() {
       siteAdminUrl: "",
       siteUsername: "",
       sitePassword: "",
+      useWebhookForContent: false,
     });
     setEditingBusiness(null);
     setActiveTab("basic");
@@ -96,6 +99,7 @@ export default function Businesses() {
       siteAdminUrl: business.siteAdminUrl || "",
       siteUsername: business.siteUsername || "",
       sitePassword: "", // Never populate password field
+      useWebhookForContent: business.useWebhookForContent ?? false,
     });
     setEditingBusiness(business.id);
     setActiveTab("basic");
@@ -397,6 +401,20 @@ export default function Businesses() {
                     </p>
                   </div>
                   
+                  {/* Content delivery toggle */}
+                  <div className="flex items-center justify-between rounded-lg border border-input p-4">
+                    <div className="space-y-0.5">
+                      <Label className="text-sm font-medium">Send content via webhook</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Enable if we are building this client's website. Content will be delivered to the website builder platform via outbound webhook instead of Playwright.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={formData.useWebhookForContent}
+                      onCheckedChange={(checked) => setFormData({ ...formData, useWebhookForContent: checked })}
+                    />
+                  </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="siteAdminUrl">Admin URL</Label>
                     <Input

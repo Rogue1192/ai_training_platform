@@ -144,6 +144,10 @@ export const businesses = pgTable("businesses", {
   // Agency notification preference — if false, win emails are sent to the business only,
   // not to the agency. Defaults to true (agency receives all win emails by default).
   agencyWinEmailsEnabled: boolean("agencyWinEmailsEnabled").default(true).notNull(),
+  // Content delivery method — if true, credibility content is sent via outbound webhook
+  // to the website builder platform (we are building their site). If false (default),
+  // Playwright logs into their existing site and publishes directly.
+  useWebhookForContent: boolean("useWebhookForContent").default(false).notNull(),
   // Source tracking
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

@@ -199,20 +199,24 @@ export async function runPipelineStep(
           location: business.location || "",
           credibilityResult: credData.researchResults as any,
         });
-        // Fire outbound webhook to companion platform (non-blocking — failure won't stop the pipeline)
-        try {
-          const { sendCredibilityWebhook } = await import("./credibilityWebhook");
-          const webhookResult = await sendCredibilityWebhook({
-            campaignId,
-            businessId: campaign.businessId,
-          });
-          if (webhookResult.sent) {
-            console.log(`[Pipeline] Credibility webhook sent successfully.`);
-          } else {
-            console.log(`[Pipeline] Credibility webhook skipped: ${webhookResult.error}`);
+        // Fire outbound webhook to companion platform — ONLY for clients where we are building
+        // their website (useWebhookForContent = true). For clients with their own existing site,
+        // Playwright handles publishing in the next step.
+        if (business.useWebhookForContent) {
+          try {
+            const { sendCredibilityWebhook } = await import("./credibilityWebhook");
+            const webhookResult = await sendCredibilityWebhook({
+              campaignId,
+              businessId: campaign.businessId,
+            });
+            if (webhookResult.sent) {
+              console.log(`[Pipeline] Credibility webhook sent successfully.`);
+            } else {
+              console.log(`[Pipeline] Credibility webhook skipped: ${webhookResult.error}`);
+            }
+          } catch (webhookErr: any) {
+            console.warn(`[Pipeline] Credibility webhook error (non-fatal): ${webhookErr.message}`);
           }
-        } catch (webhookErr: any) {
-          console.warn(`[Pipeline] Credibility webhook error (non-fatal): ${webhookErr.message}`);
         }
 
         result = {
@@ -239,6 +243,21 @@ export async function runPipelineStep(
             step,
             success: true,
             message: "Skipped WordPress publishing — client is Scenario C (new SiteForge Ultra build). Content stored for handoff.",
+            nextStep: "indexing",
+          };
+        } else if (business.useWebhookForContent) {
+          // Content was already delivered via outbound webhook in the content_generation step.
+          // Skip Playwright entirely and move straight to indexing.
+          await db.update(campaigns).set({
+            status: "indexing",
+            publishingCompletedAt: new Date(),
+            updatedAt: new Date(),
+          }).where(eq(campaigns.id, campaignId));
+
+          result = {
+            step,
+            success: true,
+            message: "Skipped Playwright publishing — content delivered via outbound webhook to website builder platform.",
             nextStep: "indexing",
           };
         } else {

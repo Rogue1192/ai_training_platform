@@ -100,6 +100,7 @@ export const appRouter = router({
           siteAdminUrl: z.string().optional(),
           siteUsername: z.string().optional(),
           sitePassword: z.string().optional(),
+          useWebhookForContent: z.boolean().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -142,6 +143,7 @@ export const appRouter = router({
           siteAdminUrl: z.string().optional(),
           siteUsername: z.string().optional(),
           sitePassword: z.string().optional(),
+          useWebhookForContent: z.boolean().optional(),
         })
       )
       .mutation(async ({ input }) => {
