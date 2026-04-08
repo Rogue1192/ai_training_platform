@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Zap } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation, Redirect } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -159,11 +159,8 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <Zap className="h-4 w-4 text-primary shrink-0" />
-                  <span className="font-semibold tracking-tight truncate" style={{ fontFamily: "var(--font-heading)" }}>
-                    AI Answer Forge
-                  </span>
+                <div className="flex items-center min-w-0">
+                  <img src="/logo.png" alt="AI AnswerForge" className="h-8 w-auto max-w-[160px] object-contain" />
                 </div>
               ) : null}
             </div>

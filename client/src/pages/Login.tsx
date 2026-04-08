@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useLocation, Redirect } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Zap } from "lucide-react";
+
 
 export default function Login() {
   const { user, loading: authLoading } = useAuth();
@@ -94,16 +94,8 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md space-y-8">
         {/* Logo / Brand */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-primary/10 mb-2">
-            <Zap className="w-7 h-7 text-primary" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
-            AI Answer Forge
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Automated AI Search Visibility Platform
-          </p>
+        <div className="flex flex-col items-center space-y-3">
+          <img src="/logo.png" alt="AI AnswerForge" className="h-16 w-auto object-contain" />
         </div>
 
         <Card>
