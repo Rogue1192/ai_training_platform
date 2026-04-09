@@ -9,13 +9,14 @@ nixPkgs = [
   "dbus",
   "expat",
   "libdrm",
-  "libxcb",
   "libxkbcommon",
   "mesa",
-  "libGL",
   "alsa-lib",
   "pango",
   "cairo",
+  "glib",
+  "gtk3",
+  "gdk-pixbuf",
   "xorg.libX11",
   "xorg.libXcomposite",
   "xorg.libXdamage",
@@ -27,10 +28,7 @@ nixPkgs = [
   "xorg.libXi",
   "xorg.libXrender",
   "xorg.libXtst",
-  "xorg.libxshmfence",
-  "glib",
-  "gtk3",
-  "gdk-pixbuf"
+  "xorg.libxshmfence"
 ]
 
 [phases.install]
