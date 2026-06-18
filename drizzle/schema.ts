@@ -502,6 +502,9 @@ export const contentPages = pgTable("contentPages", {
   publishedUrl: text("publishedUrl"), // Live URL after publishing
   publishedAt: timestamp("publishedAt"),
   publishError: text("publishError"),
+  // Delivery metadata — how this content should be placed on the client's site
+  deliveryType: varchar("deliveryType", { length: 30 }).default("new_page").notNull(), // 'new_page' | 'inject_existing'
+  placementInstructions: text("placementInstructions"), // Plain-English note for the team
   // Generation metadata
   generationModel: varchar("generationModel", { length: 100 }),
   generationPrompt: text("generationPrompt"), // The prompt used to generate this page

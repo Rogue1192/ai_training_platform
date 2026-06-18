@@ -264,10 +264,19 @@ export async function recordBaselineVideos(
         if (result.success && result.videoUrl) {
           // Store the video URL on the query-location record
           const field = platform === "chatgpt" ? "beforeVideoChatgpt" : "beforeVideoGoogleAi";
+          // Also set beforeVideoCapturedAt when both platforms have been recorded
+          const { campaignQueryLocations: cqlTable } = require("../drizzle/schema");
+          // Fetch the current record to check if the other platform's video is already saved
+          const [current] = await db.select().from(cqlTable).where(eq(cqlTable.id, ql.id)).limit(1);
+          const otherField = platform === "chatgpt" ? "beforeVideoGoogleAi" : "beforeVideoChatgpt";
+          const otherAlreadySaved = current && !!current[otherField as keyof typeof current];
           await db
-            .update(require("../drizzle/schema").campaignQueryLocations)
-            .set({ [field]: result.videoUrl })
-            .where(eq(require("../drizzle/schema").campaignQueryLocations.id, ql.id));
+            .update(cqlTable)
+            .set({
+              [field]: result.videoUrl,
+              ...(otherAlreadySaved ? { beforeVideoCapturedAt: new Date() } : {}),
+            })
+            .where(eq(cqlTable.id, ql.id));
 
           console.log(`[ScanVideoRecorder] ✓ ${platform} before video saved for query: ${ql.searchQuery}`);
         }

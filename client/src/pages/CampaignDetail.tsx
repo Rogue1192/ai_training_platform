@@ -937,24 +937,42 @@ export default function CampaignDetail() {
 // Separate component for content tab to keep things clean
 function ContentTab({ campaignId }: { campaignId: number }) {
   const utils = trpc.useUtils();
-  const { data: contentPages, isLoading } = trpc.campaign.getContentPages.useQuery(
+  const { data: contentPages, isLoading, previousData } = trpc.campaign.getContentPages.useQuery(
     { campaignId },
-    { enabled: !!campaignId }
+    {
+      enabled: !!campaignId,
+      refetchInterval: (query) => {
+        // Poll every 5s while content is still being generated
+        const pages = query.state.data;
+        if (!pages || pages.length === 0) return 5000;
+        return false;
+      },
+    }
   );
   const { data: credData } = trpc.campaign.getCredibilityData.useQuery(
     { campaignId },
     { enabled: !!campaignId }
   );
-  const { data: publishedUrls } = trpc.wpPublisher.getPublishedUrls.useQuery(
-    { campaignId },
-    { enabled: !!campaignId }
-  );
   const [urlInputs, setUrlInputs] = useState<Record<number, string>>({});
+  const [expandedPages, setExpandedPages] = useState<Record<number, boolean>>({});
+  const [toastFired, setToastFired] = useState(false);
+
+  // Fire a toast the first time generated pages arrive
+  const prevCount = previousData?.length ?? 0;
+  const currentCount = contentPages?.length ?? 0;
+  if (!toastFired && prevCount === 0 && currentCount > 0) {
+    const pageCount = contentPages!.filter((p: any) => p.pageType !== "llm_txt").length;
+    toast.success(`📄 ${pageCount} content page${pageCount !== 1 ? "s" : ""} ready — go to the Content tab to copy them in.`, {
+      duration: 8000,
+    });
+    setToastFired(true);
+  }
+
   const setContentPageUrl = trpc.campaign.setContentPageUrl.useMutation({
     onSuccess: (data) => {
       utils.campaign.getContentPages.invalidate({ campaignId });
       if (data.allUrlsEntered) {
-        toast.success("All URLs saved — indexing started automatically.");
+        toast.success("✅ All URLs saved — indexing started automatically.");
       } else {
         toast.success("URL saved.");
       }
@@ -970,7 +988,9 @@ function ContentTab({ campaignId }: { campaignId: number }) {
     );
   }
 
-  const hasUnpublished = contentPages?.some((p: any) => !p.publishedUrl);
+  const visiblePages = contentPages?.filter((p: any) => p.pageType !== "llm_txt") ?? [];
+  const llmTxtPage = contentPages?.find((p: any) => p.pageType === "llm_txt");
+  const allUrlsEntered = visiblePages.length > 0 && visiblePages.every((p: any) => !!p.publishedUrl);
 
   return (
     <div className="space-y-4">
@@ -991,23 +1011,23 @@ function ContentTab({ campaignId }: { campaignId: number }) {
               </div>
               <div className="flex-1 text-sm text-muted-foreground">
                 <p>Research completed {credData.createdAt ? new Date(credData.createdAt).toLocaleDateString() : "N/A"}</p>
-                {credData.researchResults ? <p className="text-green-400 text-xs mt-1">llm.txt generated</p> : null}
+                {credData.researchResults ? <p className="text-green-400 text-xs mt-1">✓ llm.txt generated</p> : null}
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Manual URL entry banner — shown when Playwright failed */}
-      {hasUnpublished && contentPages && contentPages.length > 0 && (
-        <Card className="bg-amber-500/10 border-amber-500/30">
+      {/* Workflow banner — shown when pages exist but not all URLs are saved */}
+      {visiblePages.length > 0 && !allUrlsEntered && (
+        <Card className="bg-indigo-500/10 border-indigo-500/30">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-              <div className="text-sm text-amber-200">
-                <p className="font-medium">Manual publishing required</p>
-                <p className="text-xs text-amber-300/80 mt-0.5">
-                  Playwright could not publish one or more pages automatically. Publish them manually on the client’s website, then paste each live URL below. Indexing will start automatically once all URLs are saved.
+              <FileText className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
+              <div className="text-sm text-indigo-200">
+                <p className="font-medium">Content ready — copy into the client's site</p>
+                <p className="text-xs text-indigo-300/80 mt-0.5">
+                  Each page below shows where it goes and has a Copy button. Paste the content into the client's site, then enter the live URL here. Indexing starts automatically once all URLs are saved.
                 </p>
               </div>
             </div>
@@ -1015,53 +1035,116 @@ function ContentTab({ campaignId }: { campaignId: number }) {
         </Card>
       )}
 
+      {/* All done banner */}
+      {allUrlsEntered && (
+        <Card className="bg-green-500/10 border-green-500/30">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+              <p className="text-sm text-green-300 font-medium">All pages published — indexing in progress.</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Content Pages */}
-      {contentPages && contentPages.length > 0 ? (
+      {visiblePages.length > 0 ? (
         <Card className="bg-card border-border">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
               <FileText className="w-4 h-4 text-indigo-400" />
-              Generated Pages ({contentPages.length})
+              Credibility Pages ({visiblePages.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {contentPages.map((page: any) => {
-                const published = page.publishedUrl || publishedUrls?.find((u: string) => u.includes(page.slug));
+            <div className="space-y-4">
+              {visiblePages.map((page: any) => {
+                const isExpanded = expandedPages[page.id] ?? false;
+                const isNewPage = page.deliveryType === "new_page" || !page.deliveryType;
                 return (
-                  <div key={page.id} className="p-3 rounded-md bg-muted/30 space-y-2">
-                    <div className="flex items-center gap-3">
+                  <div key={page.id} className="rounded-lg border border-border bg-muted/20">
+                    {/* Page header row */}
+                    <div className="flex items-center gap-3 p-3">
                       <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-foreground font-medium truncate">{page.pageTitle}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <Badge variant="outline" className="text-xs">{page.pageType}</Badge>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${isNewPage ? "bg-blue-500/10 text-blue-400 border-blue-500/30" : "bg-orange-500/10 text-orange-400 border-orange-500/30"}`}
+                          >
+                            {isNewPage ? "New page" : "Add to existing"}
+                          </Badge>
                           {page.pageSlug && <span className="text-xs text-muted-foreground">/{page.pageSlug}</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        {published ? (
-                          <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30 text-xs">
-                            Published
-                          </Badge>
+                        {page.publishedUrl ? (
+                          <>
+                            <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30 text-xs">
+                              Published
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => window.open(page.publishedUrl, "_blank")}
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Button>
+                          </>
                         ) : (
-                          <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-xs">Needs URL</Badge>
+                          <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-xs">
+                            Needs URL
+                          </Badge>
                         )}
-                        {published && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => window.open(published, "_blank")}
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => setExpandedPages(prev => ({ ...prev, [page.id]: !isExpanded }))}
+                        >
+                          {isExpanded ? "Hide" : "View"}
+                        </Button>
                       </div>
                     </div>
-                    {/* Manual URL entry row — only shown for unpublished pages */}
-                    {!published && (
-                      <div className="flex items-center gap-2 pl-7">
+
+                    {/* Placement instructions */}
+                    {page.placementInstructions && (
+                      <div className="px-3 pb-2 flex items-start gap-2">
+                        <ChevronRight className="w-3.5 h-3.5 text-indigo-400 mt-0.5 shrink-0" />
+                        <p className="text-xs text-indigo-300">{page.placementInstructions}</p>
+                      </div>
+                    )}
+
+                    {/* Expanded content + copy button */}
+                    {isExpanded && (
+                      <div className="border-t border-border mx-3 mb-3">
+                        <div className="flex justify-end pt-2 pb-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1.5"
+                            onClick={() => {
+                              navigator.clipboard.writeText(page.pageContent);
+                              toast.success("Content copied to clipboard!");
+                            }}
+                          >
+                            <Copy className="w-3 h-3" />
+                            Copy content
+                          </Button>
+                        </div>
+                        <div className="rounded-md bg-muted/40 p-3 max-h-72 overflow-y-auto">
+                          <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
+                            {page.pageContent}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* URL entry row — only shown for unpublished pages */}
+                    {!page.publishedUrl && (
+                      <div className="flex items-center gap-2 px-3 pb-3">
                         <Input
                           placeholder="https://client-site.com/page-slug"
                           value={urlInputs[page.id] ?? ""}
@@ -1096,6 +1179,42 @@ function ContentTab({ campaignId }: { campaignId: number }) {
             <p className="text-sm text-muted-foreground">
               Run credibility research and content generation to create pages.
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* llm.txt section */}
+      {llmTxtPage && (
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+              <FileText className="w-4 h-4 text-teal-400" />
+              llm.txt
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground mb-3">
+              Upload this file to the root of the client's website as <code className="text-teal-400">/llm.txt</code> so AI crawlers can read it directly.
+            </p>
+            <div className="flex justify-end mb-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5"
+                onClick={() => {
+                  navigator.clipboard.writeText(llmTxtPage.pageContent);
+                  toast.success("llm.txt copied to clipboard!");
+                }}
+              >
+                <Copy className="w-3 h-3" />
+                Copy llm.txt
+              </Button>
+            </div>
+            <div className="rounded-md bg-muted/40 p-3 max-h-48 overflow-y-auto">
+              <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
+                {llmTxtPage.pageContent}
+              </pre>
+            </div>
           </CardContent>
         </Card>
       )}

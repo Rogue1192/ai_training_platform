@@ -122,6 +122,7 @@ interface PageTypeConfig {
   schemaTypes: string[];
   requiredFactCategories: string[]; // At least one fact from these categories needed
   deliveryType: "new_page" | "inject_existing"; // Whether to create a new page or inject into an existing one
+  placementInstructions: string; // Plain-English note for the team on where to put this content
 }
 
 const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
@@ -132,6 +133,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     schemaTypes: ["LocalBusiness", "Person", "Organization"],
     requiredFactCategories: ["certification", "insurance"],
     deliveryType: "new_page",
+    placementInstructions: "Create a new page titled \"Certifications & Credentials\" (slug: /certifications) and paste this content in.",
   },
   {
     type: "warranties",
@@ -140,6 +142,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     schemaTypes: ["LocalBusiness", "Offer"],
     requiredFactCategories: ["warranty"],
     deliveryType: "new_page",
+    placementInstructions: "Create a new page titled \"Warranties & Guarantees\" (slug: /warranties) and paste this content in.",
   },
   {
     type: "awards",
@@ -148,6 +151,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     schemaTypes: ["LocalBusiness", "Organization"],
     requiredFactCategories: ["award"],
     deliveryType: "new_page",
+    placementInstructions: "Create a new page titled \"Awards & Recognition\" (slug: /awards) and paste this content in.",
   },
   {
     type: "team",
@@ -156,6 +160,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     schemaTypes: ["Person", "Organization"],
     requiredFactCategories: ["team"],
     deliveryType: "new_page",
+    placementInstructions: "Create a new page titled \"Meet Our Team\" (slug: /team) and paste this content in.",
   },
   {
     type: "faq",
@@ -164,6 +169,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     schemaTypes: ["FAQPage"],
     requiredFactCategories: [], // FAQ pages can always be generated
     deliveryType: "new_page",
+    placementInstructions: "Create a new page titled \"Frequently Asked Questions\" (slug: /faq) and paste this content in.",
   },
   {
     type: "pricing",
@@ -172,6 +178,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     schemaTypes: ["Service", "Offer"],
     requiredFactCategories: [], // Can be generated from industry knowledge
     deliveryType: "new_page",
+    placementInstructions: "Create a new page titled \"Pricing & Cost Guide\" (slug: /pricing) and paste this content in.",
   },
   {
     type: "about",
@@ -180,6 +187,7 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     schemaTypes: ["LocalBusiness", "Organization"],
     requiredFactCategories: ["years_in_business", "community"],
     deliveryType: "inject_existing",
+    placementInstructions: "Add this content to the existing About Us page — paste it after the intro paragraph or before the team section.",
   },
 ];
 
@@ -450,6 +458,8 @@ export async function generateAllContentPages(params: {
           schemaMarkup: page.schemaMarkup,
           interlinkTargets: page.interlinkTargets,
           status: "generated",
+          deliveryType: config.deliveryType,
+          placementInstructions: config.placementInstructions,
           generationModel: "claude-sonnet-4-5-20250929",
           generationPrompt: `${config.type} page for ${businessName}`,
         });
