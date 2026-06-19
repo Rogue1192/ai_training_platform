@@ -430,44 +430,6 @@ export async function advanceCampaignCycle(
         if (chatgptDropped) droppedProviders.add("chatgpt");
         if (geminiDropped) droppedProviders.add("gemini");
 
-        // Send drop-out alert email to client (and agency if applicable)
-        try {
-          const { sendDropOutAlertEmail } = await import("./emailService");
-          const droppedPlatforms = [
-            ...(chatgptDropped ? ["ChatGPT"] : []),
-            ...(geminiDropped ? ["Gemini"] : []),
-          ];
-          if (business.contactEmail) {
-            await sendDropOutAlertEmail({
-              businessName: business.name,
-              contactName: business.contactName || business.name,
-              contactEmail: business.contactEmail,
-              query: ql.searchQuery,
-              location: ql.location || "",
-              droppedPlatforms,
-              isAgencyNotification: false,
-            });
-          }
-          // Notify agency if the business belongs to one
-          if (business.agencyId) {
-            const { getAgencyById } = await import("./dbAgencies");
-            const agency = await getAgencyById(business.agencyId);
-            if (agency?.contactEmail) {
-              await sendDropOutAlertEmail({
-                businessName: business.name,
-                contactName: agency.contactName || agency.name,
-                contactEmail: agency.contactEmail,
-                query: ql.searchQuery,
-                location: ql.location || "",
-                droppedPlatforms,
-                isAgencyNotification: true,
-              });
-            }
-          }
-        } catch (emailErr: any) {
-          console.error("[dropout-email] Failed to send drop-out alert:", emailErr.message);
-        }
-
         await fireRecoveryRunForCombo(ql, business, systemUserId, droppedProviders);
         result.recoveryRunsStarted++;
 
