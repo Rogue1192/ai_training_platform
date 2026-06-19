@@ -25,6 +25,7 @@ import AgencyManagement from "./pages/AgencyManagement";
 import AgencyPortal from "./pages/AgencyPortal";
 import AgencySettings from "./pages/AgencySettings";
 import AgencyClientDetail from "./pages/AgencyClientDetail";
+import AgencyLLMInsights from "./pages/AgencyLLMInsights";
 import ClientIntakeForm from "./pages/ClientIntakeForm";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Redirect } from "wouter";
@@ -64,6 +65,7 @@ const adminNavigationItems = [
 // Agency navigation — limited to their portal
 const agencyNavigationItems = [
   { href: "/agency", label: "My Clients", icon: Building2 },
+  { href: "/agency/llm-insights", label: "LLM Insights", icon: BarChart3 },
   { href: "/agency/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -164,6 +166,11 @@ function Router() {
       <Route path="/agency/clients/:id">
         <DashboardLayout navigationItems={agencyNavigationItems}>
           <AgencyClientDetail />
+        </DashboardLayout>
+      </Route>
+      <Route path="/agency/llm-insights">
+        <DashboardLayout navigationItems={agencyNavigationItems}>
+          <AgencyLLMInsights />
         </DashboardLayout>
       </Route>
 

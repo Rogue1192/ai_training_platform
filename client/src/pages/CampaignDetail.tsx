@@ -49,6 +49,9 @@ import {
   Settings2,
   BarChart3,
   Activity,
+  ChevronDown,
+  ChevronUp,
+  History,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
@@ -810,7 +813,7 @@ export default function CampaignDetail() {
                 </Card>
               </div>
 
-              {/* Query Details */}
+              {/* Query Details with Mention History */}
               {rankReport.queryDetails && rankReport.queryDetails.length > 0 && (
                 <Card className="bg-card border-border">
                   <CardHeader className="pb-3">
@@ -819,23 +822,7 @@ export default function CampaignDetail() {
                   <CardContent>
                     <div className="space-y-2">
                       {rankReport.queryDetails.map((qd: any, i: number) => (
-                        <div key={i} className="flex items-center justify-between p-2 rounded-md bg-muted/30 text-sm">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-foreground truncate">{qd.query}</p>
-                            <p className="text-xs text-muted-foreground">{qd.location}</p>
-                          </div>
-                          <div className="flex gap-4 text-xs shrink-0">
-                            {qd.chatgpt && (
-                              <span className="text-blue-400">ChatGPT: #{qd.chatgpt.position || "—"}</span>
-                            )}
-                            {qd.gemini && (
-                              <span className="text-purple-400">Gemini: #{qd.gemini.position || "—"}</span>
-                            )}
-                            {qd.aiOverview && (
-                              <span className="text-green-400">AI Overview: #{qd.aiOverview.position || "—"}</span>
-                            )}
-                          </div>
-                        </div>
+                        <QueryRankRow key={i} qd={qd} campaignId={campaignId} />
                       ))}
                     </div>
                   </CardContent>
@@ -1217,6 +1204,112 @@ function ContentTab({ campaignId }: { campaignId: number }) {
             </div>
           </CardContent>
         </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── QueryRankRow — expandable row with mention history ───────────────────────
+function QueryRankRow({ qd, campaignId }: { qd: any; campaignId: number }) {
+  const [open, setOpen] = useState(false);
+
+  const { data: history, isLoading } = trpc.rankTracking.getMentionHistory.useQuery(
+    { queryLocationId: qd.queryLocationId, days: 90 },
+    { enabled: open && !!qd.queryLocationId }
+  );
+
+  return (
+    <div className="rounded-md bg-muted/30 text-sm overflow-hidden">
+      {/* Main row */}
+      <div className="flex items-center justify-between p-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-foreground truncate">{qd.query}</p>
+          <p className="text-xs text-muted-foreground">{qd.location}</p>
+        </div>
+        <div className="flex items-center gap-4 text-xs shrink-0">
+          {qd.chatgpt && (
+            <span className="text-blue-400">ChatGPT: {qd.chatgpt.mentioned ? "✓" : "—"}</span>
+          )}
+          {qd.gemini && (
+            <span className="text-purple-400">Gemini: {qd.gemini.mentioned ? "✓" : "—"}</span>
+          )}
+          {qd.aiOverview && (
+            <span className="text-green-400">AI Overview: {qd.aiOverview.mentioned ? "✓" : "—"}</span>
+          )}
+          {qd.queryLocationId && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setOpen((v) => !v)}
+            >
+              <History className="w-3 h-3 mr-1" />
+              History
+              {open ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* History panel */}
+      {open && (
+        <div className="border-t border-border/50 bg-muted/10 px-3 py-2">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+              <Loader2 className="w-3 h-3 animate-spin" /> Loading history…
+            </div>
+          ) : !history || history.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">No history recorded yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-muted-foreground border-b border-border/30">
+                    <th className="text-left py-1 pr-3 font-medium">Date</th>
+                    <th className="text-left py-1 pr-3 font-medium">Type</th>
+                    <th className="text-center py-1 pr-3 font-medium">ChatGPT</th>
+                    <th className="text-center py-1 pr-3 font-medium">Gemini</th>
+                    <th className="text-center py-1 font-medium">AI Overview</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((row: any) => (
+                    <tr key={row.id} className="border-b border-border/20 last:border-0">
+                      <td className="py-1 pr-3 text-muted-foreground whitespace-nowrap">
+                        {new Date(row.checkedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </td>
+                      <td className="py-1 pr-3">
+                        <span className={`px-1.5 py-0.5 rounded text-xs ${
+                          row.checkType === "training" ? "bg-blue-500/15 text-blue-400" :
+                          row.checkType === "monitoring" ? "bg-purple-500/15 text-purple-400" :
+                          row.checkType === "baseline" ? "bg-amber-500/15 text-amber-400" :
+                          "bg-slate-500/15 text-slate-400"
+                        }`}>
+                          {row.checkType || "check"}
+                        </span>
+                      </td>
+                      <td className="py-1 pr-3 text-center">
+                        {row.chatgptMentioned
+                          ? <span className="text-green-400 font-medium">✓</span>
+                          : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="py-1 pr-3 text-center">
+                        {row.geminiMentioned
+                          ? <span className="text-green-400 font-medium">✓</span>
+                          : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="py-1 text-center">
+                        {row.aiOverviewMentioned
+                          ? <span className="text-green-400 font-medium">✓</span>
+                          : <span className="text-muted-foreground">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

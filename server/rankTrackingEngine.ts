@@ -67,6 +67,11 @@ export interface QueryRankDetail {
   // Metadata
   firstMentionedAt: string | null;
   lastCheckedAt: string | null;
+  // Before/after scan videos
+  beforeVideoChatgpt: string | null;
+  beforeVideoGoogleAi: string | null;
+  afterVideoChatgpt: string | null;
+  afterVideoGoogleAi: string | null;
 }
 
 export interface WinDetection {
@@ -598,6 +603,10 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
       ),
       firstMentionedAt: ql.firstMentionedAt?.toISOString() || null,
       lastCheckedAt: ql.lastRankCheckAt?.toISOString() || null,
+      beforeVideoChatgpt: ql.beforeVideoChatgpt || null,
+      beforeVideoGoogleAi: ql.beforeVideoGoogleAi || null,
+      afterVideoChatgpt: ql.afterVideoChatgpt || null,
+      afterVideoGoogleAi: ql.afterVideoGoogleAi || null,
     };
   });
 

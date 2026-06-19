@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
   Loader2, ArrowLeft, Building2, Globe, MapPin, Phone,
-  Mail, TrendingUp, CheckCircle, Clock, AlertCircle, Bell
+  Mail, TrendingUp, CheckCircle, Clock, AlertCircle, Bell,
+  Link2, Copy, Plus, Trash2, ExternalLink
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -199,7 +201,7 @@ export default function AgencyClientDetail() {
         ) : (
           <div className="space-y-2">
             {clientCampaigns.map((campaign: any) => (
-              <CampaignRow key={campaign.id} campaign={campaign} />
+              <CampaignRow key={campaign.id} campaign={campaign} businessId={clientId} />
             ))}
           </div>
         )}
@@ -208,32 +210,150 @@ export default function AgencyClientDetail() {
   );
 }
 
-function CampaignRow({ campaign }: { campaign: any }) {
+function CampaignRow({ campaign, businessId }: { campaign: any; businessId: number }) {
   const isActive = campaign.isActive;
   const trialStatus = campaign.trialStatus;
+  const [showLinks, setShowLinks] = useState(false);
+
+  const { data: reportLinks = [], refetch: refetchLinks } = trpc.agency.getClientReportLinks.useQuery(
+    { campaignId: campaign.id },
+    { enabled: showLinks }
+  );
+
+  const createLink = trpc.agency.createClientReportLink.useMutation({
+    onSuccess: () => {
+      refetchLinks();
+      toast.success("Report link created");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deactivateLink = trpc.agency.deactivateClientReportLink.useMutation({
+    onSuccess: () => {
+      refetchLinks();
+      toast.success("Link deactivated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const baseUrl = window.location.origin;
+
+  function copyLink(token: string) {
+    navigator.clipboard.writeText(`${baseUrl}/report/${token}`);
+    toast.success("Link copied to clipboard");
+  }
 
   return (
     <Card>
-      <CardContent className="flex items-center justify-between py-3 px-4">
-        <div className="min-w-0">
-          <p className="font-medium text-sm truncate">{campaign.name || `Campaign #${campaign.id}`}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {campaign.maxQueries ?? 5} keywords · {campaign.maxLocations ?? 3} locations
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {trialStatus === "trial" && (
-            <Badge variant="secondary" className="text-xs">
-              <Clock className="h-3 w-3 mr-1" /> Trial
+      <CardContent className="py-3 px-4 space-y-3">
+        {/* Campaign header row */}
+        <div className="flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="font-medium text-sm truncate">{campaign.name || `Campaign #${campaign.id}`}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {campaign.maxQueries ?? 5} keywords · {campaign.maxLocations ?? 3} locations
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {trialStatus === "trial" && (
+              <Badge variant="secondary" className="text-xs">
+                <Clock className="h-3 w-3 mr-1" /> Trial
+              </Badge>
+            )}
+            <Badge variant={isActive ? "default" : "outline"} className="text-xs">
+              {isActive
+                ? <><CheckCircle className="h-3 w-3 mr-1" />Active</>
+                : <><AlertCircle className="h-3 w-3 mr-1" />Inactive</>
+              }
             </Badge>
-          )}
-          <Badge variant={isActive ? "default" : "outline"} className="text-xs">
-            {isActive
-              ? <><CheckCircle className="h-3 w-3 mr-1" />Active</>
-              : <><AlertCircle className="h-3 w-3 mr-1" />Inactive</>
-            }
-          </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-7 px-2"
+              onClick={() => setShowLinks((v) => !v)}
+            >
+              <Link2 className="h-3 w-3 mr-1" />
+              {showLinks ? "Hide" : "Report Links"}
+            </Button>
+          </div>
         </div>
+
+        {/* Report links panel */}
+        {showLinks && (
+          <div className="border-t pt-3 space-y-2">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Client Report Links</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={createLink.isPending}
+                onClick={() => createLink.mutate({ campaignId: campaign.id, businessId })}
+              >
+                {createLink.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+                New Link
+              </Button>
+            </div>
+
+            {reportLinks.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">
+                No report links yet. Click "New Link" to generate one to share with your client.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {reportLinks.map((link: any) => (
+                  <div
+                    key={link.id}
+                    className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${
+                      link.isActive ? "border-border bg-muted/30" : "border-dashed opacity-50"
+                    }`}
+                  >
+                    <span className="font-mono text-muted-foreground truncate flex-1">
+                      {baseUrl}/report/{link.accessToken.substring(0, 16)}…
+                    </span>
+                    {link.isActive && (
+                      <>
+                        <span className="text-muted-foreground shrink-0">
+                          {link.accessCount ?? 0} views
+                        </span>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 shrink-0"
+                          onClick={() => copyLink(link.accessToken)}
+                          title="Copy link"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                        <a
+                          href={`${baseUrl}/report/${link.accessToken}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" title="Open report">
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
+                        </a>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 shrink-0 text-destructive hover:text-destructive"
+                          onClick={() => deactivateLink.mutate({ dashboardId: link.id })}
+                          title="Deactivate link"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </>
+                    )}
+                    {!link.isActive && (
+                      <Badge variant="outline" className="text-[10px] shrink-0">Inactive</Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

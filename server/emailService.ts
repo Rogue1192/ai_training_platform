@@ -735,6 +735,92 @@ function buildWinEmailHtml(data: WinEmailData, wl: WhiteLabelSettings): string {
   return baseTemplate(content, preheader, wl);
 }
 
+// ─── Agency Win Notification Email ─────────────────────────────────────────────
+// Separate from the client-facing win email — agency-focused framing
+
+export interface AgencyWinEmailData {
+  agencyContactName: string;
+  agencyContactEmail: string;
+  businessName: string;
+  totalWins: number;
+  wins: WinEmailData["wins"];
+  currentScore: number;
+  previousScore: number | null;
+  dashboardUrl?: string;
+}
+
+function buildAgencyWinEmailHtml(data: AgencyWinEmailData, wl: WhiteLabelSettings): string {
+  const scoreChange = data.previousScore !== null ? data.currentScore - data.previousScore : null;
+  const scoreChangeHtml = scoreChange !== null
+    ? `<p style="font-size:13px;color:${scoreChange > 0 ? '#22c55e' : scoreChange < 0 ? '#f87171' : '#94a3b8'};margin:4px 0 0;">
+        ${scoreChange > 0 ? '&#9650;' : scoreChange < 0 ? '&#9660;' : '&#9654;'} ${scoreChange > 0 ? '+' : ''}${scoreChange} pts vs. previous
+      </p>`
+    : "";
+
+  const winsHtml = data.wins.slice(0, 5).map((win) => {
+    const afterBtns: string[] = [];
+    if (win.afterVideoChatgpt)  afterBtns.push(`<a href="${win.afterVideoChatgpt}"  style="display:inline-block;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;text-decoration:none;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);">&#9654; ChatGPT Proof</a>`);
+    if (win.afterVideoGoogleAi) afterBtns.push(`<a href="${win.afterVideoGoogleAi}" style="display:inline-block;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;text-decoration:none;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);">&#9654; Google AI Proof</a>`);
+    return `
+    <div style="background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:16px 20px;margin:10px 0;">
+      <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#f1f5f9;">${win.query}</p>
+      <p style="margin:0 0 8px;font-size:12px;color:#64748b;">${win.platform} &bull; ${win.location}</p>
+      ${afterBtns.length > 0 ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${afterBtns.join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+
+  const content = `
+    <div style="padding: 40px 40px 0;">
+      <div style="display:inline-block;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:6px 14px;margin-bottom:24px;">
+        <span style="color:#22c55e;font-size:13px;font-weight:600;letter-spacing:0.05em;">&#127942; CLIENT WIN</span>
+      </div>
+      <h1 style="margin:0 0 12px;font-size:26px;font-weight:800;color:#f1f5f9;line-height:1.2;">
+        ${data.totalWins} New Win${data.totalWins > 1 ? 's' : ''} — ${data.businessName}
+      </h1>
+      <p style="margin:0 0 28px;font-size:15px;color:#94a3b8;line-height:1.6;">
+        Hi ${data.agencyContactName} — your client <strong>${data.businessName}</strong> just appeared in AI search results.
+      </p>
+    </div>
+
+    <div style="margin:0 40px 24px;background:rgba(59,130,246,0.05);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:20px 24px;">
+      <p style="margin:0 0 2px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">Current Visibility Score</p>
+      <p style="margin:0;font-size:32px;font-weight:800;color:#60a5fa;">${data.currentScore}</p>
+      ${scoreChangeHtml}
+    </div>
+
+    <div style="margin:0 40px 32px;">
+      ${winsHtml}
+      ${data.wins.length > 5 ? `<p style="text-align:center;font-size:13px;color:#64748b;">+ ${data.wins.length - 5} more wins</p>` : ''}
+    </div>
+
+    ${data.dashboardUrl ? `
+    <div style="text-align:center;margin:0 40px 40px;">
+      <a href="${data.dashboardUrl}" style="display:inline-block;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:10px;font-size:14px;font-weight:600;">View Client Dashboard &rarr;</a>
+    </div>
+    ` : ''}
+  `;
+
+  return baseTemplate(content, `Client win: ${data.businessName} appeared in AI results — ${data.totalWins} new win${data.totalWins > 1 ? 's' : ''}`, wl);
+}
+
+export async function sendAgencyWinNotificationEmail(data: AgencyWinEmailData): Promise<EmailResult> {
+  try {
+    const wl = await getWhiteLabel();
+    const resend = await getResend();
+    const { data: result, error } = await resend.emails.send({
+      from: `${wl.fromName} <${wl.fromEmail}>`,
+      to: [data.agencyContactEmail],
+      subject: `&#127942; Client Win: ${data.businessName} — ${data.totalWins} new AI mention${data.totalWins > 1 ? 's' : ''}`,
+      html: buildAgencyWinEmailHtml(data, wl),
+    });
+    if (error) return { success: false, error: error.message };
+    return { success: true, messageId: result?.id };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  }
+}
+
 // ─── Baseline Visibility Email ────────────────────────────────────────────────
 
 function buildBaselineVisibilityEmailHtml(data: BaselineVisibilityEmailData, wl: WhiteLabelSettings): string {
@@ -1301,6 +1387,7 @@ export async function sendCampaignWinEmails(
     dashboardUrl,
   });
   // Also notify the white-label agency if this is an agency client and they haven't opted out
+  // Uses a separate agency-focused email (not the client-facing win email)
   if (business.agencyId) {
     if (business.agencyWinEmailsEnabled === false) {
       console.log(`[Email] Agency win emails disabled for client ${business.name} (agencyId ${business.agencyId}), skipping agency notification`);
@@ -1309,10 +1396,10 @@ export async function sendCampaignWinEmails(
         const { getAgencyById } = await import('./dbAgencies');
         const agency = await getAgencyById(business.agencyId);
         if (agency?.contactEmail) {
-          await sendWinNotificationEmail({
+          await sendAgencyWinNotificationEmail({
+            agencyContactName: agency.contactName || agency.brandName || agency.name,
+            agencyContactEmail: agency.contactEmail,
             businessName: business.name,
-            contactName: agency.contactName || agency.brandName || agency.name,
-            contactEmail: agency.contactEmail,
             totalWins: wins.length,
             wins,
             currentScore,
@@ -1481,6 +1568,94 @@ export async function sendTrialExpiredEmail(data: TrialExpiredEmailData): Promis
       html: baseTemplate(content, `Your 14-day trial for ${data.businessName} has expired.`, wl),
     });
 
+    if (error) return { success: false, error: error.message };
+    return { success: true, messageId: result?.id };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  }
+}
+
+// ─── Drop-Out Alert Email ────────────────────────────────────────────────────
+
+export interface DropOutAlertEmailData {
+  businessName: string;
+  contactName: string;
+  contactEmail: string;
+  query: string;
+  location: string;
+  droppedPlatforms: string[]; // e.g. ["ChatGPT", "Gemini"]
+  isAgencyNotification: boolean;
+}
+
+function buildDropOutAlertEmailHtml(data: DropOutAlertEmailData, wl: WhiteLabelSettings): string {
+  const platformList = data.droppedPlatforms.join(" and ");
+  const subject = data.isAgencyNotification
+    ? `⚠️ Drop-Out Detected — ${data.businessName}`
+    : `⚠️ AI Visibility Update for ${data.businessName}`;
+
+  const intro = data.isAgencyNotification
+    ? `Your client <strong>${data.businessName}</strong> has dropped out of AI results on <strong>${platformList}</strong> for the query below. A recovery run has been automatically started.`
+    : `We detected that <strong>${data.businessName}</strong> is no longer appearing in AI results on <strong>${platformList}</strong> for the query below. Our system has automatically started a recovery run to restore your visibility.`;
+
+  const content = `
+    <div style="padding: 40px 40px 0;">
+      <div style="display:inline-block; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 6px 14px; margin-bottom: 24px;">
+        <span style="color: #f87171; font-size: 13px; font-weight: 600; letter-spacing: 0.05em;">⚠ VISIBILITY DROP DETECTED</span>
+      </div>
+      <h1 style="margin: 0 0 12px; font-size: 26px; font-weight: 800; color: #f1f5f9; line-height: 1.2;">
+        AI Ranking Drop-Out
+      </h1>
+      <p style="margin: 0 0 28px; font-size: 15px; color: #94a3b8; line-height: 1.6;">
+        ${intro}
+      </p>
+    </div>
+
+    <div style="margin: 0 40px 32px; background: rgba(239,68,68,0.05); border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; padding: 20px 24px;">
+      <table style="width:100%; border-collapse:collapse;">
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8; font-size: 13px; width: 120px;">Business</td>
+          <td style="padding: 6px 0; color: #f1f5f9; font-size: 13px; font-weight: 600;">${data.businessName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8; font-size: 13px;">Query</td>
+          <td style="padding: 6px 0; color: #f1f5f9; font-size: 13px; font-weight: 600;">${data.query}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8; font-size: 13px;">Location</td>
+          <td style="padding: 6px 0; color: #f1f5f9; font-size: 13px;">${data.location}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #94a3b8; font-size: 13px;">Dropped From</td>
+          <td style="padding: 6px 0; color: #f87171; font-size: 13px; font-weight: 600;">${platformList}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="margin: 0 40px 40px; background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.2); border-radius: 12px; padding: 20px 24px;">
+      <p style="margin: 0; color: #93c5fd; font-size: 14px; font-weight: 600;">🔄 Recovery In Progress</p>
+      <p style="margin: 8px 0 0; color: #94a3b8; font-size: 13px; line-height: 1.6;">
+        Our system has automatically launched a recovery training run. You will receive a win notification once visibility is restored.
+      </p>
+    </div>
+  `;
+
+  return baseTemplate(content, subject, wl);
+}
+
+export async function sendDropOutAlertEmail(data: DropOutAlertEmailData): Promise<EmailResult> {
+  try {
+    const wl = await getWhiteLabel();
+    const resend = await getResend();
+    const subject = data.isAgencyNotification
+      ? `⚠️ Drop-Out Detected — ${data.businessName}`
+      : `⚠️ AI Visibility Update for ${data.businessName}`;
+    const { data: result, error } = await resend.emails.send({
+      from: `${wl.fromName} <${wl.fromEmail}>`,
+      to: [data.contactEmail],
+      subject,
+      html: buildDropOutAlertEmailHtml(data, wl),
+    });
     if (error) return { success: false, error: error.message };
     return { success: true, messageId: result?.id };
   } catch (err) {

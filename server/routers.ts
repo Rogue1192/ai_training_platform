@@ -1640,6 +1640,36 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { getVisibilityTrends } = await import("./rankTrackingEngine");
         return getVisibilityTrends(input.campaignId, { days: input.days });
       }),
+    getMentionHistory: protectedProcedure
+      .input(z.object({
+        queryLocationId: z.number(),
+        days: z.number().min(1).max(365).default(90),
+      }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const { rankSnapshots } = await import("../drizzle/schema");
+        const { eq, gte, desc } = await import("drizzle-orm");
+        const db = await getDb();
+        if (!db) return [];
+        const since = new Date();
+        since.setDate(since.getDate() - input.days);
+        return db
+          .select({
+            id: rankSnapshots.id,
+            checkedAt: rankSnapshots.checkedAt,
+            checkType: rankSnapshots.checkType,
+            chatgptMentioned: rankSnapshots.chatgptMentioned,
+            chatgptPosition: rankSnapshots.chatgptPosition,
+            geminiMentioned: rankSnapshots.geminiMentioned,
+            geminiPosition: rankSnapshots.geminiPosition,
+            aiOverviewMentioned: rankSnapshots.aiOverviewMentioned,
+            aiOverviewPosition: rankSnapshots.aiOverviewPosition,
+          })
+          .from(rankSnapshots)
+          .where(eq(rankSnapshots.queryLocationId, input.queryLocationId))
+          .orderBy(desc(rankSnapshots.checkedAt))
+          .limit(200);
+      }),
   }),
 
   // ============= AI ANSWER FORGE — Client Dashboard (Sprint 10) =============
@@ -2703,6 +2733,178 @@ export const agencyRouter = router({
       }
       await updateBusiness(input.businessId, { agencyWinEmailsEnabled: input.enabled });
       return { success: true, enabled: input.enabled };
+    }),
+
+  // Agency user: get LLM query insights scoped to their own clients only
+  llmInsightsQueries: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(500).default(200) }))
+    .query(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getDb } = await import('./db');
+      const { campaignQueryLocations, campaigns, businesses } = await import('../drizzle/schema');
+      const { desc, eq, isNotNull } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) return [];
+      let agencyId: number | null = null;
+      if (ctx.user.role !== 'admin') {
+        const agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency) return [];
+        agencyId = agency.id;
+      }
+      const query = db
+        .select({
+          id: campaignQueryLocations.id,
+          campaignId: campaignQueryLocations.campaignId,
+          searchQuery: campaignQueryLocations.searchQuery,
+          location: campaignQueryLocations.location,
+          aiSearchVolume: campaignQueryLocations.aiSearchVolume,
+          currentRankChatGPT: campaignQueryLocations.currentRankChatGPT,
+          currentRankGemini: campaignQueryLocations.currentRankGemini,
+          currentRankAIOverview: campaignQueryLocations.currentRankAIOverview,
+          trainingStatus: campaignQueryLocations.trainingStatus,
+          trainingSessions: campaignQueryLocations.trainingSessions,
+          firstMentionedAt: campaignQueryLocations.firstMentionedAt,
+          lastRankCheckAt: campaignQueryLocations.lastRankCheckAt,
+          businessName: businesses.name,
+          campaignName: campaigns.campaignName,
+          businessType: businesses.businessType,
+        })
+        .from(campaignQueryLocations)
+        .leftJoin(campaigns, eq(campaignQueryLocations.campaignId, campaigns.id))
+        .leftJoin(businesses, eq(campaigns.businessId, businesses.id))
+        .where(
+          agencyId !== null
+            ? eq(businesses.agencyId, agencyId)
+            : isNotNull(campaignQueryLocations.aiSearchVolume)
+        )
+        .orderBy(desc(campaignQueryLocations.aiSearchVolume))
+        .limit(input.limit);
+      return query;
+    }),
+
+  // Agency user: get aggregate LLM stats scoped to their own clients only
+  llmInsightsStats: protectedProcedure.query(async ({ ctx }) => {
+    const { getAgencyByUserId } = await import('./dbAgencies');
+    const { getDb } = await import('./db');
+    const { campaignQueryLocations, campaigns, businesses } = await import('../drizzle/schema');
+    const { sql, eq } = await import('drizzle-orm');
+    const db = await getDb();
+    if (!db) return null;
+    let agencyId: number | null = null;
+    if (ctx.user.role !== 'admin') {
+      const agency = await getAgencyByUserId(ctx.user.id);
+      if (!agency) return null;
+      agencyId = agency.id;
+    }
+    const baseQuery = db
+      .select({
+        totalQueries: sql<number>`count(*)`,
+        totalWithVolume: sql<number>`count(${campaignQueryLocations.aiSearchVolume})`,
+        avgAiVolume: sql<number>`avg(${campaignQueryLocations.aiSearchVolume})`,
+        totalAiVolume: sql<number>`sum(${campaignQueryLocations.aiSearchVolume})`,
+        mentionedChatGPT: sql<number>`sum(case when ${campaignQueryLocations.currentRankChatGPT} = 'mentioned' then 1 else 0 end)`,
+        mentionedGemini: sql<number>`sum(case when ${campaignQueryLocations.currentRankGemini} = 'mentioned' then 1 else 0 end)`,
+        mentionedAIOverview: sql<number>`sum(case when ${campaignQueryLocations.currentRankAIOverview} = 'mentioned' then 1 else 0 end)`,
+        achievedCount: sql<number>`sum(case when ${campaignQueryLocations.trainingStatus} = 'achieved' then 1 else 0 end)`,
+      })
+      .from(campaignQueryLocations)
+      .leftJoin(campaigns, eq(campaignQueryLocations.campaignId, campaigns.id))
+      .leftJoin(businesses, eq(campaigns.businessId, businesses.id));
+    const [stats] = agencyId !== null
+      ? await baseQuery.where(eq(businesses.agencyId, agencyId))
+      : await baseQuery;
+    return {
+      totalQueries: Number(stats?.totalQueries ?? 0),
+      totalWithVolume: Number(stats?.totalWithVolume ?? 0),
+      avgAiVolume: Math.round(Number(stats?.avgAiVolume ?? 0)),
+      totalAiVolume: Number(stats?.totalAiVolume ?? 0),
+      mentionedChatGPT: Number(stats?.mentionedChatGPT ?? 0),
+      mentionedGemini: Number(stats?.mentionedGemini ?? 0),
+      mentionedAIOverview: Number(stats?.mentionedAIOverview ?? 0),
+      achievedCount: Number(stats?.achievedCount ?? 0),
+    };
+  }),
+
+  // Agency user: get existing client report links for a campaign
+  getClientReportLinks: protectedProcedure
+    .input(z.object({ campaignId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getDb } = await import('./db');
+      const { clientDashboards, campaigns, businesses } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) return [];
+      if (ctx.user.role !== 'admin') {
+        const agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency) throw new Error('Forbidden');
+        const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, input.campaignId)).limit(1);
+        if (!campaign) throw new Error('Campaign not found');
+        const [biz] = await db.select().from(businesses).where(eq(businesses.id, campaign.businessId)).limit(1);
+        if (!biz || biz.agencyId !== agency.id) throw new Error('Forbidden');
+      }
+      return db.select().from(clientDashboards)
+        .where(eq(clientDashboards.campaignId, input.campaignId))
+        .orderBy(clientDashboards.createdAt);
+    }),
+
+  // Agency user: create a new client report link for a campaign
+  createClientReportLink: protectedProcedure
+    .input(z.object({
+      campaignId: z.number(),
+      businessId: z.number(),
+      dashboardTitle: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getDb } = await import('./db');
+      const { clientDashboards, businesses } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const crypto = await import('crypto');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+      if (ctx.user.role !== 'admin') {
+        const agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency) throw new Error('Forbidden');
+        const [biz] = await db.select().from(businesses).where(eq(businesses.id, input.businessId)).limit(1);
+        if (!biz || biz.agencyId !== agency.id) throw new Error('Forbidden');
+      }
+      const accessToken = crypto.randomBytes(32).toString('hex');
+      const [created] = await db.insert(clientDashboards).values({
+        businessId: input.businessId,
+        campaignId: input.campaignId,
+        accessToken,
+        dashboardTitle: input.dashboardTitle || null,
+        isActive: true,
+      }).returning();
+      return created;
+    }),
+
+  // Agency user: deactivate a client report link
+  deactivateClientReportLink: protectedProcedure
+    .input(z.object({ dashboardId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getDb } = await import('./db');
+      const { clientDashboards, campaigns, businesses } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+      if (ctx.user.role !== 'admin') {
+        const agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency) throw new Error('Forbidden');
+        const [dash] = await db.select().from(clientDashboards).where(eq(clientDashboards.id, input.dashboardId)).limit(1);
+        if (!dash) throw new Error('Not found');
+        const [camp] = dash.campaignId
+          ? await db.select().from(campaigns).where(eq(campaigns.id, dash.campaignId)).limit(1)
+          : [undefined];
+        const [biz] = camp
+          ? await db.select().from(businesses).where(eq(businesses.id, camp.businessId)).limit(1)
+          : [undefined];
+        if (!biz || biz.agencyId !== agency.id) throw new Error('Forbidden');
+      }
+      await db.update(clientDashboards).set({ isActive: false }).where(eq(clientDashboards.id, input.dashboardId));
+      return { success: true };
     }),
 });
 
