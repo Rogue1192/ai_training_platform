@@ -42,14 +42,11 @@ export async function getDb() {
     try {
       console.log("[Database] Connecting to:", databaseUrl.includes('pooler.supabase.com') ? 'Supabase Pooler' : 'Default DB');
       
-      // Configure SSL for Supabase connections
+      // Configure SSL — only use pooler options for Supabase pooler URLs
+      const isSupabasePooler = databaseUrl.includes('pooler.supabase.com');
       _client = postgres(databaseUrl, {
         ssl: 'require',
-        connection: {
-          // Force IPv4 to avoid ENETUNREACH errors on Railway
-          options: '--cluster=pooler',
-        },
-        // Increase connection timeout
+        ...(isSupabasePooler ? { connection: { options: '--cluster=pooler' } } : {}),
         connect_timeout: 30,
       });
       _db = drizzle(_client);
