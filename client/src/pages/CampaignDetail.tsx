@@ -52,6 +52,7 @@ import {
   ChevronDown,
   ChevronUp,
   History,
+  Code,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
@@ -975,8 +976,9 @@ function ContentTab({ campaignId }: { campaignId: number }) {
     );
   }
 
-  const visiblePages = contentPages?.filter((p: any) => p.pageType !== "llm_txt") ?? [];
+  const visiblePages = contentPages?.filter((p: any) => p.pageType !== "llm_txt" && p.pageType !== "schema_package") ?? [];
   const llmTxtPage = contentPages?.find((p: any) => p.pageType === "llm_txt");
+  const schemaPackagePage = contentPages?.find((p: any) => p.pageType === "schema_package");
   const allUrlsEntered = visiblePages.length > 0 && visiblePages.every((p: any) => !!p.publishedUrl);
 
   return (
@@ -1182,6 +1184,7 @@ function ContentTab({ campaignId }: { campaignId: number }) {
           <CardContent>
             <p className="text-xs text-muted-foreground mb-3">
               Upload this file to the root of the client's website as <code className="text-teal-400">/llm.txt</code> so AI crawlers can read it directly.
+              This file tells GPTBot, Claude-Web, Google-Extended, and other AI crawlers exactly who this business is, what they specialize in, and where to find their credibility pages.
             </p>
             <div className="flex justify-end mb-2">
               <Button
@@ -1200,6 +1203,63 @@ function ContentTab({ campaignId }: { campaignId: number }) {
             <div className="rounded-md bg-muted/40 p-3 max-h-48 overflow-y-auto">
               <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
                 {llmTxtPage.pageContent}
+              </pre>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Schema Markup Package */}
+      {schemaPackagePage && (
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+              <Code className="w-4 h-4 text-orange-400" />
+              Schema Markup Package
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground mb-1">
+              Copy the <strong>SITE-WIDE SCHEMA</strong> block and paste it into the <code className="text-orange-400">&lt;head&gt;</code> of every page
+              (use the <em>Insert Headers and Footers</em> plugin in WordPress). Each per-page block goes on its corresponding page.
+            </p>
+            {schemaPackagePage.placementInstructions && (
+              <p className="text-xs text-orange-300/80 mb-3 bg-orange-500/10 rounded p-2">
+                {schemaPackagePage.placementInstructions}
+              </p>
+            )}
+            <div className="flex gap-2 justify-end mb-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5"
+                onClick={() => {
+                  // Copy only the site-wide schema block
+                  const match = schemaPackagePage.pageContent.match(/<script type="application\/ld\+json">[\s\S]*?<\/script>/);
+                  const siteWide = match ? match[0] : schemaPackagePage.pageContent;
+                  navigator.clipboard.writeText(siteWide);
+                  toast.success("Site-wide schema copied!");
+                }}
+              >
+                <Copy className="w-3 h-3" />
+                Copy Site-Wide Schema
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5"
+                onClick={() => {
+                  navigator.clipboard.writeText(schemaPackagePage.pageContent);
+                  toast.success("Full schema package copied!");
+                }}
+              >
+                <Copy className="w-3 h-3" />
+                Copy All
+              </Button>
+            </div>
+            <div className="rounded-md bg-muted/40 p-3 max-h-64 overflow-y-auto">
+              <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
+                {schemaPackagePage.pageContent}
               </pre>
             </div>
           </CardContent>
