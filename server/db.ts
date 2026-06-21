@@ -33,25 +33,49 @@ import { ENV } from "./_core/env";
 let _db: ReturnType<typeof drizzle> | null = null;
 let _client: ReturnType<typeof postgres> | null = null;
 
+/**
+ * Rewrite a Supabase direct-DB URL to the Transaction Pooler URL.
+ * Railway cannot reach IPv6 addresses, and the direct DB host resolves to IPv6.
+ * The Transaction Pooler (aws-0-us-east-1.pooler.supabase.com) resolves to IPv4.
+ *
+ * Direct URL format:  postgresql://postgres:[PASS]@db.PROJECT_REF.supabase.co:5432/postgres
+ * Pooler URL format:  postgresql://postgres.PROJECT_REF:[PASS]@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+ */
+function rewriteToPoolerUrl(url: string): string {
+  // Already pointing at the pooler — no rewrite needed
+  if (url.includes('pooler.supabase.com')) return url;
+
+  // Match Supabase direct DB URLs: db.PROJECT_REF.supabase.co
+  const directMatch = url.match(/^(postgresql|postgres):\/\/([^:@]+):([^@]+)@db\.([a-z0-9]+)\.supabase\.co(:\d+)?\/(\S+)$/);
+  if (!directMatch) return url; // Not a Supabase direct URL — leave as-is
+
+  const [, scheme, user, pass, projectRef, , dbName] = directMatch;
+  // Use Transaction Pooler (port 6543) — compatible with Drizzle ORM (prepare: false)
+  const poolerUrl = `${scheme}://${user}.${projectRef}:${pass}@aws-0-us-east-1.pooler.supabase.com:6543/${dbName}`;
+  console.log('[Database] Rewrote direct DB URL to Transaction Pooler (IPv4) for Railway compatibility');
+  return poolerUrl;
+}
+
 export async function getDb() {
   // Prioritize SUPABASE_DATABASE_URL (PostgreSQL),
   // fall back to DATABASE_URL for Railway or other environments
-  const databaseUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
-  
+  const rawUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+  // Rewrite to pooler URL if needed (Railway cannot reach IPv6 direct DB host)
+  const databaseUrl = rawUrl ? rewriteToPoolerUrl(rawUrl) : undefined;
+
   if (!_db && databaseUrl) {
     try {
-      console.log("[Database] Connecting to:", databaseUrl.includes('pooler.supabase.com') ? 'Supabase Pooler' : 'Default DB');
-      
-      // Always use --cluster=pooler to ensure IPv4 routing via Supabase pooler (required for Railway)
+      console.log('[Database] Connecting to:', databaseUrl.includes('pooler.supabase.com') ? 'Supabase Transaction Pooler (IPv4)' : 'Default DB');
       _client = postgres(databaseUrl, {
         ssl: 'require',
-        connection: { options: '--cluster=pooler' },
+        // Transaction Pooler does not support prepared statements
+        prepare: false,
         connect_timeout: 30,
       });
       _db = drizzle(_client);
-      console.log("[Database] Connected successfully");
+      console.log('[Database] Connected successfully');
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      console.warn('[Database] Failed to connect:', error);
       _db = null;
       _client = null;
     }
