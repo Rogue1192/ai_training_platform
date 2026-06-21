@@ -1222,9 +1222,9 @@ export async function seedDefaultPromptTemplates(): Promise<PromptTemplate[]> {
   return templates;
 }
 
-// ─── Service Keys (DataForSEO, SinByte, Resend) ───────────────────────────────
+// ─── Service Keys (DataForSEO, Monkey Indexer, Resend) ───────────────────────────────
 
-export type ServiceKeyService = "dataforseo" | "sinbyte" | "resend" | "whitelabel" | "stripe";
+export type ServiceKeyService = "dataforseo" | "sinbyte" | "monkeyindexer" | "resend" | "whitelabel" | "stripe"; // sinbyte kept for compat
 
 export async function getServiceKey(service: ServiceKeyService) {
   const db = await getDb();
@@ -1264,4 +1264,23 @@ export async function deleteServiceKey(service: ServiceKeyService) {
   if (!db) return;
   const { serviceKeys } = await import("../drizzle/schema");
   await db.delete(serviceKeys).where(eq(serviceKeys.service, service));
+}
+
+/**
+ * Ensure the "monkeyindexer" value exists in the service_key_service Postgres enum.
+ * This is a safe, idempotent ALTER TYPE that runs on startup so no manual SQL is needed.
+ * Postgres silently ignores the ADD VALUE if the value already exists (IF NOT EXISTS).
+ */
+export async function ensureMonkeyIndexerEnumValue(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    // drizzle-orm exposes the underlying postgres client via db.$client
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`ALTER TYPE service_key_service ADD VALUE IF NOT EXISTS 'monkeyindexer'`;
+    console.log("[DB] service_key_service enum: monkeyindexer value ensured");
+  } catch (err: any) {
+    // Non-fatal — the value may already exist or the enum may not exist yet
+    console.warn("[DB] ensureMonkeyIndexerEnumValue:", err.message);
+  }
 }

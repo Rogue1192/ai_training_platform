@@ -434,7 +434,7 @@ export const appRouter = router({
       }),
   }),
 
-  // Service Keys (DataForSEO, SinByte, Resend) — managed via Settings UI
+  // Service Keys (DataForSEO, Monkey Indexer, Resend) — managed via Settings UI
   serviceKey: router({
     list: protectedProcedure.query(async () => {
       const { getAllServiceKeys } = await import("./db");
@@ -478,9 +478,9 @@ export const appRouter = router({
     }),
     save: protectedProcedure
       .input(z.object({
-        service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]),
+        service: z.enum(["dataforseo", "monkeyindexer", "resend", "whitelabel", "stripe"]),
         // For dataforseo: pass as JSON string {login, password}
-        // For sinbyte/resend: pass as the API key string
+        // For monkeyindexer/resend: pass as the API key string
         value: z.string().min(1),
       }))
       .mutation(async ({ input }) => {
@@ -491,14 +491,14 @@ export const appRouter = router({
         return { success: true };
       }),
     delete: protectedProcedure
-      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]) }))
+      .input(z.object({ service: z.enum(["dataforseo", "monkeyindexer", "resend", "whitelabel", "stripe"]) }))
       .mutation(async ({ input }) => {
         const { deleteServiceKey } = await import("./db");
         await deleteServiceKey(input.service);
         return { success: true };
       }),
     test: protectedProcedure
-      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]) }))
+      .input(z.object({ service: z.enum(["dataforseo", "monkeyindexer", "resend", "whitelabel", "stripe"]) }))
       .mutation(async ({ input }) => {
         const { getServiceKey, upsertServiceKey } = await import("./db");
         const { decrypt } = await import("./encryption");
@@ -517,14 +517,19 @@ export const appRouter = router({
             });
             const valid = resp.data?.status_code === 20000;
             return { success: valid, message: valid ? "DataForSEO credentials verified" : "Invalid credentials" };
-          } else if (input.service === "sinbyte") {
+          } else if (input.service === "monkeyindexer") {
             const axios = (await import("axios")).default;
-            const resp = await axios.get(`https://app.sinbyte.com/api/indexing/?apikey=${value}`, {
+            const resp = await axios.get("https://monkeyindexer.com/api/v1/me", {
+              headers: { Authorization: `Bearer ${value}` },
               timeout: 10000,
               validateStatus: () => true,
             });
-            const valid = resp.status === 200 || resp.status === 404;
-            return { success: valid, message: valid ? "SinByte API key verified" : `SinByte returned status ${resp.status}` };
+            const valid = resp.status === 200 && resp.data?.success === true;
+            const credits = resp.data?.data?.credits?.available;
+            const msg = valid
+              ? `Monkey Indexer key verified — ${credits ?? "?"} credits available`
+              : `Monkey Indexer returned status ${resp.status}`;
+            return { success: valid, message: msg };
           } else if (input.service === "resend") {
             const { Resend } = await import("resend");
             const resend = new Resend(value);
@@ -1667,34 +1672,35 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       }),
   }),
 
-  // ============= AI ANSWER FORGE — SinByte Indexing (Sprint 7) =============
+  // ============= AI ANSWER FORGE — Monkey Indexer (replaces SinByte) =============
   indexing: router({
     submitCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number(), businessName: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        const { submitCampaignForIndexing } = await import("./sinbyteIndexing");
+        const { submitCampaignForIndexing } = await import("./monkeyIndexer");
         return submitCampaignForIndexing(input);
       }),
     verifyCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignIndexing } = await import("./sinbyteIndexing");
+        const { verifyCampaignIndexing } = await import("./monkeyIndexer");
         return verifyCampaignIndexing(input.campaignId);
       }),
     getHistory: protectedProcedure
       .query(async ({ ctx }) => {
-        // Note: getIndexingHistory returns all history - this is admin-only data
-        // The user is already authenticated via protectedProcedure
-        const { getIndexingHistory } = await import("./sinbyteIndexing");
+        const { getIndexingHistory } = await import("./monkeyIndexer");
         return getIndexingHistory();
       }),
-    getTaskStatus: protectedProcedure
-      .input(z.object({ taskId: z.union([z.string(), z.number()]) }))
+    getSubmissionStatuses: protectedProcedure
+      .input(z.object({ trackingIds: z.array(z.string()) }))
       .query(async ({ ctx, input }) => {
-        // Note: Task status is fetched from SinByte API by task ID
-        // The user is already authenticated via protectedProcedure
-        const { getTaskStatus } = await import("./sinbyteIndexing");
-        return getTaskStatus(input.taskId);
+        const { getSubmissionStatuses } = await import("./monkeyIndexer");
+        return getSubmissionStatuses(input.trackingIds);
+      }),
+    getAccountInfo: protectedProcedure
+      .query(async ({ ctx }) => {
+        const { getAccountInfo } = await import("./monkeyIndexer");
+        return getAccountInfo();
       }),
   }),
 

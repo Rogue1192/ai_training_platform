@@ -9,7 +9,7 @@ import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search
 import TwoFactorAuth from "@/components/TwoFactorAuth";
 
 type AIProvider = "openai" | "anthropic" | "google" | "minimax";
-type ServiceType = "dataforseo" | "sinbyte" | "resend" | "stripe";
+type ServiceType = "dataforseo" | "monkeyindexer" | "resend" | "stripe";
 
 const PROVIDERS: {
   id: AIProvider;
@@ -61,12 +61,12 @@ const SERVICE_CONFIGS: {
     ],
   },
   {
-    id: "sinbyte",
-    label: "SinByte",
-    description: "Fast Google indexing for published content pages",
+    id: "monkeyindexer",
+    label: "Monkey Indexer",
+    description: "Fast Google indexing for published content pages — monkeyindexer.com",
     icon: <Database className="w-6 h-6 text-primary" />,
     fields: [
-      { key: "apiKey", label: "API Key", placeholder: "sb-...", type: "password" },
+      { key: "apiKey", label: "API Key", placeholder: "mi_...", type: "password" },
     ],
   },
   {
@@ -111,7 +111,7 @@ export default function Settings() {
 
   const [serviceInputs, setServiceInputs] = useState<Record<ServiceType, Record<string, string>>>({
     dataforseo: { login: "", password: "" },
-    sinbyte: { apiKey: "" },
+    monkeyindexer: { apiKey: "" },
     resend: { apiKey: "" },
     stripe: { liveKey: "", testKey: "" },
   });
