@@ -63,15 +63,17 @@ function rewriteToPoolerUrl(url: string): string {
   const originalUsername = parsed.username; // e.g. "postgres"
 
   // Build the pooler URL using the URL object (handles URL-encoded passwords safely)
+  // Using Session Pooler (port 5432) — works with all Supabase projects including older infrastructure.
+  // Transaction Pooler (port 6543) requires the project to be registered in the new pooler fleet.
   const poolerUrl = new URL(parsed.toString());
   poolerUrl.hostname = 'aws-0-us-east-1.pooler.supabase.com';
-  poolerUrl.port = '6543';
+  poolerUrl.port = '5432';
   poolerUrl.username = `${originalUsername}.${projectRef}`;
 
   const result = poolerUrl.toString();
   // Log masked URL for debugging (show host/user but not password)
   const maskedResult = result.replace(/:([^@]+)@/, ':[MASKED]@');
-  console.log('[Database] Rewrote direct DB URL to Transaction Pooler:', maskedResult);
+  console.log('[Database] Rewrote direct DB URL to Session Pooler (IPv4, port 5432):', maskedResult);
   return result;
 }
 
