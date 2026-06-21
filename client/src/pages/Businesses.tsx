@@ -19,6 +19,7 @@ import {
 export default function Businesses() {
   const { data: businesses, isLoading, refetch } = trpc.business.list.useQuery();
   const createBusiness = trpc.business.create.useMutation();
+  const onboardClient = trpc.business.onboardClient.useMutation();
   const updateBusiness = trpc.business.update.useMutation();
   const deleteBusiness = trpc.business.delete.useMutation();
   const bulkDeleteMutation = trpc.business.bulkDelete.useMutation();
@@ -53,6 +54,8 @@ export default function Businesses() {
     warranties: "",
     differentiators: "",
     clientType: "ai_only",
+    internalSource: "",
+    packageTier: "starter",
     siteAdminUrl: "",
     siteUsername: "",
     sitePassword: "",
@@ -79,6 +82,8 @@ export default function Businesses() {
       warranties: "",
       differentiators: "",
       clientType: "ai_only",
+      internalSource: "",
+      packageTier: "starter",
       siteAdminUrl: "",
       siteUsername: "",
       sitePassword: "",
@@ -195,13 +200,17 @@ export default function Businesses() {
       delete payload.yearsInBusiness;
     }
     if (!payload.sitePassword) delete payload.sitePassword;
+    if (!payload.internalSource) delete payload.internalSource;
+    const packageTier = payload.packageTier || "starter";
+    delete payload.packageTier;
     try {
       if (editingBusiness) {
         await updateBusiness.mutateAsync({ id: editingBusiness, ...payload });
         toast.success("Business updated successfully");
       } else {
-        await createBusiness.mutateAsync(payload);
-        toast.success("Business created successfully");
+        // Use onboardClient to create business AND kick off the pipeline
+        await onboardClient.mutateAsync({ ...payload, packageTier });
+        toast.success("Business created and pipeline started!");
       }
       setIsDialogOpen(false);
       resetForm();
@@ -329,6 +338,34 @@ export default function Businesses() {
                           <SelectItem value="ai_only">AI Answer Forge Only</SelectItem>
                           <SelectItem value="ai_plus_seo">AI + SEO (Existing Site)</SelectItem>
                           <SelectItem value="ai_plus_seo_plus_build">AI + SEO + New Build</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="internalSource">Source Agency</Label>
+                      <Select value={formData.internalSource} onValueChange={(value) => setFormData({ ...formData, internalSource: value })}>
+                        <SelectTrigger className="bg-background border-input">
+                          <SelectValue placeholder="Select source (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">None / White-Label</SelectItem>
+                          <SelectItem value="rogue">Rogue Business Marketing</SelectItem>
+                          <SelectItem value="ranklocal">Rank Local</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="packageTier">Package Tier *</Label>
+                      <Select value={formData.packageTier} onValueChange={(value) => setFormData({ ...formData, packageTier: value })}>
+                        <SelectTrigger className="bg-background border-input">
+                          <SelectValue placeholder="Select package" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="starter">Starter — $99/mo (5 queries, 3 locations)</SelectItem>
+                          <SelectItem value="growth">Growth — $149/mo (5 queries, 5 locations)</SelectItem>
+                          <SelectItem value="pro">Pro — $179/mo (10 queries, 5 locations)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

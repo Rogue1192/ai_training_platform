@@ -179,6 +179,102 @@ export const appRouter = router({
         await bulkArchiveBusinesses(input.ids);
         return { success: true, archived: input.ids.length };
       }),
+    // Super-admin direct onboarding: create business + kick off full pipeline immediately
+    onboardClient: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        businessType: z.string().optional(),
+        location: z.string().optional(),
+        description: z.string().optional(),
+        website: z.string().optional(),
+        phone: z.string().optional(),
+        address: z.string().optional(),
+        notes: z.string().optional(),
+        contactEmail: z.string().optional(),
+        contactName: z.string().optional(),
+        certifications: z.string().optional(),
+        awards: z.string().optional(),
+        yearsInBusiness: z.number().optional(),
+        bbbRating: z.string().optional(),
+        licenses: z.string().optional(),
+        warranties: z.string().optional(),
+        differentiators: z.string().optional(),
+        clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
+        internalSource: z.enum(["rogue", "ranklocal"]).optional(),
+        packageTier: z.enum(["starter", "growth", "pro"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { createBusiness } = await import("./db");
+        const { packageTier, ...businessFields } = input;
+        // Create the business record
+        const business = await createBusiness({
+          ...businessFields,
+          userId: ctx.user.id,
+        });
+        // Kick off the full pipeline asynchronously
+        setImmediate(async () => {
+          try {
+            const { getDb: _getDb } = await import('./db');
+            const db = await _getDb();
+            if (!db) return;
+            const {
+              getPackageTierBySlug, seedDefaultPackageTiers,
+              createCampaign, createClientDashboard, getCampaignsByBusinessId
+            } = await import('./dbCampaigns');
+            const { runFullPipeline } = await import('./pipelineOrchestrator');
+            const ownerId = ctx.user.id;
+            // Avoid duplicate campaigns
+            const existingCampaigns = await getCampaignsByBusinessId(business.id);
+            const activeCampaign = existingCampaigns.find(
+              (c: any) => c.status !== 'monitoring' && c.status !== 'error' && c.status !== 'paused'
+            );
+            if (activeCampaign) return;
+            // Resolve package tier
+            await seedDefaultPackageTiers();
+            const tier = await getPackageTierBySlug(packageTier);
+            if (!tier) { console.error(`[onboardClient] Package tier '${packageTier}' not found`); return; }
+            const { getBusinessById } = await import('./db');
+            const biz = await getBusinessById(business.id);
+            if (!biz) return;
+            // Create campaign
+            const campaign = await createCampaign({
+              userId: ownerId,
+              businessId: business.id,
+              packageTierId: tier.id,
+              campaignName: `${biz.name} - AI Visibility`,
+              status: 'pending',
+              clientType: input.clientType || 'ai_only',
+              trainingAggressiveness: 'aggressive',
+              rankCheckFrequency: 'weekly',
+              errorCount: 0,
+              trialStatus: 'trial',
+              maxQueries: tier.maxQueries,
+              maxLocations: tier.maxLocations,
+              selectedPackage: packageTier,
+            });
+            // Initialize trial
+            const { initializeTrial } = await import('./trialManager');
+            await initializeTrial(campaign.id, packageTier);
+            // Create client dashboard
+            const crypto = await import('crypto');
+            const accessToken = crypto.randomBytes(32).toString('hex');
+            await createClientDashboard({
+              businessId: business.id,
+              campaignId: campaign.id,
+              accessToken,
+              isActive: true,
+              dashboardTitle: `${biz.name} - AI Visibility Report`,
+              accessCount: 0,
+            });
+            // Run the full pipeline
+            await runFullPipeline(campaign.id, ownerId);
+            console.log(`[onboardClient] Pipeline started for business ${business.id}, campaign ${campaign.id}`);
+          } catch (err) {
+            console.error('[onboardClient] Pipeline kickoff failed:', err);
+          }
+        });
+        return { success: true, businessId: business.id };
+      }),
   }),
 
   // API key management
