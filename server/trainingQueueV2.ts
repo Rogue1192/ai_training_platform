@@ -36,6 +36,7 @@ import {
   getTrainingContextForSession,
   buildEnrichedSystemMessage,
   buildSourceCitationBlock,
+  buildSpecialtiesReinforcementBlock,
 } from "./trainingContextEnricher";
 
 // Types for the new phase-based system
@@ -403,10 +404,15 @@ async function executeTrainingIteration(
     
     // If not mentioned, send follow-up to reinforce
     if (!firstMention.mentioned) {
-      const { prompt: followUp } = await generateFollowUpPromptAsync(businessInfo, response.content);
+      const { prompt: baseFollowUp } = await generateFollowUpPromptAsync(businessInfo, response.content);
+      // Append specialties reinforcement block as the THIRD injection point
+      // (system message = 1st, citation block = 2nd, follow-up reinforcement = 3rd)
+      const specialtiesReinforcement = trainingContext ? buildSpecialtiesReinforcementBlock(trainingContext) : "";
+      const followUp = specialtiesReinforcement ? `${baseFollowUp}${specialtiesReinforcement}` : baseFollowUp;
       
       const followUpMessages: AIMessage[] = [
         ...messages,
+
         { role: "assistant", content: response.content },
         { role: "user", content: followUp },
       ];

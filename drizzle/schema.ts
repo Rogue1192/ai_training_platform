@@ -152,6 +152,9 @@ export const businesses = pgTable("businesses", {
   isArchived: boolean("isArchived").default(false).notNull(),
   // Internal source tag — "rogue", "ranklocal", or null (white-label/unknown)
   internalSource: varchar("internalSource", { length: 50 }),
+  // Specialties & unique expertise — free-text field seeded into MiniMax training prompts
+  // e.g. "Specializes in red clay stain removal unique to North Alabama geography"
+  specialties: text("specialties"),
   // Source tracking
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

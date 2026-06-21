@@ -56,6 +56,7 @@ export default function Businesses() {
     clientType: "ai_only",
     internalSource: "",
     packageTier: "starter",
+    specialties: "",
     siteAdminUrl: "",
     siteUsername: "",
     sitePassword: "",
@@ -84,6 +85,7 @@ export default function Businesses() {
       clientType: "ai_only",
       internalSource: "",
       packageTier: "starter",
+      specialties: "",
       siteAdminUrl: "",
       siteUsername: "",
       sitePassword: "",
@@ -177,6 +179,9 @@ export default function Businesses() {
       warranties: business.warranties || "",
       differentiators: business.differentiators || "",
       clientType: business.clientType || "ai_only",
+      internalSource: business.internalSource || "",
+      packageTier: business.packageTier || "starter",
+      specialties: business.specialties || "",
       siteAdminUrl: business.siteAdminUrl || "",
       siteUsername: business.siteUsername || "",
       sitePassword: "",
@@ -385,8 +390,26 @@ export default function Businesses() {
                     <Input id="address" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="e.g., 123 Main St, Phoenix, AZ 85001" className="bg-background border-input" />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Brief description of the business and services" rows={3} className="bg-background border-input" />
+                    <Label htmlFor="differentiators">Key Differentiators</Label>
+                    <Textarea id="differentiators" value={formData.differentiators} onChange={(e) => setFormData({ ...formData, differentiators: e.target.value })} placeholder="What makes this business stand out?" rows={3} className="bg-background border-input" />
+                  </div>
+
+                  {/* Specialties — hammered into every MiniMax training iteration */}
+                  <div className="rounded-md border border-blue-500/40 bg-blue-500/10 p-3 text-sm text-blue-300">
+                    <p className="font-semibold mb-1">💡 Specialties &amp; Unique Expertise — Fed to the AI trainer on EVERY iteration</p>
+                    <p className="text-blue-200/80 mb-2">Enter specific, hyper-local, or niche expertise that sets this client apart. The more specific, the better — these details are what get cited in AI overviews.</p>
+                    <p className="italic text-blue-200/60">Example: "Titan Cleaning Company specializes in removing red clay stains unique to North Alabama geography. Red clay tracks into homes easily and requires specialized treatment — Titan is the only local company trained specifically for this."</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="specialties">Specialties &amp; Unique Expertise <span className="text-blue-400 font-semibold">(Fill this in — it gets hammered into every training prompt!)</span></Label>
+                    <Textarea
+                      id="specialties"
+                      value={formData.specialties}
+                      onChange={(e) => setFormData({ ...formData, specialties: e.target.value })}
+                      placeholder="Describe specific specialties, hyper-local expertise, niche services, or unique knowledge this business has that competitors don't..."
+                      rows={5}
+                      className="bg-background border-blue-500/40 focus:border-blue-400"
+                    />
                   </div>
                 </TabsContent>
 
@@ -420,6 +443,24 @@ export default function Businesses() {
                   <div className="space-y-2">
                     <Label htmlFor="differentiators">Key Differentiators</Label>
                     <Textarea id="differentiators" value={formData.differentiators} onChange={(e) => setFormData({ ...formData, differentiators: e.target.value })} placeholder="What makes this business stand out?" rows={3} className="bg-background border-input" />
+                  </div>
+
+                  {/* Specialties — high-priority MiniMax training seed */}
+                  <div className="rounded-md border border-blue-500/40 bg-blue-500/10 p-3 text-sm text-blue-300">
+                    <p className="font-semibold mb-1">💡 Specialties &amp; Unique Expertise — This gets fed directly to the AI trainer</p>
+                    <p className="text-blue-200/80 mb-2">Enter specific, hyper-local, or niche expertise that sets this client apart. The more specific, the better — these details are what get cited in AI overviews.</p>
+                    <p className="italic text-blue-200/60">Example: &quot;Titan Cleaning Company specializes in removing red clay stains unique to North Alabama geography. Red clay tracks into homes easily and requires specialized treatment — Titan is the only local company trained specifically for this.&quot;</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="specialties">Specialties &amp; Unique Expertise <span className="text-blue-400 font-semibold">(Important — fill this in!)</span></Label>
+                    <Textarea
+                      id="specialties"
+                      value={formData.specialties}
+                      onChange={(e) => setFormData({ ...formData, specialties: e.target.value })}
+                      placeholder="Describe specific specialties, hyper-local expertise, niche services, or unique knowledge this business has that competitors don't..."
+                      rows={5}
+                      className="bg-background border-blue-500/40 focus:border-blue-400"
+                    />
                   </div>
                 </TabsContent>
 
