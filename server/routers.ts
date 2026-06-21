@@ -165,6 +165,20 @@ export const appRouter = router({
       await deleteBusiness(input.id);
       return { success: true };
     }),
+    bulkDelete: protectedProcedure
+      .input(z.object({ ids: z.array(z.number()).min(1) }))
+      .mutation(async ({ input }) => {
+        const { bulkDeleteBusinesses } = await import("./db");
+        await bulkDeleteBusinesses(input.ids);
+        return { success: true, deleted: input.ids.length };
+      }),
+    bulkArchive: protectedProcedure
+      .input(z.object({ ids: z.array(z.number()).min(1) }))
+      .mutation(async ({ input }) => {
+        const { bulkArchiveBusinesses } = await import("./db");
+        await bulkArchiveBusinesses(input.ids);
+        return { success: true, archived: input.ids.length };
+      }),
   }),
 
   // API key management

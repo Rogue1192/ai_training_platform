@@ -1,4 +1,4 @@
-import { and, eq, sql, desc, isNull, ne, gte } from "drizzle-orm";
+import { and, eq, sql, desc, isNull, ne, gte, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -177,6 +177,20 @@ export async function deleteBusiness(id: number): Promise<void> {
   if (!db) throw new Error("Database not available");
 
   await db.delete(businesses).where(eq(businesses.id, id));
+}
+
+export async function bulkDeleteBusinesses(ids: number[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (ids.length === 0) return;
+  await db.delete(businesses).where(inArray(businesses.id, ids));
+}
+
+export async function bulkArchiveBusinesses(ids: number[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (ids.length === 0) return;
+  await db.update(businesses).set({ isArchived: true }).where(inArray(businesses.id, ids));
 }
 
 // ============= API Key Operations =============

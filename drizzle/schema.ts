@@ -148,6 +148,8 @@ export const businesses = pgTable("businesses", {
   // to the website builder platform (we are building their site). If false (default),
   // Playwright logs into their existing site and publishes directly.
   useWebhookForContent: boolean("useWebhookForContent").default(false).notNull(),
+  // Archive flag — soft-delete for test/inactive clients
+  isArchived: boolean("isArchived").default(false).notNull(),
   // Source tracking
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
