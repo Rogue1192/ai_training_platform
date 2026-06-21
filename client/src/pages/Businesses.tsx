@@ -30,6 +30,7 @@ export default function Businesses() {
 
   // Search & selection state
   const [searchQuery, setSearchQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "rogue" | "ranklocal" | "whitelabel" | "direct">("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isBulkActionPending, setIsBulkActionPending] = useState(false);
 
@@ -87,12 +88,26 @@ export default function Businesses() {
     setActiveTab("basic");
   };
 
-  // Filtered businesses based on search query
+  // Filtered businesses based on search query and source filter
   const filteredBusinesses = useMemo(() => {
     if (!businesses) return [];
-    if (!searchQuery.trim()) return businesses;
+    let result = businesses;
+
+    // Source filter
+    if (sourceFilter === "rogue") {
+      result = result.filter((b) => (b as any).internalSource === "rogue");
+    } else if (sourceFilter === "ranklocal") {
+      result = result.filter((b) => (b as any).internalSource === "ranklocal");
+    } else if (sourceFilter === "whitelabel") {
+      result = result.filter((b) => (b as any).agencyId != null && !(b as any).internalSource);
+    } else if (sourceFilter === "direct") {
+      result = result.filter((b) => (b as any).agencyId == null && !(b as any).internalSource);
+    }
+
+    // Text search
+    if (!searchQuery.trim()) return result;
     const q = searchQuery.toLowerCase();
-    return businesses.filter(
+    return result.filter(
       (b) =>
         b.name?.toLowerCase().includes(q) ||
         b.businessType?.toLowerCase().includes(q) ||
@@ -100,7 +115,7 @@ export default function Businesses() {
         b.contactEmail?.toLowerCase().includes(q) ||
         b.website?.toLowerCase().includes(q)
     );
-  }, [businesses, searchQuery]);
+  }, [businesses, searchQuery, sourceFilter]);
 
   // Selection helpers
   const allFilteredSelected =
@@ -405,23 +420,37 @@ export default function Businesses() {
         </Dialog>
       </div>
 
-      {/* Search bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          className="pl-9 bg-card border-border"
-          placeholder="Search by name, type, location, email, or website…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-        {searchQuery && (
-          <button
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            onClick={() => setSearchQuery("")}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
+      {/* Search + Source Filter */}
+      <div className="flex gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            className="pl-9 bg-card border-border"
+            placeholder="Search by name, type, location, email, or website…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setSearchQuery("")}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as any)}>
+          <SelectTrigger className="w-48 bg-card border-border">
+            <SelectValue placeholder="Filter by source" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Clients</SelectItem>
+            <SelectItem value="rogue">Rogue Business Mktg</SelectItem>
+            <SelectItem value="ranklocal">Rank Local</SelectItem>
+            <SelectItem value="whitelabel">White-Label Agencies</SelectItem>
+            <SelectItem value="direct">Direct (No Source)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Bulk action toolbar — shown when items are selected */}
@@ -542,9 +571,20 @@ export default function Businesses() {
                         )}
                       </div>
                     </div>
-                    {(business as any).isArchived && (
-                      <Badge variant="secondary" className="text-xs">Archived</Badge>
-                    )}
+                    <div className="flex gap-1.5 flex-wrap">
+                      {(business as any).internalSource === "rogue" && (
+                        <Badge className="text-xs bg-blue-500/20 text-blue-400 border-blue-500/30">Rogue</Badge>
+                      )}
+                      {(business as any).internalSource === "ranklocal" && (
+                        <Badge className="text-xs bg-green-500/20 text-green-400 border-green-500/30">Rank Local</Badge>
+                      )}
+                      {!(business as any).internalSource && (business as any).agencyId && (
+                        <Badge className="text-xs bg-purple-500/20 text-purple-400 border-purple-500/30">White-Label</Badge>
+                      )}
+                      {(business as any).isArchived && (
+                        <Badge variant="secondary" className="text-xs">Archived</Badge>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
 
