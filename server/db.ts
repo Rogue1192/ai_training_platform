@@ -33,72 +33,23 @@ import { ENV } from "./_core/env";
 let _db: ReturnType<typeof drizzle> | null = null;
 let _client: ReturnType<typeof postgres> | null = null;
 
-/**
- * Rewrite a Supabase direct-DB URL to the Transaction Pooler URL using Node's URL module.
- * Railway cannot reach IPv6 addresses, and the direct DB host resolves to IPv6.
- * The Transaction Pooler (aws-0-us-east-1.pooler.supabase.com) resolves to IPv4.
- *
- * Direct URL format:  postgresql://postgres:[PASS]@db.PROJECT_REF.supabase.co:5432/postgres
- * Pooler URL format:  postgresql://postgres.PROJECT_REF:[PASS]@aws-0-us-east-1.pooler.supabase.com:6543/postgres
- */
-function rewriteToPoolerUrl(url: string): string {
-  // Already pointing at the pooler — no rewrite needed
-  if (url.includes('pooler.supabase.com')) return url;
-
-  let parsed: URL;
-  try {
-    // Normalize scheme so Node's URL module accepts it
-    const normalized = url.replace(/^postgres:\/\//, 'postgresql://');
-    parsed = new URL(normalized);
-  } catch {
-    console.warn('[Database] Could not parse DATABASE_URL as a URL — using as-is');
-    return url;
-  }
-
-  // Only rewrite Supabase direct DB hosts: db.PROJECT_REF.supabase.co
-  const hostMatch = parsed.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/);
-  if (!hostMatch) return url; // Not a Supabase direct URL — leave as-is
-
-  const projectRef = hostMatch[1];
-  const originalUsername = parsed.username; // e.g. "postgres"
-
-  // Build the pooler URL using the URL object (handles URL-encoded passwords safely)
-  // Using Session Pooler (port 5432) — works with all Supabase projects including older infrastructure.
-  // Transaction Pooler (port 6543) requires the project to be registered in the new pooler fleet.
-  const poolerUrl = new URL(parsed.toString());
-  poolerUrl.hostname = 'aws-0-us-east-1.pooler.supabase.com';
-  poolerUrl.port = '5432';
-  poolerUrl.username = `${originalUsername}.${projectRef}`;
-
-  const result = poolerUrl.toString();
-  // Log masked URL for debugging (show host/user but not password)
-  const maskedResult = result.replace(/:([^@]+)@/, ':[MASKED]@');
-  console.log('[Database] Rewrote direct DB URL to Session Pooler (IPv4, port 5432):', maskedResult);
-  return result;
-}
-
 export async function getDb() {
-  // Prioritize SUPABASE_DATABASE_URL (PostgreSQL),
-  // fall back to DATABASE_URL for Railway or other environments
-  const rawUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+  // Use DATABASE_URL directly — Railway is configured with the correct Supabase pooler URL.
+  // SUPABASE_DATABASE_URL takes priority if set explicitly.
+  const databaseUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
 
-  // Log raw URL shape for debugging (masked)
-  if (rawUrl) {
-    const maskedRaw = rawUrl.replace(/:([^@]+)@/, ':[MASKED]@');
-    console.log('[Database] Raw URL:', maskedRaw);
-  } else {
+  if (!databaseUrl) {
     console.warn('[Database] No DATABASE_URL or SUPABASE_DATABASE_URL set!');
+    return null;
   }
 
-  // Rewrite to pooler URL if needed (Railway cannot reach IPv6 direct DB host)
-  const databaseUrl = rawUrl ? rewriteToPoolerUrl(rawUrl) : undefined;
-
-  if (!_db && databaseUrl) {
+  if (!_db) {
     try {
-      console.log('[Database] Connecting to:', databaseUrl.includes('pooler.supabase.com') ? 'Supabase Transaction Pooler (IPv4)' : 'Default DB');
+      const maskedUrl = databaseUrl.replace(/:([^@]+)@/, ':[MASKED]@');
+      console.log('[Database] Connecting to:', maskedUrl);
       _client = postgres(databaseUrl, {
         ssl: 'require',
-        // Transaction Pooler does not support prepared statements
+        // Supabase pooler does not support prepared statements
         prepare: false,
         connect_timeout: 30,
       });
