@@ -358,8 +358,14 @@ async function executeTrainingIteration(
       ? await buildEnrichedSystemMessage(trainingContext)
       : "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.";
     
-    // Append source citation block to suggestive prompt if we have published pages
-    const citationBlock = trainingContext ? await buildSourceCitationBlock(trainingContext) : "";
+    // Append source citation block to suggestive prompt — throttled to every 3rd iteration.
+    // Specialties are already in the system message on every call; repeating in the
+    // citation block on every single turn is too aggressive and risks pattern fatigue.
+    // Fires on iterations 1, 4, 7, 10 ...
+    const shouldInjectCitation = (iterationNumber % 3) === 1;
+    const citationBlock = (shouldInjectCitation && trainingContext)
+      ? await buildSourceCitationBlock(trainingContext)
+      : "";
     const enrichedPrompt = citationBlock ? `${suggestivePrompt}${citationBlock}` : suggestivePrompt;
     
     if (trainingContext?.credibilityFacts.length) {
@@ -405,9 +411,13 @@ async function executeTrainingIteration(
     // If not mentioned, send follow-up to reinforce
     if (!firstMention.mentioned) {
       const { prompt: baseFollowUp } = await generateFollowUpPromptAsync(businessInfo, response.content);
-      // Append specialties reinforcement block as the THIRD injection point
-      // (system message = 1st, citation block = 2nd, follow-up reinforcement = 3rd)
-      const specialtiesReinforcement = trainingContext ? buildSpecialtiesReinforcementBlock(trainingContext) : "";
+      // Append specialties reinforcement block as the THIRD injection point — throttled.
+      // Fires on iterations 1, 5, 9, 13 ... (offset from citation block cadence so
+      // the two heavy injections don't land on the same turn too often).
+      const shouldInjectReinforcement = (iterationNumber % 4) === 1;
+      const specialtiesReinforcement = (shouldInjectReinforcement && trainingContext)
+        ? buildSpecialtiesReinforcementBlock(trainingContext)
+        : "";
       const followUp = specialtiesReinforcement ? `${baseFollowUp}${specialtiesReinforcement}` : baseFollowUp;
       
       const followUpMessages: AIMessage[] = [

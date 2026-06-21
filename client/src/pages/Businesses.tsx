@@ -13,8 +13,221 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
   Loader2, Plus, Building2, MapPin, Phone, Globe, Trash2, Pencil,
-  Shield, Search, CheckSquare, Square, Archive, X,
+  Shield, Search, CheckSquare, Square, Archive, X, AlertTriangle, CheckCircle2,
 } from "lucide-react";
+
+// ─── Schema / Credibility Completeness Checker ───────────────────────────────
+
+interface CompletenessField {
+  key: string;          // formData key
+  label: string;
+  description: string;  // why it matters for schema / AI
+  inputType: "text" | "textarea" | "number";
+  placeholder: string;
+  tab: string;          // which tab to open in the edit dialog
+}
+
+const COMPLETENESS_FIELDS: CompletenessField[] = [
+  {
+    key: "specialties",
+    label: "Specialties & Unique Expertise",
+    description: "Feeds directly into the AI trainer and the knowsAbout schema property. This is the #1 field that gets cited in AI overviews.",
+    inputType: "textarea",
+    placeholder: "Describe specific specialties, hyper-local expertise, or niche services...",
+    tab: "credibility",
+  },
+  {
+    key: "description",
+    label: "Business Description",
+    description: "Used in the schema description and llm.txt About section. LLMs read this to understand what the business does.",
+    inputType: "textarea",
+    placeholder: "Describe the business in 2-3 sentences...",
+    tab: "basic",
+  },
+  {
+    key: "phone",
+    label: "Phone Number",
+    description: "Required for the ContactPoint schema property and llm.txt Business Identity section.",
+    inputType: "text",
+    placeholder: "(555) 123-4567",
+    tab: "basic",
+  },
+  {
+    key: "address",
+    label: "Street Address",
+    description: "Needed for the LocalBusiness address schema property.",
+    inputType: "text",
+    placeholder: "123 Main St, Phoenix, AZ 85001",
+    tab: "basic",
+  },
+  {
+    key: "certifications",
+    label: "Certifications",
+    description: "Populates the hasCredential schema property. Certifications are strong trust signals for AI recommendations.",
+    inputType: "text",
+    placeholder: "e.g., NATE Certified, EPA Certified",
+    tab: "credibility",
+  },
+  {
+    key: "licenses",
+    label: "Licenses",
+    description: "Also maps to hasCredential in schema. License numbers are highly specific facts that AI models cite.",
+    inputType: "text",
+    placeholder: "e.g., TX HVAC License #12345",
+    tab: "credibility",
+  },
+  {
+    key: "yearsInBusiness",
+    label: "Years in Business",
+    description: "Used to calculate foundingDate in schema and adds authority to the llm.txt Business Identity section.",
+    inputType: "number",
+    placeholder: "e.g., 15",
+    tab: "credibility",
+  },
+  {
+    key: "differentiators",
+    label: "Key Differentiators",
+    description: "Supplements specialties in the AI training system message and the schema description.",
+    inputType: "textarea",
+    placeholder: "What makes this business stand out from competitors?",
+    tab: "credibility",
+  },
+];
+
+function getMissingFields(business: any): CompletenessField[] {
+  return COMPLETENESS_FIELDS.filter((f) => {
+    const val = business[f.key];
+    if (val === null || val === undefined) return true;
+    if (typeof val === "string" && val.trim() === "") return true;
+    if (typeof val === "number" && val === 0) return true;
+    return false;
+  });
+}
+
+// ─── Missing Data Modal ───────────────────────────────────────────────────────
+
+function MissingDataModal({
+  business,
+  onClose,
+  onSaved,
+}: {
+  business: any;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const updateBusiness = trpc.business.update.useMutation();
+  const missingFields = getMissingFields(business);
+
+  // Local state: values being filled in, and dismissed fields
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    missingFields.forEach((f) => { init[f.key] = ""; });
+    return init;
+  });
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const activeFields = missingFields.filter((f) => !dismissed.has(f.key));
+
+  const handleDismiss = (key: string) => {
+    setDismissed((prev) => new Set([...prev, key]));
+  };
+
+  const handleSave = async () => {
+    const updates: Record<string, any> = {};
+    activeFields.forEach((f) => {
+      const v = values[f.key]?.trim();
+      if (v) {
+        updates[f.key] = f.inputType === "number" ? parseInt(v, 10) : v;
+      }
+    });
+    if (Object.keys(updates).length === 0) {
+      onClose();
+      return;
+    }
+    try {
+      await updateBusiness.mutateAsync({ id: business.id, ...updates });
+      toast.success("Business updated!");
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save");
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-card border-border">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-amber-400">
+            <AlertTriangle className="w-5 h-5" />
+            Missing Schema &amp; Credibility Data
+          </DialogTitle>
+          <DialogDescription>
+            The following fields are empty for <strong>{business.name}</strong>. Filling them in improves the schema markup, llm.txt, and AI training quality. You can dismiss individual fields if they don&apos;t apply.
+          </DialogDescription>
+        </DialogHeader>
+
+        {activeFields.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-8">
+            <CheckCircle2 className="w-10 h-10 text-green-400" />
+            <p className="text-sm text-muted-foreground">All fields addressed — great work!</p>
+          </div>
+        ) : (
+          <div className="space-y-4 py-2">
+            {activeFields.map((field) => (
+              <div key={field.key} className="rounded-lg border border-border bg-muted/20 p-4">
+                <div className="flex items-start justify-between gap-3 mb-1">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{field.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{field.description}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDismiss(field.key)}
+                    className="shrink-0 text-xs text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+                {field.inputType === "textarea" ? (
+                  <Textarea
+                    value={values[field.key] ?? ""}
+                    onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
+                    placeholder={field.placeholder}
+                    rows={3}
+                    className="mt-2 bg-background border-input text-sm"
+                  />
+                ) : (
+                  <Input
+                    type={field.inputType}
+                    value={values[field.key] ?? ""}
+                    onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
+                    placeholder={field.placeholder}
+                    className="mt-2 bg-background border-input text-sm"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          {activeFields.length > 0 && (
+            <Button
+              onClick={handleSave}
+              disabled={updateBusiness.isPending}
+              className="bg-amber-500 hover:bg-amber-600 text-white"
+            >
+              {updateBusiness.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Save Filled Fields
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function Businesses() {
   const { data: businesses, isLoading, refetch } = trpc.business.list.useQuery();
@@ -28,6 +241,9 @@ export default function Businesses() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBusiness, setEditingBusiness] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("basic");
+
+  // Completeness modal state — holds the business whose missing fields are being shown
+  const [completenessTarget, setCompletenessTarget] = useState<any | null>(null);
 
   // Search & selection state
   const [searchQuery, setSearchQuery] = useState("");
@@ -620,12 +836,14 @@ export default function Businesses() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredBusinesses.map((business) => {
             const isSelected = selectedIds.has(business.id);
+            const missingCount = getMissingFields(business).length;
+            const isComplete = missingCount === 0;
             return (
               <Card
                 key={business.id}
                 className={`bg-card border-border hover:border-primary/50 transition-colors relative ${
                   isSelected ? "border-primary ring-1 ring-primary/30" : ""
-                }`}
+                } ${!isComplete ? "border-amber-500/40" : ""}`}
               >
                 {/* Checkbox overlay in top-left */}
                 <div className="absolute top-3 left-3 z-10">
@@ -687,8 +905,27 @@ export default function Businesses() {
                       </a>
                     </div>
                   )}
+                  {/* Completeness banner */}
+                  {!isComplete ? (
+                    <button
+                      type="button"
+                      onClick={() => setCompletenessTarget(business)}
+                      className="w-full flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-left mt-2"
+                    >
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="text-xs text-amber-300 flex-1">
+                        {missingCount} schema field{missingCount !== 1 ? "s" : ""} missing
+                      </span>
+                      <span className="text-xs text-amber-400 font-medium">Fix →</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-green-400 mt-2">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Schema data complete</span>
+                    </div>
+                  )}
                   {(business.certifications || business.awards || business.yearsInBusiness) && (
-                    <div className="flex items-center gap-2 text-sm text-purple-400 mt-2 pt-2 border-t border-border">
+                    <div className="flex items-center gap-2 text-sm text-purple-400 pt-1 border-t border-border">
                       <Shield className="w-4 h-4" />
                       <span>Credibility data available</span>
                     </div>
@@ -712,6 +949,15 @@ export default function Businesses() {
             );
           })}
         </div>
+      )}
+
+      {/* Missing data completeness modal */}
+      {completenessTarget && (
+        <MissingDataModal
+          business={completenessTarget}
+          onClose={() => setCompletenessTarget(null)}
+          onSaved={() => { refetch(); setCompletenessTarget(null); }}
+        />
       )}
     </div>
   );
