@@ -29,6 +29,9 @@ import AgencyLLMInsights from "./pages/AgencyLLMInsights";
 import ClientIntakeForm from "./pages/ClientIntakeForm";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Redirect } from "wouter";
+import { useEffect, useRef } from "react";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import {
   LayoutDashboard,
   Building2,
@@ -68,6 +71,38 @@ const agencyNavigationItems = [
   { href: "/agency/llm-insights", label: "LLM Insights", icon: BarChart3 },
   { href: "/agency/settings", label: "Settings", icon: SettingsIcon },
 ];
+
+/** Polls Monkey Indexer account info once on mount (admin only) and shows a warning toast if credits ≤ 50. */
+function MonkeyIndexerCreditWatch() {
+  const { user } = useAuth();
+  const warned = useRef(false);
+  const { data } = trpc.indexing.getAccountInfo.useQuery(undefined, {
+    enabled: !!user && user.role !== "agency",
+    staleTime: 1000 * 60 * 60, // re-fetch at most once per hour
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!data || warned.current) return;
+    const credits = data.creditsAvailable ?? Infinity;
+    if (credits <= 50) {
+      warned.current = true;
+      toast.warning(
+        `⚠️ Monkey Indexer: only ${credits} credit${credits === 1 ? "" : "s"} remaining`,
+        {
+          description: "Top up at monkeyindexer.com/dashboard/billing before the next indexing run.",
+          duration: 12000,
+          action: {
+            label: "Top Up",
+            onClick: () => window.open("https://monkeyindexer.com/dashboard/billing", "_blank"),
+          },
+        }
+      );
+    }
+  }, [data]);
+
+  return null;
+}
 
 function Router() {
   const { user } = useAuth();
@@ -188,6 +223,7 @@ function App() {
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster />
+          <MonkeyIndexerCreditWatch />
           <Router />
         </TooltipProvider>
       </ThemeProvider>
