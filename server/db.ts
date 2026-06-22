@@ -1322,3 +1322,24 @@ export async function ensureModelConfigEnumValue(): Promise<void> {
     console.warn("[DB] ensureModelConfigEnumValue:", err.message);
   }
 }
+
+/**
+ * Ensure the four screenshot columns exist on campaign_query_locations.
+ * Safe to run on every startup — uses ADD COLUMN IF NOT EXISTS (idempotent).
+ */
+export async function ensureScreenshotColumns(): Promise<void> {
+  const databaseUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+  if (!databaseUrl) return;
+  try {
+    const postgres = (await import("postgres")).default;
+    const client = postgres(databaseUrl, { ssl: "require", prepare: false, max: 1 });
+    await client`ALTER TABLE campaign_query_locations ADD COLUMN IF NOT EXISTS "beforeScreenshotChatgpt" TEXT`;
+    await client`ALTER TABLE campaign_query_locations ADD COLUMN IF NOT EXISTS "beforeScreenshotGoogleAi" TEXT`;
+    await client`ALTER TABLE campaign_query_locations ADD COLUMN IF NOT EXISTS "afterScreenshotChatgpt" TEXT`;
+    await client`ALTER TABLE campaign_query_locations ADD COLUMN IF NOT EXISTS "afterScreenshotGoogleAi" TEXT`;
+    await client.end();
+    console.log("[DB] campaign_query_locations: screenshot columns ensured");
+  } catch (err: any) {
+    console.warn("[DB] ensureScreenshotColumns:", err.message);
+  }
+}

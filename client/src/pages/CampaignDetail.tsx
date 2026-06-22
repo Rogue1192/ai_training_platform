@@ -593,29 +593,82 @@ export default function CampaignDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  {wins.slice(0, 5).map((win: any, i: number) => (
-                    <div key={i} className="flex items-center gap-3 p-2 rounded-md bg-muted/30">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        win.significance === "breakthrough" ? "bg-yellow-500/20" :
-                        win.significance === "major" ? "bg-green-500/20" :
-                        "bg-blue-500/20"
-                      }`}>
-                        <Trophy className={`w-4 h-4 ${
-                          win.significance === "breakthrough" ? "text-yellow-400" :
-                          win.significance === "major" ? "text-green-400" :
-                          "text-blue-400"
-                        }`} />
+                <div className="space-y-4">
+                  {wins.slice(0, 5).map((win: any, i: number) => {
+                    // Determine which screenshots to show based on platform
+                    const beforeShot = win.platform === "chatgpt" ? win.beforeScreenshotChatgpt
+                      : win.platform === "ai_overview" ? win.beforeScreenshotGoogleAi
+                      : win.beforeScreenshotChatgpt || win.beforeScreenshotGoogleAi;
+                    const afterShot = win.platform === "chatgpt" ? win.afterScreenshotChatgpt
+                      : win.platform === "ai_overview" ? win.afterScreenshotGoogleAi
+                      : win.afterScreenshotChatgpt || win.afterScreenshotGoogleAi;
+                    const beforeVideo = win.platform === "chatgpt" ? win.beforeVideoChatgpt
+                      : win.platform === "ai_overview" ? win.beforeVideoGoogleAi
+                      : win.beforeVideoChatgpt || win.beforeVideoGoogleAi;
+                    const afterVideo = win.platform === "chatgpt" ? win.afterVideoChatgpt
+                      : win.platform === "ai_overview" ? win.afterVideoGoogleAi
+                      : win.afterVideoChatgpt || win.afterVideoGoogleAi;
+                    const hasEvidence = beforeShot || afterShot || beforeVideo || afterVideo;
+                    return (
+                      <div key={i} className="rounded-md bg-muted/30 overflow-hidden">
+                        <div className="flex items-center gap-3 p-2">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                            win.significance === "breakthrough" ? "bg-yellow-500/20" :
+                            win.significance === "major" ? "bg-green-500/20" :
+                            "bg-blue-500/20"
+                          }`}>
+                            <Trophy className={`w-4 h-4 ${
+                              win.significance === "breakthrough" ? "text-yellow-400" :
+                              win.significance === "major" ? "text-green-400" :
+                              "text-blue-400"
+                            }`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-foreground">{win.description}</p>
+                            <p className="text-xs text-muted-foreground">{win.platform} — {win.query} — {win.location}</p>
+                          </div>
+                          <Badge variant="outline" className="text-xs shrink-0">
+                            {win.significance}
+                          </Badge>
+                        </div>
+                        {hasEvidence && (
+                          <div className="px-3 pb-3">
+                            <p className="text-xs text-muted-foreground mb-2 font-medium">Before / After Evidence</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <p className="text-xs text-muted-foreground text-center">Before</p>
+                                {beforeShot ? (
+                                  <a href={beforeShot} target="_blank" rel="noopener noreferrer">
+                                    <img src={beforeShot} alt="Before screenshot" className="w-full rounded border border-border object-cover max-h-40 hover:opacity-80 transition-opacity" />
+                                  </a>
+                                ) : beforeVideo ? (
+                                  <video src={beforeVideo} controls className="w-full rounded border border-border max-h-40" />
+                                ) : (
+                                  <div className="w-full h-24 rounded border border-dashed border-border flex items-center justify-center">
+                                    <p className="text-xs text-muted-foreground">Pending capture</p>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs text-muted-foreground text-center">After</p>
+                                {afterShot ? (
+                                  <a href={afterShot} target="_blank" rel="noopener noreferrer">
+                                    <img src={afterShot} alt="After screenshot" className="w-full rounded border border-green-500/30 object-cover max-h-40 hover:opacity-80 transition-opacity" />
+                                  </a>
+                                ) : afterVideo ? (
+                                  <video src={afterVideo} controls className="w-full rounded border border-green-500/30 max-h-40" />
+                                ) : (
+                                  <div className="w-full h-24 rounded border border-dashed border-green-500/30 flex items-center justify-center">
+                                    <p className="text-xs text-muted-foreground">Captured on next check</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground truncate">{win.description}</p>
-                        <p className="text-xs text-muted-foreground">{win.platform} — {win.query}</p>
-                      </div>
-                      <Badge variant="outline" className="text-xs shrink-0">
-                        {win.significance}
-                      </Badge>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>

@@ -35,6 +35,15 @@ export interface Win {
   description: string;
   significance: "minor" | "moderate" | "major" | "breakthrough";
   detectedAt: Date;
+  // Before/after evidence (screenshots preferred, video fallback)
+  beforeScreenshotChatgpt?: string;
+  beforeScreenshotGoogleAi?: string;
+  afterScreenshotChatgpt?: string;
+  afterScreenshotGoogleAi?: string;
+  beforeVideoChatgpt?: string;
+  beforeVideoGoogleAi?: string;
+  afterVideoChatgpt?: string;
+  afterVideoGoogleAi?: string;
 }
 
 export interface WinReport {
@@ -194,7 +203,25 @@ export async function detectWins(campaignId: number): Promise<Win[]> {
     }
   }
   
-  return wins;
+  // Attach screenshot/video URLs from campaignQueryLocations to each win
+  const winsWithEvidence = await Promise.all(wins.map(async (win) => {
+    if (!win.queryLocationId) return win;
+    const [ql] = await db!.select().from(campaignQueryLocations).where(eq(campaignQueryLocations.id, win.queryLocationId)).limit(1);
+    if (!ql) return win;
+    return {
+      ...win,
+      beforeScreenshotChatgpt: (ql as any).beforeScreenshotChatgpt ?? undefined,
+      beforeScreenshotGoogleAi: (ql as any).beforeScreenshotGoogleAi ?? undefined,
+      afterScreenshotChatgpt: (ql as any).afterScreenshotChatgpt ?? undefined,
+      afterScreenshotGoogleAi: (ql as any).afterScreenshotGoogleAi ?? undefined,
+      beforeVideoChatgpt: (ql as any).beforeVideoChatgpt ?? undefined,
+      beforeVideoGoogleAi: (ql as any).beforeVideoGoogleAi ?? undefined,
+      afterVideoChatgpt: (ql as any).afterVideoChatgpt ?? undefined,
+      afterVideoGoogleAi: (ql as any).afterVideoGoogleAi ?? undefined,
+    };
+  }));
+
+  return winsWithEvidence;
 }
 
 // ─── Win Report Generation ───────────────────────────────────────────────────
