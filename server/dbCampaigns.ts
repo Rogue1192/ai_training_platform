@@ -1,4 +1,4 @@
-import { and, eq, sql, desc, gte, inArray } from "drizzle-orm";
+import { and, eq, ne, sql, desc, gte, inArray } from "drizzle-orm";
 import { getDb } from "./db";
 import {
   packageTiers,
@@ -62,11 +62,16 @@ export async function getPackageTiers(activeOnly = false): Promise<PackageTier[]
   const db = await getDb();
   if (!db) return [];
 
-  const conditions = activeOnly ? [eq(packageTiers.isActive, true)] : [];
+  // Always exclude the legacy 'enterprise' tier — it is no longer offered.
+  // Existing campaigns referencing it are unaffected; it just won't appear in any UI.
+  const conditions: ReturnType<typeof eq>[] = [
+    ne(packageTiers.slug, "enterprise"),
+    ...(activeOnly ? [eq(packageTiers.isActive, true)] : []),
+  ];
   return db
     .select()
     .from(packageTiers)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .where(and(...conditions))
     .orderBy(packageTiers.sortOrder, packageTiers.createdAt);
 }
 

@@ -481,7 +481,56 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
       const winIdx = winsDetected.findLastIndex((w) => w.queryLocationId === -1);
       if (winIdx !== -1) winsDetected[winIdx].queryLocationId = created[i].id;
     }
-    console.log(`[Rank Tracking] Created ${created.length} bonus location rows`);
+    // Write TWO snapshots per bonus row so detectWins() sees a null → mentioned
+    // transition immediately (it requires at least 2 snapshots to compare).
+    // Snapshot 1: all-null "before" state (1 minute in the past)
+    // Snapshot 2: the actual current "after" state
+    const oneMinuteAgo = new Date(Date.now() - 60_000);
+    for (let i = 0; i < created.length; i++) {
+      const row = created[i];
+      const src = bonusToCreate[i];
+      // "Before" snapshot — nothing mentioned
+      await createRankSnapshot({
+        campaignId,
+        queryLocationId: row.id,
+        chatgptMentioned: false,
+        chatgptPosition: null,
+        chatgptResponseSnippet: null,
+        geminiMentioned: false,
+        geminiPosition: null,
+        geminiResponseSnippet: null,
+        aiOverviewMentioned: false,
+        aiOverviewPosition: null,
+        aiOverviewResponseSnippet: null,
+        sourcesCited: null,
+        checkType: "scheduled",
+        checkedAt: oneMinuteAgo,
+      });
+      // "After" snapshot — the actual current mention state
+      await createRankSnapshot({
+        campaignId,
+        queryLocationId: row.id,
+        chatgptMentioned: src.currentRankChatGPT ? src.currentRankChatGPT !== "not_mentioned" : false,
+        chatgptPosition: src.currentRankChatGPT?.startsWith("position_")
+          ? parseInt(src.currentRankChatGPT.replace("position_", ""), 10)
+          : null,
+        chatgptResponseSnippet: null,
+        geminiMentioned: src.currentRankGemini ? src.currentRankGemini !== "not_mentioned" : false,
+        geminiPosition: src.currentRankGemini?.startsWith("position_")
+          ? parseInt(src.currentRankGemini.replace("position_", ""), 10)
+          : null,
+        geminiResponseSnippet: null,
+        aiOverviewMentioned: src.currentRankAIOverview ? src.currentRankAIOverview !== "not_mentioned" : false,
+        aiOverviewPosition: src.currentRankAIOverview?.startsWith("position_")
+          ? parseInt(src.currentRankAIOverview.replace("position_", ""), 10)
+          : null,
+        aiOverviewResponseSnippet: null,
+        sourcesCited: null,
+        checkType: "scheduled",
+        checkedAt: new Date(),
+      });
+    }
+    console.log(`[Rank Tracking] Created ${created.length} bonus location rows with before/after snapshots for immediate win detection`);
   }
 
   const currentScore = calculateVisibilityScore(newSnapshots, queryLocations.length);
