@@ -38,6 +38,7 @@ import {
   buildSourceCitationBlock,
   buildSpecialtiesReinforcementBlock,
 } from "./trainingContextEnricher";
+import { isModelDeprecatedError, buildDeprecationAlert, getModelConfig } from "./modelConfigService";
 
 // Types for the new phase-based system
 export type TrainingPhase = 'pending' | 'baseline' | 'training' | 'evaluation' | 'completed';
@@ -732,6 +733,41 @@ export function startTrainingWorkerV2(): Worker {
         console.error(`[Training V2 Worker] Job ${job.id} error:`, error.message);
         console.error(`[Training V2 Worker] Job ${job.id} stack:`, error.stack);
         
+        // Check for model deprecation first — pause cleanly instead of erroring
+        if (isModelDeprecatedError(error)) {
+          console.error(`[Training V2 Worker] MODEL DEPRECATED detected for job ${job.id}`);
+          try {
+            const cfg = await getModelConfig();
+            const modelName = cfg.trainerModel;
+            const deprecationMsg = `MODEL_DEPRECATED: ${buildDeprecationAlert(modelName, 'trainer', undefined)}`;
+            await updateTrainingSession(jobData.sessionId, {
+              status: 'error',
+              errorMessage: deprecationMsg,
+            });
+            // Find the campaign for this session and pause it
+            const session = await getTrainingSessionById(jobData.sessionId);
+            if (session?.campaignId) {
+              const { getDb } = await import('./db');
+              const { campaigns } = await import('../drizzle/schema');
+              const { eq } = await import('drizzle-orm');
+              const db = await getDb();
+              if (db) {
+                await db.update(campaigns)
+                  .set({ status: 'paused', lastError: deprecationMsg } as any)
+                  .where(eq(campaigns.id, session.campaignId));
+              }
+            }
+            await updateRunHistoryOnCompletion(jobData.sessionId, {
+              status: 'failed',
+              errorMessage: deprecationMsg,
+            });
+          } catch (updateError: any) {
+            console.error(`[Training V2 Worker] Failed to update deprecation status:`, updateError.message);
+          }
+          // Do NOT re-throw — don't retry deprecated model errors
+          return;
+        }
+
         // Update session with error status if this is the final attempt
         if (job.attemptsMade >= (job.opts?.attempts || 3) - 1) {
           console.error(`[Training V2 Worker] Job ${job.id} exhausted all retries, marking session as error`);

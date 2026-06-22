@@ -12,7 +12,7 @@ import { trainingWorker } from "../trainingQueue";
 import { startTrainingWorkerV2 } from "../trainingQueueV2";
 import { startScheduler } from "../scheduler";
 import { createWebhookRouter } from "../webhookHandler";
-import { ensureMonkeyIndexerEnumValue, ensureIsTargetLocationColumn } from "../db";
+import { ensureMonkeyIndexerEnumValue, ensureIsTargetLocationColumn, ensureModelConfigEnumValue } from "../db";
 
 // Combined router with all sub-routers including llmInsights and agency
 const combinedRouter = router({
@@ -105,6 +105,9 @@ ensureMonkeyIndexerEnumValue().catch((err) =>
 );
 ensureIsTargetLocationColumn().catch((err) =>
   console.warn("[Startup] ensureIsTargetLocationColumn failed (non-fatal):", err.message)
+);
+ensureModelConfigEnumValue().catch((err) =>
+  console.warn("[Startup] ensureModelConfigEnumValue failed (non-fatal):", err.message)
 );
 
 startServer().catch(console.error);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,6 +89,150 @@ const SERVICE_CONFIGS: {
     ],
   },
 ];
+
+// ─── AI Models Section ────────────────────────────────────────────────────────
+const TRAINER_MODELS = [
+  { value: "MiniMax-M2.7", label: "MiniMax M2.7 (default)" },
+  { value: "MiniMax-M2.7-highspeed", label: "MiniMax M2.7 High Speed" },
+  { value: "MiniMax-M2.5", label: "MiniMax M2.5" },
+  { value: "MiniMax-Text-01", label: "MiniMax Text-01 (legacy)" },
+];
+
+const CONTENT_MODELS = [
+  { value: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5 (default)" },
+  { value: "claude-haiku-4-5-20250929", label: "Claude Haiku 4.5 (faster)" },
+  { value: "claude-opus-4-5-20250929", label: "Claude Opus 4.5 (best quality)" },
+  { value: "gpt-4o", label: "GPT-4o" },
+  { value: "gpt-4o-mini", label: "GPT-4o Mini (cheaper)" },
+  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+];
+
+function AIModelsSection() {
+  const { data: config, refetch: refetchConfig } = trpc.modelConfig.get.useQuery();
+  const saveConfig = trpc.modelConfig.save.useMutation();
+  const resumeMutation = trpc.modelConfig.resumeDeprecatedCampaigns.useMutation();
+  const { data: deprecatedCampaigns } = trpc.modelConfig.getDeprecatedCampaigns.useQuery();
+
+  const [trainerModel, setTrainerModel] = useState("");
+  const [contentModel, setContentModel] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Sync dropdowns when config loads
+  React.useEffect(() => {
+    if (config) {
+      setTrainerModel(config.trainerModel || "MiniMax-M2.7");
+      setContentModel(config.contentModel || "claude-sonnet-4-5-20250929");
+    }
+  }, [config]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveConfig.mutateAsync({ trainerModel, contentModel });
+      await refetchConfig();
+      toast.success("Model configuration saved");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save model config");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResume = async () => {
+    try {
+      const result = await resumeMutation.mutateAsync();
+      toast.success(`Resumed ${result.resumed} campaign(s)`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resume campaigns");
+    }
+  };
+
+  const deprecatedCount = deprecatedCampaigns?.length ?? 0;
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-foreground mb-1">AI Models</h2>
+      <p className="text-sm text-muted-foreground mb-4">
+        Configure which AI models are used for training and content generation.
+        If a model is deprecated by its provider, affected campaigns will be paused automatically and shown here.
+      </p>
+
+      {deprecatedCount > 0 && (
+        <div className="mb-4 p-4 rounded-lg border border-yellow-500/40 bg-yellow-500/10 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-yellow-400 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-yellow-300">
+              {deprecatedCount} campaign{deprecatedCount > 1 ? "s" : ""} paused due to deprecated model
+            </p>
+            <p className="text-xs text-yellow-400/80 mt-1">
+              Update the model below, then click Resume to restart affected campaigns.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-yellow-500 text-yellow-300 hover:bg-yellow-500/20 shrink-0"
+            onClick={handleResume}
+            disabled={resumeMutation.isPending}
+          >
+            {resumeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Resume Campaigns"}
+          </Button>
+        </div>
+      )}
+
+      <Card className="bg-card border-border">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Database className="w-6 h-6 text-primary" />
+            <div>
+              <CardTitle className="text-base">Model Selection</CardTitle>
+              <CardDescription>MiniMax trains the AI; content generation uses Anthropic or OpenAI</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">MiniMax Trainer Model</Label>
+            <p className="text-xs text-muted-foreground">Used to generate all training conversation turns. Low token cost, high volume.</p>
+            <select
+              value={trainerModel}
+              onChange={(e) => setTrainerModel(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              {TRAINER_MODELS.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+              {trainerModel && !TRAINER_MODELS.find(m => m.value === trainerModel) && (
+                <option value={trainerModel}>{trainerModel} (custom)</option>
+              )}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Content Generation Model</Label>
+            <p className="text-xs text-muted-foreground">Used to write credibility pages, FAQs, and schema markup.</p>
+            <select
+              value={contentModel}
+              onChange={(e) => setContentModel(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              {CONTENT_MODELS.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+              {contentModel && !CONTENT_MODELS.find(m => m.value === contentModel) && (
+                <option value={contentModel}>{contentModel} (custom)</option>
+              )}
+            </select>
+          </div>
+
+          <Button onClick={handleSave} disabled={saving} className="w-full">
+            {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</> : "Save Model Configuration"}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 export default function Settings() {
   const { data: apiKeys, isLoading, refetch } = trpc.apiKey.list.useQuery();
@@ -623,6 +767,9 @@ export default function Settings() {
           </CardContent>
         </Card>
       </div>
+
+      {/* AI Models Configuration */}
+      <AIModelsSection />
 
       {/* Two-Factor Authentication */}
       <TwoFactorAuth />

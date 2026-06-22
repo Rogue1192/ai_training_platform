@@ -566,6 +566,50 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── Model Configuration ──────────────────────────────────────────────────
+  modelConfig: router({
+    get: protectedProcedure.query(async () => {
+      const { getModelConfig } = await import("./modelConfigService");
+      return getModelConfig();
+    }),
+    save: protectedProcedure
+      .input(z.object({
+        trainerModel: z.string().optional(),
+        trainerProvider: z.string().optional(),
+        contentModel: z.string().optional(),
+        contentProvider: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { saveModelConfig } = await import("./modelConfigService");
+        const updated = await saveModelConfig(input);
+        return { success: true, config: updated };
+      }),
+    getDeprecatedCampaigns: protectedProcedure.query(async () => {
+      const { getDb } = await import("./db");
+      const { campaigns } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return [];
+      const paused = await db.select().from(campaigns).where(eq(campaigns.status, "paused"));
+      return paused.filter((r: any) => r.lastError?.includes("MODEL_DEPRECATED"));
+    }),
+    resumeDeprecatedCampaigns: protectedProcedure.mutation(async () => {
+      const { getDb } = await import("./db");
+      const { campaigns } = await import("../drizzle/schema");
+      const { eq, inArray } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return { resumed: 0 };
+      const paused = await db.select().from(campaigns).where(eq(campaigns.status, "paused"));
+      const deprecated = paused.filter((r: any) => r.lastError?.includes("MODEL_DEPRECATED"));
+      if (deprecated.length === 0) return { resumed: 0 };
+      const ids = deprecated.map((c: any) => c.id);
+      await db.update(campaigns)
+        .set({ status: "training", lastError: null, errorCount: 0 } as any)
+        .where(inArray(campaigns.id, ids));
+      return { resumed: ids.length };
+    }),
+  }),
+
   // Training session management
   training: router({
     list: protectedProcedure.query(async () => {

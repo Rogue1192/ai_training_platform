@@ -183,7 +183,7 @@ export type InsertApiKey = typeof apiKeys.$inferInsert;
 // instead of requiring manual Railway env var configuration.
 // Note: "sinbyte" is kept in the enum for backward compatibility (existing DB rows);
 // new installs use "monkeyindexer" instead.
-export const serviceKeyServiceEnum = pgEnum("service_key_service", ["dataforseo", "sinbyte", "monkeyindexer", "resend", "whitelabel", "stripe"]);
+export const serviceKeyServiceEnum = pgEnum("service_key_service", ["dataforseo", "sinbyte", "monkeyindexer", "resend", "whitelabel", "stripe", "model_config"]);
 export const serviceKeys = pgTable("serviceKeys", {
   id: serial("id").primaryKey(),
   service: serviceKeyServiceEnum("service").notNull().unique(),

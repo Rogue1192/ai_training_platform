@@ -1224,7 +1224,7 @@ export async function seedDefaultPromptTemplates(): Promise<PromptTemplate[]> {
 
 // ─── Service Keys (DataForSEO, Monkey Indexer, Resend) ───────────────────────────────
 
-export type ServiceKeyService = "dataforseo" | "sinbyte" | "monkeyindexer" | "resend" | "whitelabel" | "stripe"; // sinbyte kept for compat
+export type ServiceKeyService = "dataforseo" | "sinbyte" | "monkeyindexer" | "resend" | "whitelabel" | "stripe" | "model_config"; // sinbyte kept for compat
 
 export async function getServiceKey(service: ServiceKeyService) {
   const db = await getDb();
@@ -1302,5 +1302,23 @@ export async function ensureIsTargetLocationColumn(): Promise<void> {
     console.log('[DB] campaignQueryLocations.isTargetLocation column ensured');
   } catch (err: any) {
     console.warn('[DB] ensureIsTargetLocationColumn:', err.message);
+  }
+}
+
+/**
+ * Ensure the "model_config" value exists in the service_key_service Postgres enum.
+ * Safe to run on every startup — uses IF NOT EXISTS so it's idempotent.
+ */
+export async function ensureModelConfigEnumValue(): Promise<void> {
+  const databaseUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+  if (!databaseUrl) return;
+  try {
+    const postgres = (await import("postgres")).default;
+    const client = postgres(databaseUrl, { ssl: "require", prepare: false, max: 1 });
+    await client`ALTER TYPE service_key_service ADD VALUE IF NOT EXISTS 'model_config'`;
+    await client.end();
+    console.log("[DB] service_key_service enum: 'model_config' value ensured");
+  } catch (err: any) {
+    console.warn("[DB] ensureModelConfigEnumValue:", err.message);
   }
 }
