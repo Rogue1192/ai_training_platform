@@ -461,6 +461,11 @@ export const campaignQueryLocations = pgTable("campaignQueryLocations", {
   beforeVideoGoogleAi: text("beforeVideoGoogleAi"),  // "Before" recording on Google AI
   afterVideoChatgpt: text("afterVideoChatgpt"),      // "After" recording on ChatGPT (set on first win)
   afterVideoGoogleAi: text("afterVideoGoogleAi"),    // "After" recording on Google AI (set on first win)
+  /**
+   * true  = this location was explicitly set as a target in the client’s package (default)
+   * false = bonus win — the business appeared in a location NOT in their target list
+   */
+  isTargetLocation: boolean("isTargetLocation").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });

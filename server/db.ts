@@ -1284,3 +1284,23 @@ export async function ensureMonkeyIndexerEnumValue(): Promise<void> {
     console.warn("[DB] ensureMonkeyIndexerEnumValue:", err.message);
   }
 }
+
+/**
+ * Ensure the isTargetLocation column exists on campaignQueryLocations.
+ * New column added to distinguish explicitly targeted locations from bonus wins.
+ * Safe to run on every startup — uses IF NOT EXISTS so it's idempotent.
+ */
+export async function ensureIsTargetLocationColumn(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE "campaignQueryLocations"
+      ADD COLUMN IF NOT EXISTS "isTargetLocation" boolean NOT NULL DEFAULT true
+    `;
+    console.log('[DB] campaignQueryLocations.isTargetLocation column ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureIsTargetLocationColumn:', err.message);
+  }
+}

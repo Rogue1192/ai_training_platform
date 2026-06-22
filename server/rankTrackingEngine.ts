@@ -22,6 +22,7 @@ import { checkRankForQueries, searchLLMMentions } from "./dataforseoService";
 import {
   getCampaignById,
   getQueryLocationsByCampaignId,
+  createCampaignQueryLocations,
   createRankSnapshot,
   updateQueryLocation,
   updateCampaign,
@@ -389,9 +390,103 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
     snapshotsCreated++;
   }
 
+  // ============= Bonus Location Detection =============
+  // Check every mention returned by DataForSEO. If the keyword matches one of our tracked
+  // queries but the location in the snippet is NOT one of the client's target locations,
+  // we create a new campaignQueryLocation row tagged isTargetLocation=false so it shows
+  // up in reporting as a bonus win.
+  const targetLocations = new Set(
+    queryLocations.map((ql) => ql.location.toLowerCase().trim())
+  );
+  const trackedQueries = new Set(
+    queryLocations.map((ql) => ql.searchQuery.toLowerCase())
+  );
+  // Build a set of existing bonus combos so we don't double-insert
+  const existingBonusCombos = new Set(
+    queryLocations
+      .filter((ql) => !ql.isTargetLocation)
+      .map((ql) => `${ql.searchQuery.toLowerCase()}||${ql.location.toLowerCase().trim()}`)
+  );
+
+  const bonusToCreate: Parameters<typeof createCampaignQueryLocations>[0] = [];
+
+  for (const mention of mentions) {
+    // Only consider keywords that match one of our tracked queries
+    if (!trackedQueries.has(mention.keyword.toLowerCase())) continue;
+    const isMentioned =
+      mention.llmResponses.chatgpt?.mentioned ||
+      mention.llmResponses.gemini?.mentioned ||
+      mention.llmResponses.aiOverview?.mentioned;
+    if (!isMentioned) continue;
+
+    // Extract city mentions from snippets — look for "City, ST" patterns
+    const allSnippets = [
+      mention.llmResponses.chatgpt?.snippet || "",
+      mention.llmResponses.gemini?.snippet || "",
+      mention.llmResponses.aiOverview?.snippet || "",
+    ].join(" ");
+
+    // Match patterns like "Phoenix, AZ" or "Phoenix, Arizona"
+    const cityPattern = /\b([A-Z][a-zA-Z\s]+),\s*([A-Z]{2}|[A-Z][a-z]+)\b/g;
+    let cityMatch: RegExpExecArray | null;
+    while ((cityMatch = cityPattern.exec(allSnippets)) !== null) {
+      const detectedLocation = cityMatch[0].trim();
+      const normalizedDetected = detectedLocation.toLowerCase().trim();
+      // Skip if it's already a target location
+      if (targetLocations.has(normalizedDetected)) continue;
+      const comboKey = `${mention.keyword.toLowerCase()}||${normalizedDetected}`;
+      if (existingBonusCombos.has(comboKey)) continue;
+      // New bonus location found!
+      existingBonusCombos.add(comboKey); // prevent duplicates within this run
+      bonusToCreate.push({
+        campaignId,
+        searchQuery: mention.keyword,
+        location: detectedLocation,
+        aiSearchVolume: mention.aiSearchVolume || null,
+        trainingStatus: "monitoring" as const, // bonus wins go straight to monitoring
+        trainingSessions: 0,
+        isTargetLocation: false,
+        firstMentionedAt: new Date(),
+        currentRankChatGPT: mention.llmResponses.chatgpt?.mentioned
+          ? (mention.llmResponses.chatgpt.position ? `position_${mention.llmResponses.chatgpt.position}` : "mentioned")
+          : null,
+        currentRankGemini: mention.llmResponses.gemini?.mentioned
+          ? (mention.llmResponses.gemini.position ? `position_${mention.llmResponses.gemini.position}` : "mentioned")
+          : null,
+        currentRankAIOverview: mention.llmResponses.aiOverview?.mentioned
+          ? (mention.llmResponses.aiOverview.position ? `position_${mention.llmResponses.aiOverview.position}` : "mentioned")
+          : null,
+        lastRankCheckAt: new Date(),
+      });
+      // Also record as a win
+      winsDetected.push({
+        queryLocationId: -1, // will be updated after insert
+        searchQuery: mention.keyword,
+        location: detectedLocation,
+        platform: mention.llmResponses.chatgpt?.mentioned ? "chatgpt" :
+                  mention.llmResponses.gemini?.mentioned ? "gemini" : "aiOverview",
+        winType: "new_mention",
+        previousValue: "Not tracked (bonus location)",
+        currentValue: "Mentioned (bonus win)",
+        detectedAt: new Date().toISOString(),
+      });
+      console.log(`[Rank Tracking] Bonus location detected: "${mention.keyword}" in ${detectedLocation} (not a target location)`);
+    }
+  }
+
+  if (bonusToCreate.length > 0) {
+    const created = await createCampaignQueryLocations(bonusToCreate);
+    // Back-fill the queryLocationId on the bonus win entries
+    for (let i = 0; i < created.length; i++) {
+      const winIdx = winsDetected.findLastIndex((w) => w.queryLocationId === -1);
+      if (winIdx !== -1) winsDetected[winIdx].queryLocationId = created[i].id;
+    }
+    console.log(`[Rank Tracking] Created ${created.length} bonus location rows`);
+  }
+
   const currentScore = calculateVisibilityScore(newSnapshots, queryLocations.length);
 
-  console.log(`[Rank Tracking] Check complete: ${snapshotsCreated} snapshots, ${winsDetected.length} wins, score: ${currentScore.overall}/100`);
+  console.log(`[Rank Tracking] Check complete: ${snapshotsCreated} snapshots, ${winsDetected.length} wins (incl. ${bonusToCreate.length} bonus locations), score: ${currentScore.overall}/100`);
 
   return { success: true, snapshotsCreated, winsDetected, currentScore };
 }

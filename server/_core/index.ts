@@ -12,7 +12,7 @@ import { trainingWorker } from "../trainingQueue";
 import { startTrainingWorkerV2 } from "../trainingQueueV2";
 import { startScheduler } from "../scheduler";
 import { createWebhookRouter } from "../webhookHandler";
-import { ensureMonkeyIndexerEnumValue } from "../db";
+import { ensureMonkeyIndexerEnumValue, ensureIsTargetLocationColumn } from "../db";
 
 // Combined router with all sub-routers including llmInsights and agency
 const combinedRouter = router({
@@ -102,6 +102,9 @@ async function startServer() {
 // Run enum migration before starting the server
 ensureMonkeyIndexerEnumValue().catch((err) =>
   console.warn("[Startup] ensureMonkeyIndexerEnumValue failed (non-fatal):", err.message)
+);
+ensureIsTargetLocationColumn().catch((err) =>
+  console.warn("[Startup] ensureIsTargetLocationColumn failed (non-fatal):", err.message)
 );
 
 startServer().catch(console.error);
