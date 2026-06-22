@@ -213,6 +213,7 @@ export default function LLMInsights() {
                     <TableHead className="w-8">#</TableHead>
                     <TableHead>Query</TableHead>
                     <TableHead>Location</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead>Business</TableHead>
                     <TableHead className="text-right">AI Volume</TableHead>
                     <TableHead>ChatGPT</TableHead>
@@ -231,6 +232,17 @@ export default function LLMInsights() {
                       </TableCell>
                       <TableCell>
                         <span className="text-muted-foreground text-sm">{q.location}</span>
+                      </TableCell>
+                      <TableCell>
+                        {q.isTargetLocation === false ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-yellow-500/15 text-yellow-400 border-yellow-500/30" title="This location was not in the client's target list — bonus win!">
+                            ⭐ Bonus
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-blue-500/15 text-blue-400 border-blue-500/30" title="This is an explicitly targeted location">
+                            <Target className="w-3 h-3" /> Target
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div>

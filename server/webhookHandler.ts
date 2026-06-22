@@ -70,6 +70,13 @@ const onboardingPayloadSchema = z.object({
   // Accepts 'starter' | 'growth' | 'pro'. Falls back to packageTierSlug if omitted.
   agencyPackageTier: z.enum(['starter', 'growth', 'pro']).optional(),
 
+  // Optional: internal source tag — "rogue" for Rogue Business Marketing, "ranklocal" for Rank Local
+  // Omit for white-label agency clients
+  source: z.enum(["rogue", "ranklocal"]).optional(),
+
+  // Optional: specialties / unique expertise — hammered into every MiniMax training iteration
+  specialties: z.string().optional(),
+
   // Optional: webhook secret for authentication
   webhookSecret: z.string().optional(),
 });
@@ -259,6 +266,10 @@ export function createWebhookRouter(): Router {
         if (payload.siteUsername) updateFields.siteUsername = payload.siteUsername;
         // sitePassword encrypted with canonical AES-256-GCM encrypt() from encryption.ts
         if (payload.sitePassword) updateFields.sitePasswordEncrypted = encrypt(payload.sitePassword);
+        // Internal source tag for filtering
+        if (payload.source) updateFields.internalSource = payload.source;
+        // Specialties — hammered into every MiniMax training iteration
+        if (payload.specialties) updateFields.specialties = payload.specialties;
 
         await db.update(businesses).set(updateFields).where(eq(businesses.id, businessId));
       } else {
@@ -285,6 +296,10 @@ export function createWebhookRouter(): Router {
             siteAdminUrl: payload.siteAdminUrl || null,
             siteUsername: payload.siteUsername || null,
             sitePasswordEncrypted: payload.sitePassword ? encrypt(payload.sitePassword) : null,
+            // Internal source tag for filtering ("rogue", "ranklocal", or null)
+            internalSource: payload.source || null,
+            // Specialties — hammered into every MiniMax training iteration
+            specialties: payload.specialties || null,
             createdAt: new Date(),
             updatedAt: new Date(),
           })

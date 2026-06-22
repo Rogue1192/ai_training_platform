@@ -148,6 +148,13 @@ export const businesses = pgTable("businesses", {
   // to the website builder platform (we are building their site). If false (default),
   // Playwright logs into their existing site and publishes directly.
   useWebhookForContent: boolean("useWebhookForContent").default(false).notNull(),
+  // Archive flag — soft-delete for test/inactive clients
+  isArchived: boolean("isArchived").default(false).notNull(),
+  // Internal source tag — "rogue", "ranklocal", or null (white-label/unknown)
+  internalSource: varchar("internalSource", { length: 50 }),
+  // Specialties & unique expertise — free-text field seeded into MiniMax training prompts
+  // e.g. "Specializes in red clay stain removal unique to North Alabama geography"
+  specialties: text("specialties"),
   // Source tracking
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -171,15 +178,17 @@ export const apiKeys = pgTable("apiKeys", {
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = typeof apiKeys.$inferInsert;
 
-// Service Keys table — global keys for external services (DataForSEO, SinByte, Resend)
+// Service Keys table — global keys for external services (DataForSEO, Monkey Indexer, Resend)
 // These are stored encrypted in the database so they can be managed via the Settings UI
 // instead of requiring manual Railway env var configuration.
-export const serviceKeyServiceEnum = pgEnum("service_key_service", ["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]);
+// Note: "sinbyte" is kept in the enum for backward compatibility (existing DB rows);
+// new installs use "monkeyindexer" instead.
+export const serviceKeyServiceEnum = pgEnum("service_key_service", ["dataforseo", "sinbyte", "monkeyindexer", "resend", "whitelabel", "stripe"]);
 export const serviceKeys = pgTable("serviceKeys", {
   id: serial("id").primaryKey(),
   service: serviceKeyServiceEnum("service").notNull().unique(),
   // For services with login+password (DataForSEO), store as JSON: {login, password}
-  // For services with a single API key (SinByte, Resend), store as the key string
+  // For services with a single API key (Monkey Indexer, Resend), store as the key string
   encryptedValue: text("encryptedValue").notNull(),
   status: apiKeyStatusEnum("status").default("connected").notNull(),
   lastVerified: timestamp("lastVerified"),
@@ -452,6 +461,11 @@ export const campaignQueryLocations = pgTable("campaignQueryLocations", {
   beforeVideoGoogleAi: text("beforeVideoGoogleAi"),  // "Before" recording on Google AI
   afterVideoChatgpt: text("afterVideoChatgpt"),      // "After" recording on ChatGPT (set on first win)
   afterVideoGoogleAi: text("afterVideoGoogleAi"),    // "After" recording on Google AI (set on first win)
+  /**
+   * true  = this location was explicitly set as a target in the client’s package (default)
+   * false = bonus win — the business appeared in a location NOT in their target list
+   */
+  isTargetLocation: boolean("isTargetLocation").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });

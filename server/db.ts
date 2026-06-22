@@ -1,4 +1,4 @@
-import { and, eq, sql, desc, isNull, ne, gte } from "drizzle-orm";
+import { and, eq, sql, desc, isNull, ne, gte, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -34,24 +34,29 @@ let _db: ReturnType<typeof drizzle> | null = null;
 let _client: ReturnType<typeof postgres> | null = null;
 
 export async function getDb() {
-  // Prioritize SUPABASE_DATABASE_URL (PostgreSQL),
-  // fall back to DATABASE_URL for Railway or other environments
+  // Use DATABASE_URL directly — Railway is configured with the correct Supabase pooler URL.
+  // SUPABASE_DATABASE_URL takes priority if set explicitly.
   const databaseUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
-  
-  if (!_db && databaseUrl) {
+
+  if (!databaseUrl) {
+    console.warn('[Database] No DATABASE_URL or SUPABASE_DATABASE_URL set!');
+    return null;
+  }
+
+  if (!_db) {
     try {
-      console.log("[Database] Connecting to:", databaseUrl.includes('pooler.supabase.com') ? 'Supabase Pooler' : 'Default DB');
-      
-      // Always use --cluster=pooler to ensure IPv4 routing via Supabase pooler (required for Railway)
+      const maskedUrl = databaseUrl.replace(/:([^@]+)@/, ':[MASKED]@');
+      console.log('[Database] Connecting to:', maskedUrl);
       _client = postgres(databaseUrl, {
         ssl: 'require',
-        connection: { options: '--cluster=pooler' },
+        // Supabase pooler does not support prepared statements
+        prepare: false,
         connect_timeout: 30,
       });
       _db = drizzle(_client);
-      console.log("[Database] Connected successfully");
+      console.log('[Database] Connected successfully');
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      console.warn('[Database] Failed to connect:', error);
       _db = null;
       _client = null;
     }
@@ -172,6 +177,20 @@ export async function deleteBusiness(id: number): Promise<void> {
   if (!db) throw new Error("Database not available");
 
   await db.delete(businesses).where(eq(businesses.id, id));
+}
+
+export async function bulkDeleteBusinesses(ids: number[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (ids.length === 0) return;
+  await db.delete(businesses).where(inArray(businesses.id, ids));
+}
+
+export async function bulkArchiveBusinesses(ids: number[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (ids.length === 0) return;
+  await db.update(businesses).set({ isArchived: true }).where(inArray(businesses.id, ids));
 }
 
 // ============= API Key Operations =============
@@ -1203,9 +1222,9 @@ export async function seedDefaultPromptTemplates(): Promise<PromptTemplate[]> {
   return templates;
 }
 
-// ─── Service Keys (DataForSEO, SinByte, Resend) ───────────────────────────────
+// ─── Service Keys (DataForSEO, Monkey Indexer, Resend) ───────────────────────────────
 
-export type ServiceKeyService = "dataforseo" | "sinbyte" | "resend" | "whitelabel" | "stripe";
+export type ServiceKeyService = "dataforseo" | "sinbyte" | "monkeyindexer" | "resend" | "whitelabel" | "stripe"; // sinbyte kept for compat
 
 export async function getServiceKey(service: ServiceKeyService) {
   const db = await getDb();
@@ -1245,4 +1264,43 @@ export async function deleteServiceKey(service: ServiceKeyService) {
   if (!db) return;
   const { serviceKeys } = await import("../drizzle/schema");
   await db.delete(serviceKeys).where(eq(serviceKeys.service, service));
+}
+
+/**
+ * Ensure the "monkeyindexer" value exists in the service_key_service Postgres enum.
+ * This is a safe, idempotent ALTER TYPE that runs on startup so no manual SQL is needed.
+ * Postgres silently ignores the ADD VALUE if the value already exists (IF NOT EXISTS).
+ */
+export async function ensureMonkeyIndexerEnumValue(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    // drizzle-orm exposes the underlying postgres client via db.$client
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`ALTER TYPE service_key_service ADD VALUE IF NOT EXISTS 'monkeyindexer'`;
+    console.log("[DB] service_key_service enum: monkeyindexer value ensured");
+  } catch (err: any) {
+    // Non-fatal — the value may already exist or the enum may not exist yet
+    console.warn("[DB] ensureMonkeyIndexerEnumValue:", err.message);
+  }
+}
+
+/**
+ * Ensure the isTargetLocation column exists on campaignQueryLocations.
+ * New column added to distinguish explicitly targeted locations from bonus wins.
+ * Safe to run on every startup — uses IF NOT EXISTS so it's idempotent.
+ */
+export async function ensureIsTargetLocationColumn(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE "campaignQueryLocations"
+      ADD COLUMN IF NOT EXISTS "isTargetLocation" boolean NOT NULL DEFAULT true
+    `;
+    console.log('[DB] campaignQueryLocations.isTargetLocation column ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureIsTargetLocationColumn:', err.message);
+  }
 }

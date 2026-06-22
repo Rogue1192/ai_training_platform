@@ -8,7 +8,7 @@
  * 2. Credibility Research (Sprint 4) — already built
  * 3. Content Generation (Sprint 5) — already built
  * 4. WordPress Publishing (Sprint 6) — just built
- * 5. SinByte Indexing Submission (Sprint 7) — just built
+ * 5. Monkey Indexer Indexing Submission — replaces SinByte
  * 6. Wait 3-4 days for indexing
  * 7. Baseline Rank Check (Sprint 3) — already built
  * 8. Training kickoff (Sprint 11 — future)
@@ -305,7 +305,7 @@ export async function runPipelineStep(
       }
       
       case "indexing": {
-        const { submitCampaignForIndexing } = await import("./sinbyteIndexing");
+        const { submitCampaignForIndexing } = await import("./monkeyIndexer");
         const indexResult = await submitCampaignForIndexing({
           campaignId,
           businessName: business.name,
@@ -314,7 +314,7 @@ export async function runPipelineStep(
           step,
           success: indexResult.submitted,
           message: indexResult.submitted
-            ? `Submitted ${indexResult.urlsSubmitted} URLs to SinByte for indexing. Verification in 3-4 days.`
+            ? `Submitted ${indexResult.urlsSubmitted} URLs to Monkey Indexer. Credits remaining: ${indexResult.creditsRemaining ?? "?"}. Verification in 3-4 days.`
             : `Indexing submission failed: ${indexResult.error}`,
           data: indexResult,
           nextStep: "indexing_verification",
@@ -323,7 +323,7 @@ export async function runPipelineStep(
       }
       
       case "indexing_verification": {
-        const { verifyCampaignIndexing } = await import("./sinbyteIndexing");
+        const { verifyCampaignIndexing } = await import("./monkeyIndexer");
         const verifyResult = await verifyCampaignIndexing(campaignId);
         result = {
           step,
@@ -611,7 +611,7 @@ export function getPipelineStepLabels(): Array<{ step: PipelineStep; label: stri
     { step: "credibility_research", label: "Credibility Research", description: "Research business credentials, awards, and trust signals" },
     { step: "content_generation", label: "Content Generation", description: "Generate optimized content pages for AI citation" },
     { step: "publishing", label: "WordPress Publishing", description: "Auto-publish content pages to client website" },
-    { step: "indexing", label: "Indexing Submission", description: "Submit URLs to SinByte for fast Google indexing" },
+    { step: "indexing", label: "Indexing Submission", description: "Submit URLs to Monkey Indexer for fast Google indexing" },
     { step: "indexing_verification", label: "Indexing Verification", description: "Verify URLs are indexed (3-4 day wait)" },
     { step: "baseline_check", label: "Baseline Rank Check", description: "Check initial AI visibility across all queries" },
     { step: "training", label: "AI Training", description: "Train AI models to cite the business" },

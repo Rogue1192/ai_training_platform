@@ -15,9 +15,10 @@ import { callAI, AIProvider, AIMessage } from "./aiProviders";
 import { decrypt } from "./encryption";
 import { getApiKeyByProvider } from "./db";
 import { getDb } from "./db";
-import { contentPages, campaigns } from "../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { contentPages, campaigns, businesses, credibilityData } from "../drizzle/schema";
+import { eq, and, desc } from "drizzle-orm";
 import type { CredibilityResearchResult, CredibilityFact, SuggestedPage } from "./credibilityResearchEngine";
+import { buildPageSchema, buildSchemaPackageForBusiness, schemaPackageToString } from "./schemaMarkupEngine";
 
 // ============= Types =============
 
@@ -100,18 +101,8 @@ Return your response as valid JSON with this format:
   "interlinkSuggestions": ["<pageType1>", "<pageType2>"]
 }`;
 
-/**
- * Schema markup generation prompt (uses cheaper Haiku model)
- */
-const SCHEMA_GENERATION_SYSTEM_PROMPT = `You are a schema markup expert. Generate JSON-LD structured data for web pages.
-
-Return ONLY valid JSON-LD markup (no explanation text). The markup should be ready to paste into a <script type="application/ld+json"> tag.
-
-Always include:
-- @context: "https://schema.org"
-- Appropriate @type for the page content
-- All relevant properties filled with the provided data
-- Proper nesting of related entities`;
+// Schema markup is now generated deterministically by schemaMarkupEngine.ts
+// The old Haiku-based prompt approach has been replaced.
 
 // ============= Page Type Configurations =============
 
@@ -318,17 +309,24 @@ export async function generateSinglePage(params: {
     throw new Error(`Failed to parse content generation response for ${config.type} page`);
   }
   
-  // Generate schema markup for this page (use Haiku for cost savings)
+  // Generate schema markup deterministically using schemaMarkupEngine
+  // (no AI call needed — built from real data, zero hallucination risk)
   let schemaMarkup = "";
   try {
-    schemaMarkup = await generateSchemaMarkup(
-      apiKey,
-      config,
-      businessName,
-      location,
-      pageData.pageContent,
+    const pageSchemaBlock = buildPageSchema(
+      {
+        pageType: config.type,
+        pageTitle: pageData.pageTitle || config.label,
+        pageContent: pageData.pageContent || "",
+        publishedUrl: undefined, // not published yet
+        businessName,
+        businessWebsite: websiteUrl,
+        businessType: industry,
+        specialties: undefined, // will be enriched when schemaPackage is built
+      },
       facts
     );
+    schemaMarkup = JSON.stringify(pageSchemaBlock, null, 2);
   } catch (schemaError) {
     console.warn(`[Content Generation] Schema generation failed for ${config.type}, continuing without:`, schemaError);
   }
@@ -345,50 +343,7 @@ export async function generateSinglePage(params: {
   };
 }
 
-/**
- * Generate schema markup for a page (uses cheaper Haiku model)
- */
-async function generateSchemaMarkup(
-  apiKey: string,
-  config: PageTypeConfig,
-  businessName: string,
-  location: string,
-  pageContent: string,
-  facts: CredibilityFact[]
-): Promise<string> {
-  const schemaPrompt = `Generate JSON-LD schema markup for a ${config.label} page.
-
-Business: ${businessName}
-Location: ${location}
-Schema types to include: ${config.schemaTypes.join(", ")}
-
-Key facts to include in schema:
-${facts.slice(0, 10).map(f => `- ${f.fact}`).join("\n")}
-
-Page content summary (first 500 chars):
-${pageContent.substring(0, 500)}
-
-Return ONLY the JSON-LD markup, no explanation.`;
-
-  const messages: AIMessage[] = [
-    { role: "system", content: SCHEMA_GENERATION_SYSTEM_PROMPT },
-    { role: "user", content: schemaPrompt },
-  ];
-  
-  // Use Haiku for schema generation (cheaper, simpler task)
-  const response = await callAI("anthropic", apiKey, "claude-haiku-4-5-20251001", messages);
-  
-  let jsonStr = response.content.trim();
-  if (jsonStr.startsWith("```json")) jsonStr = jsonStr.slice(7);
-  if (jsonStr.startsWith("```")) jsonStr = jsonStr.slice(3);
-  if (jsonStr.endsWith("```")) jsonStr = jsonStr.slice(0, -3);
-  jsonStr = jsonStr.trim();
-  
-  // Validate it's valid JSON
-  JSON.parse(jsonStr);
-  
-  return jsonStr;
-}
+// generateSchemaMarkup removed — replaced by schemaMarkupEngine.buildPageSchema()
 
 /**
  * Generate all content pages for a campaign
@@ -508,9 +463,46 @@ export async function generateAllContentPages(params: {
       status: "publishing",
       contentGenerationCompletedAt: new Date(),
       updatedAt: new Date(),
-    }).where(eq(campaigns.id, campaignId));
+        }).where(eq(campaigns.id, campaignId));
   }
-  
+
+  // Build and store the full schema package (site-wide + per-page)
+  try {
+    const schemaPkg = await buildSchemaPackageForBusiness(businessId, campaignId);
+    if (schemaPkg && db) {
+      // Store the composite site-wide schema as a special content page
+      // so the team can copy it from the Campaign Detail UI
+      const existingSchemaPage = await db.select()
+        .from(contentPages)
+        .where(and(eq(contentPages.campaignId, campaignId), eq(contentPages.pageType, "schema_package")))
+        .limit(1);
+      const schemaContent = schemaPackageToString(schemaPkg);
+      if (existingSchemaPage.length > 0) {
+        await db.update(contentPages)
+          .set({ pageContent: schemaContent, schemaMarkup: JSON.stringify(schemaPkg.siteWideSchema), updatedAt: new Date() })
+          .where(eq(contentPages.id, existingSchemaPage[0]!.id));
+      } else {
+        await db.insert(contentPages).values({
+          businessId,
+          campaignId,
+          pageType: "schema_package",
+          pageTitle: "Schema Markup Package",
+          pageSlug: "schema",
+          pageContent: schemaContent,
+          schemaMarkup: JSON.stringify(schemaPkg.siteWideSchema),
+          status: "generated",
+          deliveryType: "inject_existing",
+          placementInstructions: `Paste the SITE-WIDE SCHEMA block into the <head> of every page on the client's site (or use Insert Headers and Footers plugin in WordPress). Paste each per-page schema block into the corresponding page. Summary: ${schemaPkg.summary}`,
+          generationModel: "system",
+          generationPrompt: `Schema package for ${businessName}`,
+        });
+      }
+      console.log(`[Content Generation] ✓ Schema package built: ${schemaPkg.summary}`);
+    }
+  } catch (schemaPackageError: any) {
+    console.warn(`[Content Generation] Schema package build failed:`, schemaPackageError.message);
+  }
+
   const result: ContentGenerationResult = {
     pages: generatedPages,
     llmTxtContent,
@@ -518,9 +510,7 @@ export async function generateAllContentPages(params: {
     generationModel: "claude-sonnet-4-5-20250929",
     generatedAt: new Date().toISOString(),
   };
-  
   console.log(`[Content Generation] Completed for ${businessName}. Generated ${result.totalPages} pages total.`);
-  
   return result;
 }
 

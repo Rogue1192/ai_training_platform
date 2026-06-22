@@ -42,7 +42,7 @@ interface FormData {
   name: string;
   businessType: string;
   website: string;
-  location: string;
+  locations: [string, string, string, string, string]; // up to 5 target cities
   address: string;
   phone: string;
   description: string;
@@ -73,7 +73,7 @@ interface FormData {
 }
 
 const EMPTY_FORM: FormData = {
-  name: "", businessType: "", website: "", location: "", address: "", phone: "", description: "",
+  name: "", businessType: "", website: "", locations: ["","","","",""], address: "", phone: "", description: "",
   contactName: "", contactEmail: "",
   yearsInBusiness: "", certifications: "", licenses: "", awards: "", warranties: "", bbbRating: "", differentiators: "",
   facebookUrl: "", instagramUrl: "", linkedinUrl: "", twitterUrl: "", youtubeUrl: "", tiktokUrl: "",
@@ -121,7 +121,7 @@ export default function ClientIntakeForm() {
       name: form.name.trim(),
       businessType: form.businessType || undefined,
       website: form.website || undefined,
-      location: form.location || undefined,
+      location: form.locations.filter(l => l.trim() !== "").join(", ") || undefined,
       address: form.address || undefined,
       phone: form.phone || undefined,
       description: form.description || undefined,
@@ -287,14 +287,30 @@ export default function ClientIntakeForm() {
                     <Input id="website" className="pl-9" placeholder="https://yoursite.com" value={form.website} onChange={set("website")} />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="location">City / Service Area</Label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                      <Input id="location" className="pl-9" placeholder="Austin, TX" value={form.location} onChange={set("location")} />
-                    </div>
+                {/* Target location slots — up to 5 cities */}
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4 text-gray-400" />
+                    Cities / Service Areas
+                    <span className="text-xs text-gray-400 font-normal ml-1">(enter up to 5 — your package determines how many are used)</span>
+                  </Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {([0,1,2,3,4] as const).map((i) => (
+                      <Input
+                        key={i}
+                        placeholder={`City ${i + 1}, ST`}
+                        value={form.locations[i]}
+                        onChange={(e) => {
+                          const next: [string,string,string,string,string] = [...form.locations] as [string,string,string,string,string];
+                          next[i] = e.target.value;
+                          setForm((prev) => ({ ...prev, locations: next }));
+                        }}
+                      />
+                    ))}
                   </div>
+                  <p className="text-xs text-gray-400">The AI will be trained to recommend your business when people search in these cities.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="phone">Business Phone</Label>
                     <div className="relative">

@@ -1,4 +1,4 @@
-import { and, eq, sql, desc, gte, inArray } from "drizzle-orm";
+import { and, eq, ne, sql, desc, gte, inArray } from "drizzle-orm";
 import { getDb } from "./db";
 import {
   packageTiers,
@@ -62,11 +62,16 @@ export async function getPackageTiers(activeOnly = false): Promise<PackageTier[]
   const db = await getDb();
   if (!db) return [];
 
-  const conditions = activeOnly ? [eq(packageTiers.isActive, true)] : [];
+  // Always exclude the legacy 'enterprise' tier — it is no longer offered.
+  // Existing campaigns referencing it are unaffected; it just won't appear in any UI.
+  const conditions: ReturnType<typeof eq>[] = [
+    ne(packageTiers.slug, "enterprise"),
+    ...(activeOnly ? [eq(packageTiers.isActive, true)] : []),
+  ];
   return db
     .select()
     .from(packageTiers)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .where(and(...conditions))
     .orderBy(packageTiers.sortOrder, packageTiers.createdAt);
 }
 
@@ -570,37 +575,28 @@ const DEFAULT_PACKAGE_TIERS = [
     name: "Starter",
     maxQueries: 5,
     maxLocations: 3,
-    monthlyPrice: 600,
+    monthlyPrice: 99,
     isActive: true,
     sortOrder: 1,
-    description: "5 AI search queries across 3 locations. Ideal for single-location businesses.",
+    description: "5 keyword topics × 3 locations. Up to 120 AI training sessions/month.",
   },
   {
     name: "Growth",
-    maxQueries: 10,
-    maxLocations: 3,
-    monthlyPrice: 800,
+    maxQueries: 5,
+    maxLocations: 5,
+    monthlyPrice: 149,
     isActive: true,
     sortOrder: 2,
-    description: "10 AI search queries across 3 locations. Great for businesses expanding their reach.",
+    description: "5 keyword topics × 5 locations. Up to 200 AI training sessions/month.",
   },
   {
     name: "Pro",
-    maxQueries: 5,
+    maxQueries: 10,
     maxLocations: 5,
-    monthlyPrice: 750,
+    monthlyPrice: 179,
     isActive: true,
     sortOrder: 3,
-    description: "5 AI search queries across 5 locations. Perfect for multi-location businesses.",
-  },
-  {
-    name: "Enterprise",
-    maxQueries: 10,
-    maxLocations: 10,
-    monthlyPrice: 1000,
-    isActive: true,
-    sortOrder: 4,
-    description: "10 AI search queries across 10 locations. Maximum AI visibility coverage.",
+    description: "10 keyword topics × 5 locations. Up to 400 AI training sessions/month.",
   },
 ];
 

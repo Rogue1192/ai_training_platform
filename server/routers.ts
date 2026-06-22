@@ -96,6 +96,7 @@ export const appRouter = router({
           licenses: z.string().optional(),
           warranties: z.string().optional(),
           differentiators: z.string().optional(),
+          specialties: z.string().optional(),
           clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
           siteAdminUrl: z.string().optional(),
           siteUsername: z.string().optional(),
@@ -139,6 +140,7 @@ export const appRouter = router({
           licenses: z.string().optional(),
           warranties: z.string().optional(),
           differentiators: z.string().optional(),
+          specialties: z.string().optional(),
           clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
           siteAdminUrl: z.string().optional(),
           siteUsername: z.string().optional(),
@@ -165,6 +167,117 @@ export const appRouter = router({
       await deleteBusiness(input.id);
       return { success: true };
     }),
+    bulkDelete: protectedProcedure
+      .input(z.object({ ids: z.array(z.number()).min(1) }))
+      .mutation(async ({ input }) => {
+        const { bulkDeleteBusinesses } = await import("./db");
+        await bulkDeleteBusinesses(input.ids);
+        return { success: true, deleted: input.ids.length };
+      }),
+    bulkArchive: protectedProcedure
+      .input(z.object({ ids: z.array(z.number()).min(1) }))
+      .mutation(async ({ input }) => {
+        const { bulkArchiveBusinesses } = await import("./db");
+        await bulkArchiveBusinesses(input.ids);
+        return { success: true, archived: input.ids.length };
+      }),
+    // Super-admin direct onboarding: create business + kick off full pipeline immediately
+    onboardClient: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        businessType: z.string().optional(),
+        location: z.string().optional(),
+        description: z.string().optional(),
+        website: z.string().optional(),
+        phone: z.string().optional(),
+        address: z.string().optional(),
+        notes: z.string().optional(),
+        contactEmail: z.string().optional(),
+        contactName: z.string().optional(),
+        certifications: z.string().optional(),
+        awards: z.string().optional(),
+        yearsInBusiness: z.number().optional(),
+        bbbRating: z.string().optional(),
+        licenses: z.string().optional(),
+        warranties: z.string().optional(),
+        differentiators: z.string().optional(),
+        specialties: z.string().optional(),
+        clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
+        internalSource: z.enum(["rogue", "ranklocal"]).optional(),
+        packageTier: z.enum(["starter", "growth", "pro"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { createBusiness } = await import("./db");
+        const { packageTier, ...businessFields } = input;
+        // Create the business record
+        const business = await createBusiness({
+          ...businessFields,
+          userId: ctx.user.id,
+        });
+        // Kick off the full pipeline asynchronously
+        setImmediate(async () => {
+          try {
+            const { getDb: _getDb } = await import('./db');
+            const db = await _getDb();
+            if (!db) return;
+            const {
+              getPackageTierBySlug, seedDefaultPackageTiers,
+              createCampaign, createClientDashboard, getCampaignsByBusinessId
+            } = await import('./dbCampaigns');
+            const { runFullPipeline } = await import('./pipelineOrchestrator');
+            const ownerId = ctx.user.id;
+            // Avoid duplicate campaigns
+            const existingCampaigns = await getCampaignsByBusinessId(business.id);
+            const activeCampaign = existingCampaigns.find(
+              (c: any) => c.status !== 'monitoring' && c.status !== 'error' && c.status !== 'paused'
+            );
+            if (activeCampaign) return;
+            // Resolve package tier
+            await seedDefaultPackageTiers();
+            const tier = await getPackageTierBySlug(packageTier);
+            if (!tier) { console.error(`[onboardClient] Package tier '${packageTier}' not found`); return; }
+            const { getBusinessById } = await import('./db');
+            const biz = await getBusinessById(business.id);
+            if (!biz) return;
+            // Create campaign
+            const campaign = await createCampaign({
+              userId: ownerId,
+              businessId: business.id,
+              packageTierId: tier.id,
+              campaignName: `${biz.name} - AI Visibility`,
+              status: 'pending',
+              clientType: input.clientType || 'ai_only',
+              trainingAggressiveness: 'aggressive',
+              rankCheckFrequency: 'weekly',
+              errorCount: 0,
+              trialStatus: 'trial',
+              maxQueries: tier.maxQueries,
+              maxLocations: tier.maxLocations,
+              selectedPackage: packageTier,
+            });
+            // Initialize trial
+            const { initializeTrial } = await import('./trialManager');
+            await initializeTrial(campaign.id, packageTier);
+            // Create client dashboard
+            const crypto = await import('crypto');
+            const accessToken = crypto.randomBytes(32).toString('hex');
+            await createClientDashboard({
+              businessId: business.id,
+              campaignId: campaign.id,
+              accessToken,
+              isActive: true,
+              dashboardTitle: `${biz.name} - AI Visibility Report`,
+              accessCount: 0,
+            });
+            // Run the full pipeline
+            await runFullPipeline(campaign.id, ownerId);
+            console.log(`[onboardClient] Pipeline started for business ${business.id}, campaign ${campaign.id}`);
+          } catch (err) {
+            console.error('[onboardClient] Pipeline kickoff failed:', err);
+          }
+        });
+        return { success: true, businessId: business.id };
+      }),
   }),
 
   // API key management
@@ -321,7 +434,7 @@ export const appRouter = router({
       }),
   }),
 
-  // Service Keys (DataForSEO, SinByte, Resend) — managed via Settings UI
+  // Service Keys (DataForSEO, Monkey Indexer, Resend) — managed via Settings UI
   serviceKey: router({
     list: protectedProcedure.query(async () => {
       const { getAllServiceKeys } = await import("./db");
@@ -365,9 +478,9 @@ export const appRouter = router({
     }),
     save: protectedProcedure
       .input(z.object({
-        service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]),
+        service: z.enum(["dataforseo", "monkeyindexer", "resend", "whitelabel", "stripe"]),
         // For dataforseo: pass as JSON string {login, password}
-        // For sinbyte/resend: pass as the API key string
+        // For monkeyindexer/resend: pass as the API key string
         value: z.string().min(1),
       }))
       .mutation(async ({ input }) => {
@@ -378,14 +491,14 @@ export const appRouter = router({
         return { success: true };
       }),
     delete: protectedProcedure
-      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]) }))
+      .input(z.object({ service: z.enum(["dataforseo", "monkeyindexer", "resend", "whitelabel", "stripe"]) }))
       .mutation(async ({ input }) => {
         const { deleteServiceKey } = await import("./db");
         await deleteServiceKey(input.service);
         return { success: true };
       }),
     test: protectedProcedure
-      .input(z.object({ service: z.enum(["dataforseo", "sinbyte", "resend", "whitelabel", "stripe"]) }))
+      .input(z.object({ service: z.enum(["dataforseo", "monkeyindexer", "resend", "whitelabel", "stripe"]) }))
       .mutation(async ({ input }) => {
         const { getServiceKey, upsertServiceKey } = await import("./db");
         const { decrypt } = await import("./encryption");
@@ -404,14 +517,19 @@ export const appRouter = router({
             });
             const valid = resp.data?.status_code === 20000;
             return { success: valid, message: valid ? "DataForSEO credentials verified" : "Invalid credentials" };
-          } else if (input.service === "sinbyte") {
+          } else if (input.service === "monkeyindexer") {
             const axios = (await import("axios")).default;
-            const resp = await axios.get(`https://app.sinbyte.com/api/indexing/?apikey=${value}`, {
+            const resp = await axios.get("https://monkeyindexer.com/api/v1/me", {
+              headers: { Authorization: `Bearer ${value}` },
               timeout: 10000,
               validateStatus: () => true,
             });
-            const valid = resp.status === 200 || resp.status === 404;
-            return { success: valid, message: valid ? "SinByte API key verified" : `SinByte returned status ${resp.status}` };
+            const valid = resp.status === 200 && resp.data?.success === true;
+            const credits = resp.data?.data?.credits?.available;
+            const msg = valid
+              ? `Monkey Indexer key verified — ${credits ?? "?"} credits available`
+              : `Monkey Indexer returned status ${resp.status}`;
+            return { success: valid, message: msg };
           } else if (input.service === "resend") {
             const { Resend } = await import("resend");
             const resend = new Resend(value);
@@ -1554,34 +1672,35 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       }),
   }),
 
-  // ============= AI ANSWER FORGE — SinByte Indexing (Sprint 7) =============
+  // ============= AI ANSWER FORGE — Monkey Indexer (replaces SinByte) =============
   indexing: router({
     submitCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number(), businessName: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        const { submitCampaignForIndexing } = await import("./sinbyteIndexing");
+        const { submitCampaignForIndexing } = await import("./monkeyIndexer");
         return submitCampaignForIndexing(input);
       }),
     verifyCampaign: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { verifyCampaignIndexing } = await import("./sinbyteIndexing");
+        const { verifyCampaignIndexing } = await import("./monkeyIndexer");
         return verifyCampaignIndexing(input.campaignId);
       }),
     getHistory: protectedProcedure
       .query(async ({ ctx }) => {
-        // Note: getIndexingHistory returns all history - this is admin-only data
-        // The user is already authenticated via protectedProcedure
-        const { getIndexingHistory } = await import("./sinbyteIndexing");
+        const { getIndexingHistory } = await import("./monkeyIndexer");
         return getIndexingHistory();
       }),
-    getTaskStatus: protectedProcedure
-      .input(z.object({ taskId: z.union([z.string(), z.number()]) }))
+    getSubmissionStatuses: protectedProcedure
+      .input(z.object({ trackingIds: z.array(z.string()) }))
       .query(async ({ ctx, input }) => {
-        // Note: Task status is fetched from SinByte API by task ID
-        // The user is already authenticated via protectedProcedure
-        const { getTaskStatus } = await import("./sinbyteIndexing");
-        return getTaskStatus(input.taskId);
+        const { getSubmissionStatuses } = await import("./monkeyIndexer");
+        return getSubmissionStatuses(input.trackingIds);
+      }),
+    getAccountInfo: protectedProcedure
+      .query(async ({ ctx }) => {
+        const { getAccountInfo } = await import("./monkeyIndexer");
+        return getAccountInfo();
       }),
   }),
 
@@ -2136,6 +2255,7 @@ export const llmInsightsRouter = router({
           trainingSessions: campaignQueryLocations.trainingSessions,
           firstMentionedAt: campaignQueryLocations.firstMentionedAt,
           lastRankCheckAt: campaignQueryLocations.lastRankCheckAt,
+          isTargetLocation: campaignQueryLocations.isTargetLocation,
           businessName: businesses.name,
           campaignName: campaigns.campaignName,
           businessType: businesses.businessType,
@@ -2765,6 +2885,7 @@ export const agencyRouter = router({
           trainingSessions: campaignQueryLocations.trainingSessions,
           firstMentionedAt: campaignQueryLocations.firstMentionedAt,
           lastRankCheckAt: campaignQueryLocations.lastRankCheckAt,
+          isTargetLocation: campaignQueryLocations.isTargetLocation,
           businessName: businesses.name,
           campaignName: campaigns.campaignName,
           businessType: businesses.businessType,
