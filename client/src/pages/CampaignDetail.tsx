@@ -633,13 +633,13 @@ export default function CampaignDetail() {
                         </div>
                         {hasEvidence && (
                           <div className="px-3 pb-3">
-                            <p className="text-xs text-muted-foreground mb-2 font-medium">Before / After Evidence</p>
+                            <p className="text-xs text-muted-foreground mb-2 font-medium">Before / After Recording</p>
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-1">
                                 <p className="text-xs text-muted-foreground text-center">Before</p>
                                 {beforeShot ? (
                                   <a href={beforeShot} target="_blank" rel="noopener noreferrer">
-                                    <img src={beforeShot} alt="Before screenshot" className="w-full rounded border border-border object-cover max-h-40 hover:opacity-80 transition-opacity" />
+                                    <img src={beforeShot} alt="Before recording thumbnail" className="w-full rounded border border-border object-cover max-h-40 hover:opacity-80 transition-opacity" />
                                   </a>
                                 ) : beforeVideo ? (
                                   <video src={beforeVideo} controls className="w-full rounded border border-border max-h-40" />
@@ -653,7 +653,7 @@ export default function CampaignDetail() {
                                 <p className="text-xs text-muted-foreground text-center">After</p>
                                 {afterShot ? (
                                   <a href={afterShot} target="_blank" rel="noopener noreferrer">
-                                    <img src={afterShot} alt="After screenshot" className="w-full rounded border border-green-500/30 object-cover max-h-40 hover:opacity-80 transition-opacity" />
+                                    <img src={afterShot} alt="After recording thumbnail" className="w-full rounded border border-green-500/30 object-cover max-h-40 hover:opacity-80 transition-opacity" />
                                   </a>
                                 ) : afterVideo ? (
                                   <video src={afterVideo} controls className="w-full rounded border border-green-500/30 max-h-40" />
