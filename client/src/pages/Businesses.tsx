@@ -254,7 +254,7 @@ export default function Businesses() {
   const [formData, setFormData] = useState({
     name: "",
     businessType: "",
-    location: "",
+    locations: ["" , "", ""],
     description: "",
     website: "",
     phone: "",
@@ -283,7 +283,7 @@ export default function Businesses() {
     setFormData({
       name: "",
       businessType: "",
-      location: "",
+      locations: ["", "", ""],
       description: "",
       website: "",
       phone: "",
@@ -379,7 +379,9 @@ export default function Businesses() {
     setFormData({
       name: business.name || "",
       businessType: business.businessType || "",
-      location: business.location || "",
+      locations: business.location
+        ? business.location.split(",").map((l: string) => l.trim()).concat(["","","","",""]).slice(0, 5)
+        : ["","","","",""],
       description: business.description || "",
       website: business.website || "",
       phone: business.phone || "",
@@ -415,6 +417,14 @@ export default function Businesses() {
       return;
     }
     const payload: any = { ...formData };
+    // Serialize locations array → comma-separated string for the DB column
+    const filledLocations = (payload.locations as string[]).filter((l: string) => l.trim() !== "");
+    if (filledLocations.length === 0) {
+      toast.error("At least one target location is required");
+      return;
+    }
+    payload.location = filledLocations.join(", ");
+    delete payload.locations;
     if (payload.yearsInBusiness) {
       payload.yearsInBusiness = parseInt(payload.yearsInBusiness, 10);
     } else {
@@ -534,11 +544,39 @@ export default function Businesses() {
                       <Input id="businessType" value={formData.businessType} onChange={(e) => setFormData({ ...formData, businessType: e.target.value })} placeholder="e.g., HVAC Company" className="bg-background border-input" />
                     </div>
                   </div>
+                  {/* Package-aware target location slots */}
+                  {(() => {
+                    const maxLoc = formData.packageTier === "starter" ? 3 : 5;
+                    const slots = Array.from({ length: maxLoc }, (_, i) => i);
+                    return (
+                      <div className="space-y-2">
+                        <Label>
+                          Target Locations
+                          <span className="ml-2 text-xs text-muted-foreground font-normal">
+                            ({maxLoc} slots for {formData.packageTier.charAt(0).toUpperCase() + formData.packageTier.slice(1)} plan)
+                          </span>
+                        </Label>
+                        <div className={`grid gap-2 ${maxLoc === 3 ? "grid-cols-3" : "grid-cols-5"}`}>
+                          {slots.map((i) => (
+                            <Input
+                              key={i}
+                              value={formData.locations[i] ?? ""}
+                              onChange={(e) => {
+                                const next = [...formData.locations];
+                                while (next.length <= i) next.push("");
+                                next[i] = e.target.value;
+                                setFormData({ ...formData, locations: next });
+                              }}
+                              placeholder={`City ${i + 1}, ST`}
+                              className="bg-background border-input text-sm"
+                            />
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">These are the cities the AI will be trained to associate this business with. Fill as many as your package allows.</p>
+                      </div>
+                    );
+                  })()}
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="location">Location</Label>
-                      <Input id="location" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="e.g., Phoenix, AZ" className="bg-background border-input" />
-                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="phone">Phone</Label>
                       <Input id="phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="e.g., (555) 123-4567" className="bg-background border-input" />
