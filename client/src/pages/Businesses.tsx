@@ -270,7 +270,7 @@ export default function Businesses() {
     warranties: "",
     differentiators: "",
     clientType: "ai_only",
-    internalSource: "",
+    internalSource: "none",
     packageTier: "starter",
     specialties: "",
     siteAdminUrl: "",
@@ -397,7 +397,7 @@ export default function Businesses() {
       warranties: business.warranties || "",
       differentiators: business.differentiators || "",
       clientType: business.clientType || "ai_only",
-      internalSource: business.internalSource || "",
+      internalSource: business.internalSource || "none",
       packageTier: business.packageTier || "starter",
       specialties: business.specialties || "",
       siteAdminUrl: business.siteAdminUrl || "",
@@ -431,7 +431,7 @@ export default function Businesses() {
       delete payload.yearsInBusiness;
     }
     if (!payload.sitePassword) delete payload.sitePassword;
-    if (!payload.internalSource) delete payload.internalSource;
+    if (!payload.internalSource || payload.internalSource === 'none') delete payload.internalSource;
     const packageTier = payload.packageTier || "starter";
     delete payload.packageTier;
     try {
@@ -609,7 +609,7 @@ export default function Businesses() {
                           <SelectValue placeholder="Select source (optional)" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">None / White-Label</SelectItem>
+                          <SelectItem value="none">None / White-Label</SelectItem>
                           <SelectItem value="rogue">Rogue Business Marketing</SelectItem>
                           <SelectItem value="ranklocal">Rank Local</SelectItem>
                         </SelectContent>
