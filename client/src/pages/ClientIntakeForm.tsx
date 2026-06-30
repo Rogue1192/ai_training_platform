@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { serializeLocations } from "@shared/location";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -121,7 +122,7 @@ export default function ClientIntakeForm() {
       name: form.name.trim(),
       businessType: form.businessType || undefined,
       website: form.website || undefined,
-      location: form.locations.filter(l => l.trim() !== "").join(", ") || undefined,
+      location: serializeLocations(form.locations) || undefined,
       address: form.address || undefined,
       phone: form.phone || undefined,
       description: form.description || undefined,

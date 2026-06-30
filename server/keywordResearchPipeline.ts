@@ -4,6 +4,7 @@ import {
   type KeywordResearchResult,
   type LLMMentionResult,
 } from "./dataforseoService";
+import { parseLocations } from "@shared/location";
 import {
   getIndustryKeywordCache,
   upsertIndustryKeywordCache,
@@ -248,8 +249,9 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
     // Get locations from the business record
     const locations: string[] = [];
     if (business.location) {
-      // Parse comma-separated locations or use as single location
-      const parsed = business.location.split(",").map((l: string) => l.trim()).filter(Boolean);
+      // Parse the ";"-delimited location string (legacy "City, ST" comma
+      // fallback handled in shared/location.ts) into individual locations.
+      const parsed = parseLocations(business.location);
       locations.push(...parsed.slice(0, maxLocations));
     }
 

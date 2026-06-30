@@ -10,6 +10,7 @@
  */
 
 import { Page } from "playwright";
+import { parseLocations } from "@shared/location";
 import { getDb } from "./db";
 import { businesses, credibilityData, contentPages } from "../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
@@ -414,9 +415,7 @@ export async function generateLLMTxt(businessId: number, campaignId: number): Pr
   }
 
   // ── Service Area ──────────────────────────────────────────────────────────
-  const locationList = business.location
-    ? business.location.split(",").map((l) => l.trim()).filter(Boolean)
-    : [];
+  const locationList = parseLocations(business.location);
   if (locationList.length > 0) {
     lines.push("## Service Area");
     lines.push("");

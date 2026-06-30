@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { serializeLocations } from "@shared/location";
 import { z } from "zod";
 import crypto from "crypto";
 import { encrypt } from "./encryption";
@@ -258,8 +259,9 @@ export function createWebhookRouter(): Router {
         if (payload.awards) updateFields.awards = payload.awards.join(", ");
         if (payload.bbbRating) updateFields.bbbRating = payload.bbbRating;
         if (payload.clientType) updateFields.clientType = payload.clientType;
-        // ISSUE-014 FIX: Store ALL locations as comma-separated string
-        if (payload.locations.length > 0) updateFields.location = payload.locations.join(", ");
+        // ISSUE-014 FIX: Store ALL locations, ";"-delimited so a "City, ST"
+        // location is never re-split on its internal comma.
+        if (payload.locations.length > 0) updateFields.location = serializeLocations(payload.locations);
         // ISSUE-010 FIX: Store WP credentials (encrypted)
         if (payload.siteAdminUrl) updateFields.siteAdminUrl = payload.siteAdminUrl;
         // siteUsername stored plaintext — it is not a secret
@@ -284,8 +286,9 @@ export function createWebhookRouter(): Router {
             contactEmail: payload.contactEmail,
             contactName: payload.contactName || null,
             phone: payload.contactPhone || null,
-            // ISSUE-014 FIX: Store ALL locations as comma-separated string
-            location: payload.locations.join(", "),
+            // ISSUE-014 FIX: Store ALL locations, ";"-delimited so a "City, ST"
+            // location is never re-split on its internal comma.
+            location: serializeLocations(payload.locations),
             description: null,
             clientType: payload.clientType,
             yearsInBusiness: payload.yearsFounded || null,

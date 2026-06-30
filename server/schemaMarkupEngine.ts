@@ -31,6 +31,7 @@
  */
 
 import { getDb } from "./db";
+import { parseLocations, primaryLocation } from "@shared/location";
 import { businesses, credibilityData, contentPages } from "../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
 import type { CredibilityFact } from "./credibilityResearchEngine";
@@ -195,12 +196,15 @@ function extractTeamFromFacts(facts: CredibilityFact[]): Array<{ name?: string; 
 // ─── Helper: Parse location into city/state ───────────────────────────────────
 
 function parseLocation(location: string | null | undefined): { city: string; state: string; full: string } {
-  if (!location) return { city: "", state: "", full: "" };
-  const parts = location.split(",").map((s) => s.trim());
+  // `location` may hold multiple ";"-delimited locations; use the primary one
+  // for the single-value PostalAddress city/region fields.
+  const primary = primaryLocation(location);
+  if (!primary) return { city: "", state: "", full: "" };
+  const parts = primary.split(",").map((s) => s.trim());
   return {
-    city: parts[0] || location,
+    city: parts[0] || primary,
     state: parts[1] || "",
-    full: location,
+    full: primary,
   };
 }
 
@@ -829,10 +833,9 @@ export async function buildSchemaPackageForBusiness(
     .filter((p) => p.publishedUrl)
     .map((p) => ({ pageType: p.pageType, url: p.publishedUrl!, title: p.pageTitle }));
 
-  // Parse all locations from the comma-separated location field
-  const locations = business.location
-    ? business.location.split(",").map((l) => l.trim()).filter(Boolean)
-    : [];
+  // Parse all locations from the location field (";"-delimited, with a legacy
+  // "City, ST" comma fallback — see shared/location.ts).
+  const locations = parseLocations(business.location);
 
   // Build site-wide schema
   const siteWideSchema = buildSiteWideSchema(

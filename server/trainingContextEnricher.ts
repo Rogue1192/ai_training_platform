@@ -22,6 +22,7 @@
  */
 
 import { getDb } from "./db";
+import { parseLocations } from "@shared/location";
 import { credibilityData, contentPages, campaigns, businesses } from "../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -165,10 +166,9 @@ export async function buildTrainingContext(businessId: number): Promise<Training
   const llmTxtPage = publishedPages.find((p: any) => p.pageSlug === "llm-txt" || p.pageType === "llm_txt");
   const llmTxtUrl = llmTxtPage?.publishedUrl || null;
 
-  // Parse target locations from the comma-separated location string
-  const targetLocations: string[] = business.location
-    ? business.location.split(",").map((l: string) => l.trim()).filter(Boolean)
-    : [];
+  // Parse target locations from the location string (";"-delimited, with a
+  // legacy "City, ST" comma fallback — see shared/location.ts).
+  const targetLocations: string[] = parseLocations(business.location);
 
   return {
     businessName: business.name,

@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { parseLocations, serializeLocations } from "@shared/location";
 import {
   Loader2, Plus, Building2, MapPin, Phone, Globe, Trash2, Pencil,
   Shield, Search, CheckSquare, Square, Archive, X, AlertTriangle, CheckCircle2,
@@ -389,9 +390,7 @@ export default function Businesses() {
     setFormData({
       name: business.name || "",
       businessType: business.businessType || "",
-      locations: business.location
-        ? business.location.split(",").map((l: string) => l.trim()).concat(["","","","",""]).slice(0, 5)
-        : ["","","","",""],
+      locations: parseLocations(business.location).concat(["","","","",""]).slice(0, 5),
       description: business.description || "",
       website: business.website || "",
       phone: business.phone || "",
@@ -427,13 +426,14 @@ export default function Businesses() {
       return;
     }
     const payload: any = { ...formData };
-    // Serialize locations array → comma-separated string for the DB column
+    // Serialize locations array → ";"-delimited string for the DB column
+    // (";" so a "City, ST" location is never re-split on its internal comma).
     const filledLocations = (payload.locations as string[]).filter((l: string) => l.trim() !== "");
     if (filledLocations.length === 0) {
       toast.error("At least one target location is required");
       return;
     }
-    payload.location = filledLocations.join(", ");
+    payload.location = serializeLocations(filledLocations);
     delete payload.locations;
     if (payload.yearsInBusiness) {
       payload.yearsInBusiness = parseInt(payload.yearsInBusiness, 10);
