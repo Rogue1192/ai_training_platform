@@ -304,7 +304,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         const { createApiKey, getApiKeyByProvider } = await import("./db");
-        const { encrypt } = await import("./encryption");
+        const { encryptVerified } = await import("./encryption");
         const { verifyApiKey } = await import("./aiProviders");
 
         // Verify the API key works
@@ -319,7 +319,7 @@ export const appRouter = router({
           throw new Error("API key for this provider already exists. Please update or delete it first.");
         }
 
-        const encryptedKey = encrypt(input.apiKey);
+        const encryptedKey = encryptVerified(input.apiKey);
         const apiKey = await createApiKey({
           provider: input.provider,
           encryptedKey,
@@ -337,7 +337,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         const { createApiKey, getApiKeyByProvider, updateApiKey } = await import("./db");
-        const { encrypt } = await import("./encryption");
+        const { encryptVerified } = await import("./encryption");
         const { verifyApiKey } = await import("./aiProviders");
 
         // Verify the API key works
@@ -346,7 +346,7 @@ export const appRouter = router({
           throw new Error(verification.error || "Invalid API key or unable to connect to provider");
         }
 
-        const encryptedKey = encrypt(input.apiKey);
+        const encryptedKey = encryptVerified(input.apiKey);
         const existing = await getApiKeyByProvider(input.provider);
         
         if (existing) {
@@ -377,7 +377,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         const { getApiKeyByProvider, updateApiKey } = await import("./db");
-        const { encrypt } = await import("./encryption");
+        const { encryptVerified } = await import("./encryption");
         const { verifyApiKey } = await import("./aiProviders");
 
         // Verify the API key works
@@ -391,7 +391,7 @@ export const appRouter = router({
           throw new Error("API key not found");
         }
 
-        const encryptedKey = encrypt(input.apiKey);
+        const encryptedKey = encryptVerified(input.apiKey);
         await updateApiKey(existing.id, {
           encryptedKey,
           status: "connected",
@@ -698,8 +698,15 @@ export const appRouter = router({
           );
           
           if (!validation.valid) {
-            const providerNames = validation.missingProviders.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(", ");
-            throw new Error(`Missing API key(s) for: ${providerNames}. Please add the required API key(s) in Settings before starting training.`);
+            const cap = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
+            const issues: string[] = [];
+            if (validation.missingProviders.length > 0) {
+              issues.push(`Missing API key(s) for: ${validation.missingProviders.map(cap).join(", ")}.`);
+            }
+            if (validation.corruptedProviders.length > 0) {
+              issues.push(`Unreadable/outdated API key(s) for: ${validation.corruptedProviders.map(cap).join(", ")} — re-enter in Settings to re-encrypt.`);
+            }
+            throw new Error(`Cannot start training. ${issues.join(" ")} Please fix the API key(s) in Settings before starting.`);
           }
         }
         
@@ -915,8 +922,15 @@ export const appRouter = router({
               );
               
               if (!validation.valid) {
-                const providerNames = validation.missingProviders.map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(", ");
-                results.push({ sessionId: session.id, name: session.trainingName, success: false, error: `Missing API key(s): ${providerNames}` });
+                const cap = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
+                const issues: string[] = [];
+                if (validation.missingProviders.length > 0) {
+                  issues.push(`missing: ${validation.missingProviders.map(cap).join(", ")}`);
+                }
+                if (validation.corruptedProviders.length > 0) {
+                  issues.push(`unreadable, re-enter in Settings: ${validation.corruptedProviders.map(cap).join(", ")}`);
+                }
+                results.push({ sessionId: session.id, name: session.trainingName, success: false, error: `API key issue — ${issues.join("; ")}` });
                 return;
               }
               

@@ -38,8 +38,9 @@ describe("Encryption System", () => {
   });
 
   it("should throw error for invalid encrypted data format", () => {
-    expect(() => decrypt("invalid-format")).toThrow("Invalid encrypted data format");
-    expect(() => decrypt("only:two:parts")).toThrow("Invalid encrypted data format");
+    // Non-4-part values are a legacy/foreign format and throw LegacyKeyFormatError.
+    expect(() => decrypt("invalid-format")).toThrow("legacy/unreadable encryption format");
+    expect(() => decrypt("only:two:parts")).toThrow("legacy/unreadable encryption format");
   });
 
   it("should handle empty strings", () => {

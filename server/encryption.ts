@@ -8,6 +8,40 @@ const KEY_LENGTH = 32;
 const ITERATIONS = 100000; // PBKDF2 iterations for key derivation
 
 /**
+ * Error thrown when a stored value is not in the current encryption format
+ * (salt:iv:encrypted:tag). This usually means the value was written by a
+ * previous/foreign encryption scheme (e.g. an older deployment) and can no
+ * longer be decrypted — it must be re-entered in Settings.
+ */
+export class LegacyKeyFormatError extends Error {
+  readonly code = "LEGACY_KEY_FORMAT" as const;
+  constructor(
+    message = "Stored value is not in the current encryption format and must be re-entered."
+  ) {
+    super(message);
+    this.name = "LegacyKeyFormatError";
+  }
+}
+
+/**
+ * True if a value matches the current encrypt() output: four hex segments
+ * salt:iv:encrypted:tag with the expected lengths. Use this to audit/gate
+ * stored credentials before attempting to use them.
+ */
+export function isCurrentEncryptionFormat(value: string): boolean {
+  const parts = value.split(":");
+  if (parts.length !== 4) return false;
+  const [salt, iv, encrypted, tag] = parts;
+  const isHex = (s: string) => /^[0-9a-fA-F]+$/.test(s);
+  return (
+    isHex(salt!) && salt!.length === SALT_LENGTH * 2 &&
+    isHex(iv!) && iv!.length === IV_LENGTH * 2 &&
+    isHex(encrypted!) && encrypted!.length > 0 &&
+    isHex(tag!) && tag!.length === TAG_LENGTH * 2
+  );
+}
+
+/**
  * Get the encryption secret from environment.
  * 
  * Uses ENCRYPTION_KEY (dedicated, stable, user-managed) as the primary key.
@@ -84,7 +118,13 @@ export function decrypt(encryptedData: string): string {
   const parts = encryptedData.split(":");
 
   if (parts.length !== 4) {
-    throw new Error("Invalid encrypted data format. Expected: salt:iv:encrypted:tag");
+    // Legacy/foreign format (e.g. a single base64 blob from a previous
+    // encryption scheme). It can't be decrypted with the current code — the
+    // key must be re-entered. Typed so callers can surface a clear message
+    // instead of crashing deep in a worker.
+    throw new LegacyKeyFormatError(
+      "API key is stored in a legacy/unreadable encryption format. Please re-enter it in Settings."
+    );
   }
 
   const salt = Buffer.from(parts[0]!, "hex");
@@ -126,6 +166,23 @@ export function decrypt(encryptedData: string): string {
       "Please re-enter your API keys in Settings."
     );
   }
+}
+
+/**
+ * Encrypt a value and immediately verify it round-trips with the current
+ * decrypt(). Guards against silently persisting an unreadable credential
+ * (e.g. when ENCRYPTION_KEY is missing/misconfigured) — fail at save time with
+ * a clear error instead of storing a key that breaks later inside a worker.
+ */
+export function encryptVerified(text: string): string {
+  const encrypted = encrypt(text);
+  if (decrypt(encrypted) !== text) {
+    throw new Error(
+      "Encryption self-check failed — the value did not round-trip. " +
+      "Check the ENCRYPTION_KEY configuration; the key was NOT saved."
+    );
+  }
+  return encrypted;
 }
 
 /**

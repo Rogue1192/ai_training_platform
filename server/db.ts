@@ -245,24 +245,35 @@ export async function getApiKeyByProvider(provider: "openai" | "anthropic" | "go
 export async function validateApiKeysForTraining(
   targetProvider: "openai" | "anthropic" | "google",
   influencerProvider: "openai" | "anthropic" | "google" | "minimax"
-): Promise<{ valid: boolean; missingProviders: string[] }> {
+): Promise<{ valid: boolean; missingProviders: string[]; corruptedProviders: string[] }> {
+  const { decrypt } = await import("./encryption");
   const missingProviders: string[] = [];
+  const corruptedProviders: string[] = [];
 
-  const targetKey = await getApiKeyByProvider(targetProvider);
-  if (!targetKey) {
-    missingProviders.push(targetProvider);
-  }
-
-  if (influencerProvider !== targetProvider) {
-    const influencerKey = await getApiKeyByProvider(influencerProvider);
-    if (!influencerKey) {
-      missingProviders.push(influencerProvider);
+  // Dedup so target===influencer is only checked once.
+  const providers = Array.from(
+    new Set<"openai" | "anthropic" | "google" | "minimax">([targetProvider, influencerProvider])
+  );
+  for (const provider of providers) {
+    const key = await getApiKeyByProvider(provider);
+    if (!key) {
+      missingProviders.push(provider);
+      continue;
+    }
+    // A key record can exist but be undecryptable (legacy format or a changed
+    // ENCRYPTION_KEY). Catch it HERE so training is gated with a clear message
+    // instead of failing deep inside the BullMQ worker.
+    try {
+      decrypt(key.encryptedKey);
+    } catch {
+      corruptedProviders.push(provider);
     }
   }
 
   return {
-    valid: missingProviders.length === 0,
+    valid: missingProviders.length === 0 && corruptedProviders.length === 0,
     missingProviders,
+    corruptedProviders,
   };
 }
 

@@ -222,9 +222,10 @@ export default function TrainingSessions() {
       }
       refetch();
     } catch (error: any) {
-      // Show a more descriptive error for API key issues
+      // Show a more descriptive error for API key issues (missing OR
+      // unreadable/legacy keys — both are resolved in Settings).
       const errorMessage = error.message || "Failed to update status";
-      if (errorMessage.includes("Missing API key")) {
+      if (/api key/i.test(errorMessage)) {
         toast.error(
           <div className="flex flex-col gap-2">
             <span>{errorMessage}</span>
