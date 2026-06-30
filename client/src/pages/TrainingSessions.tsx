@@ -33,6 +33,7 @@ export default function TrainingSessions() {
   const updateSession = trpc.training.update.useMutation();
   const updateStatus = trpc.training.updateStatus.useMutation();
   const deleteSession = trpc.training.delete.useMutation();
+  const bulkDeleteTraining = trpc.training.bulkDelete.useMutation();
   const restartConversation = trpc.training.restartConversation.useMutation();
   const resetStuckSessions = trpc.training.resetStuckSessions.useMutation();
   const restartAllError = trpc.training.restartAllError.useMutation();
@@ -50,8 +51,7 @@ export default function TrainingSessions() {
   
   // Bulk selection state
   const [selectedSessions, setSelectedSessions] = useState<Set<number>>(new Set());
-  const [showBulkActions, setShowBulkActions] = useState(false);
-  
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -351,6 +351,75 @@ export default function TrainingSessions() {
   );
 
   const totalPages = Math.ceil(filteredSessions.length / pageSize);
+
+  // ─── Bulk selection ─────────────────────────────────────────────────────────
+  // "Select all" is scoped to every session matching the current filters
+  // (across pages), so you can filter down to the dummy sessions and clear them
+  // out in one action.
+  const allFilteredSelected =
+    filteredSessions.length > 0 && filteredSessions.every((s) => selectedSessions.has(s.id));
+  const someSelected = selectedSessions.size > 0;
+
+  const toggleSelect = (id: number) => {
+    setSelectedSessions((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedSessions((prev) => {
+      const allSelected =
+        filteredSessions.length > 0 && filteredSessions.every((s) => prev.has(s.id));
+      const next = new Set(prev);
+      if (allSelected) {
+        filteredSessions.forEach((s) => next.delete(s.id));
+      } else {
+        filteredSessions.forEach((s) => next.add(s.id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedSessions(new Set());
+
+  // Keep the selection in sync with what's actually on screen. Drops any id
+  // that has been filtered out, cascade-archived, or deleted by another
+  // employee (the list auto-refreshes every 10s while a session runs), so the
+  // count, the "select all" state, and the delete payload never reference a
+  // session that isn't currently visible.
+  useEffect(() => {
+    const visibleIds = new Set(filteredSessions.map((s) => s.id));
+    setSelectedSessions((prev) => {
+      let changed = false;
+      const next = new Set<number>();
+      prev.forEach((id) => {
+        if (visibleIds.has(id)) next.add(id);
+        else changed = true;
+      });
+      return changed ? next : prev;
+    });
+    // filteredSessions is derived from these three; depend on them rather than
+    // the array (which is a new reference every render) to avoid a re-run loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, businessFilter, statusFilter]);
+
+  const handleBulkDelete = async () => {
+    if (selectedSessions.size === 0) return;
+    const ids = Array.from(selectedSessions);
+    try {
+      await bulkDeleteTraining.mutateAsync({ ids });
+      toast.success(`Deleted ${ids.length} session${ids.length > 1 ? "s" : ""}`);
+      clearSelection();
+      refetch();
+      refetchStuckCount();
+      refetchErrorCount();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete sessions");
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -851,6 +920,73 @@ export default function TrainingSessions() {
         </div>
       </div>
 
+      {/* Bulk actions toolbar */}
+      {filteredSessions.length > 0 && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card/50 px-4 py-2">
+          <button
+            type="button"
+            onClick={toggleSelectAll}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {allFilteredSelected ? (
+              <CheckSquare className="w-4 h-4 text-primary" />
+            ) : someSelected ? (
+              <MinusSquare className="w-4 h-4 text-primary" />
+            ) : (
+              <Square className="w-4 h-4" />
+            )}
+            {someSelected
+              ? `${selectedSessions.size} selected`
+              : `Select all (${filteredSessions.length})`}
+          </button>
+
+          {someSelected && (
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={clearSelection}>
+                Clear
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="gap-2"
+                    disabled={bulkDeleteTraining.isPending}
+                  >
+                    {bulkDeleteTraining.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                    Delete {selectedSessions.size} selected
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="bg-card border-border">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-card-foreground">
+                      Delete {selectedSessions.size} training session{selectedSessions.size > 1 ? "s" : ""}?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This permanently deletes the selected session{selectedSessions.size > 1 ? "s" : ""} and all
+                      of their conversation history. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={handleBulkDelete}
+                    >
+                      Delete {selectedSessions.size}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Sessions Grid */}
       {isLoading ? (
         <div className="text-center py-12">
@@ -865,10 +1001,23 @@ export default function TrainingSessions() {
       ) : (
         <div className="grid gap-4">
           {paginatedSessions.map((session) => (
-            <Card key={session.id} className="bg-card border-border hover:border-border/80 transition-colors">
+            <Card
+              key={session.id}
+              className={cn(
+                "bg-card border-border hover:border-border/80 transition-colors",
+                selectedSessions.has(session.id) && "ring-2 ring-primary"
+              )}
+            >
               <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
+                <div className="flex justify-between items-start gap-3">
+                  <div className="flex items-start gap-3 flex-1">
+                    <Checkbox
+                      checked={selectedSessions.has(session.id)}
+                      onCheckedChange={() => toggleSelect(session.id)}
+                      className="mt-1 shrink-0 bg-background border-border data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                      aria-label={`Select ${session.trainingName}`}
+                    />
+                    <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <CardTitle className="text-card-foreground">{session.trainingName}</CardTitle>
                       {isSessionStuck(session) && (
@@ -879,6 +1028,7 @@ export default function TrainingSessions() {
                       )}
                     </div>
                     <CardDescription>{session.topic}</CardDescription>
+                    </div>
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <Badge className={cn("gap-1", getStatusColor(session.status))}>

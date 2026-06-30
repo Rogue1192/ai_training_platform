@@ -130,7 +130,11 @@ async function executeTrainingIteration(job: TrainingIterationJob): Promise<void
 
   const session = await getTrainingSessionById(sessionId);
   if (!session) {
-    throw new Error(`Training session ${sessionId} not found`);
+    // Session was deleted (e.g. bulk cleanup) — stop gracefully instead of
+    // throwing, so BullMQ doesn't retry the job and spam errors against a row
+    // that no longer exists.
+    console.log(`[Training Queue] Session ${sessionId} no longer exists, dropping iteration ${iterationNumber}`);
+    return;
   }
 
   // Check if session is still in progress

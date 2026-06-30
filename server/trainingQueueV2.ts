@@ -725,7 +725,15 @@ export function startTrainingWorkerV2(): Worker {
     async (job) => {
       const jobData = job.data as PhaseBasedJob;
       console.log(`[Training V2 Worker] Processing job ${job.id}: sessionId=${jobData.sessionId}, phase=${jobData.phase}, iteration=${jobData.iterationNumber || 'N/A'}`);
-      
+
+      // If the session was deleted (e.g. bulk cleanup), stop gracefully so the
+      // job doesn't throw + retry against a row that no longer exists.
+      const sessionStillExists = await getTrainingSessionById(jobData.sessionId);
+      if (!sessionStillExists) {
+        console.log(`[Training V2 Worker] Session ${jobData.sessionId} no longer exists — dropping job ${job.id}`);
+        return;
+      }
+
       try {
         await processPhaseJob(jobData);
         console.log(`[Training V2 Worker] Job ${job.id} processed successfully`);

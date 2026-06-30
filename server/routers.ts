@@ -759,6 +759,13 @@ export const appRouter = router({
       await deleteTrainingSession(input.id);
       return { success: true };
     }),
+    bulkDelete: protectedProcedure
+      .input(z.object({ ids: z.array(z.number()).min(1) }))
+      .mutation(async ({ input }) => {
+        const { bulkDeleteTrainingSessions } = await import("./db");
+        await bulkDeleteTrainingSessions(input.ids);
+        return { success: true, deleted: input.ids.length };
+      }),
     getConversations: protectedProcedure.input(z.object({ sessionId: z.number() })).query(async ({ input }) => {
       const { getConversationsBySessionId } = await import("./db");
       return getConversationsBySessionId(input.sessionId);

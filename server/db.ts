@@ -313,6 +313,17 @@ export async function deleteTrainingSession(id: number): Promise<void> {
   await db.delete(trainingSessions).where(eq(trainingSessions.id, id));
 }
 
+/**
+ * Delete multiple training sessions at once. Child rows (conversations,
+ * scheduled jobs) cascade / set-null via their FK constraints.
+ */
+export async function bulkDeleteTrainingSessions(ids: number[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (ids.length === 0) return;
+  await db.delete(trainingSessions).where(inArray(trainingSessions.id, ids));
+}
+
 // ============= Training Conversation Operations =============
 
 export async function createTrainingConversation(conversation: InsertTrainingConversation): Promise<TrainingConversation> {
