@@ -237,6 +237,7 @@ export default function Businesses() {
   const deleteBusiness = trpc.business.delete.useMutation();
   const bulkDeleteMutation = trpc.business.bulkDelete.useMutation();
   const bulkArchiveMutation = trpc.business.bulkArchive.useMutation();
+  const bulkUnarchiveMutation = trpc.business.bulkUnarchive.useMutation();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBusiness, setEditingBusiness] = useState<number | null>(null);
@@ -248,6 +249,8 @@ export default function Businesses() {
   // Search & selection state
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<"all" | "rogue" | "ranklocal" | "whitelabel" | "direct">("all");
+  // Active vs Archived view — archived businesses are hidden from the default (Active) view
+  const [viewMode, setViewMode] = useState<"active" | "archived">("active");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isBulkActionPending, setIsBulkActionPending] = useState(false);
 
@@ -314,7 +317,10 @@ export default function Businesses() {
   // Filtered businesses based on search query and source filter
   const filteredBusinesses = useMemo(() => {
     if (!businesses) return [];
-    let result = businesses;
+    // Active/Archived view — only one set is shown at a time
+    let result = businesses.filter((b) =>
+      viewMode === "archived" ? (b as any).isArchived : !(b as any).isArchived
+    );
 
     // Source filter
     if (sourceFilter === "rogue") {
@@ -338,7 +344,11 @@ export default function Businesses() {
         b.contactEmail?.toLowerCase().includes(q) ||
         b.website?.toLowerCase().includes(q)
     );
-  }, [businesses, searchQuery, sourceFilter]);
+  }, [businesses, searchQuery, sourceFilter, viewMode]);
+
+  // Counts for the Active/Archived tabs
+  const activeCount = useMemo(() => (businesses ?? []).filter((b) => !(b as any).isArchived).length, [businesses]);
+  const archivedCount = useMemo(() => (businesses ?? []).filter((b) => (b as any).isArchived).length, [businesses]);
 
   // Selection helpers
   const allFilteredSelected =
@@ -491,6 +501,32 @@ export default function Businesses() {
       toast.error(error.message || "Bulk archive failed");
     } finally {
       setIsBulkActionPending(false);
+    }
+  };
+
+  const handleBulkUnarchive = async () => {
+    if (selectedIds.size === 0) return;
+    setIsBulkActionPending(true);
+    try {
+      await bulkUnarchiveMutation.mutateAsync({ ids: Array.from(selectedIds) });
+      toast.success(`Unarchived ${selectedIds.size} business${selectedIds.size > 1 ? "es" : ""}`);
+      clearSelection();
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Bulk unarchive failed");
+    } finally {
+      setIsBulkActionPending(false);
+    }
+  };
+
+  const handleUnarchive = async (id: number) => {
+    try {
+      await bulkUnarchiveMutation.mutateAsync({ ids: [id] });
+      toast.success("Business unarchived");
+      setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to unarchive business");
     }
   };
 
@@ -752,6 +788,25 @@ export default function Businesses() {
         </Dialog>
       </div>
 
+      {/* Active / Archived tabs */}
+      <div className="flex gap-2">
+        <Button
+          variant={viewMode === "active" ? "default" : "outline"}
+          size="sm"
+          onClick={() => { setViewMode("active"); clearSelection(); }}
+        >
+          Active{` (${activeCount})`}
+        </Button>
+        <Button
+          variant={viewMode === "archived" ? "default" : "outline"}
+          size="sm"
+          onClick={() => { setViewMode("archived"); clearSelection(); }}
+        >
+          <Archive className="w-3.5 h-3.5 mr-1.5" />
+          Archived{` (${archivedCount})`}
+        </Button>
+      </div>
+
       {/* Search + Source Filter */}
       <div className="flex gap-3">
         <div className="relative flex-1">
@@ -801,16 +856,29 @@ export default function Businesses() {
             <X className="w-3.5 h-3.5 mr-1.5" />
             Clear
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleBulkArchive}
-            disabled={isBulkActionPending}
-            className="h-8"
-          >
-            {isBulkActionPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Archive className="w-3.5 h-3.5 mr-1.5" />}
-            Archive
-          </Button>
+          {viewMode === "archived" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBulkUnarchive}
+              disabled={isBulkActionPending}
+              className="h-8"
+            >
+              {isBulkActionPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Archive className="w-3.5 h-3.5 mr-1.5" />}
+              Unarchive
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBulkArchive}
+              disabled={isBulkActionPending}
+              className="h-8"
+            >
+              {isBulkActionPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Archive className="w-3.5 h-3.5 mr-1.5" />}
+              Archive
+            </Button>
+          )}
           <Button
             variant="destructive"
             size="sm"
@@ -969,6 +1037,18 @@ export default function Businesses() {
                     </div>
                   )}
                   <div className="flex gap-2 pt-2">
+                    {(business as any).isArchived && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleUnarchive(business.id)}
+                        disabled={bulkUnarchiveMutation.isPending}
+                        className="flex-1"
+                      >
+                        <Archive className="w-4 h-4 mr-2" />
+                        Unarchive
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={() => handleEdit(business)} className="flex-1">
                       <Pencil className="w-4 h-4 mr-2" />
                       Edit

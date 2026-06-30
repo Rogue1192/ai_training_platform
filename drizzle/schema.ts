@@ -229,6 +229,9 @@ export const trainingSessions = pgTable("trainingSessions", {
   trainingIterationsCompleted: integer("trainingIterationsCompleted").default(0).notNull(),
   // Legacy flag for sessions created before phase-based training
   isLegacy: boolean("isLegacy").default(false).notNull(),
+  // Archive flag — set when the parent business is archived, so archived clients'
+  // training sessions are hidden from the Training view too.
+  isArchived: boolean("isArchived").default(false).notNull(),
   // Link to campaign (for auto-created sessions)
   campaignId: integer("campaignId"),
   campaignQueryLocationId: integer("campaignQueryLocationId"),

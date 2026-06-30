@@ -181,6 +181,13 @@ export const appRouter = router({
         await bulkArchiveBusinesses(input.ids);
         return { success: true, archived: input.ids.length };
       }),
+    bulkUnarchive: protectedProcedure
+      .input(z.object({ ids: z.array(z.number()).min(1) }))
+      .mutation(async ({ input }) => {
+        const { bulkUnarchiveBusinesses } = await import("./db");
+        await bulkUnarchiveBusinesses(input.ids);
+        return { success: true, unarchived: input.ids.length };
+      }),
     // Super-admin direct onboarding: create business + kick off full pipeline immediately
     onboardClient: protectedProcedure
       .input(z.object({

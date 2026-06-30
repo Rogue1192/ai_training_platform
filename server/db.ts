@@ -191,6 +191,18 @@ export async function bulkArchiveBusinesses(ids: number[]): Promise<void> {
   if (!db) throw new Error("Database not available");
   if (ids.length === 0) return;
   await db.update(businesses).set({ isArchived: true }).where(inArray(businesses.id, ids));
+  // Cascade: archive the training sessions belonging to these businesses so they
+  // drop out of the Training view along with the archived clients.
+  await db.update(trainingSessions).set({ isArchived: true }).where(inArray(trainingSessions.businessId, ids));
+}
+
+export async function bulkUnarchiveBusinesses(ids: number[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (ids.length === 0) return;
+  await db.update(businesses).set({ isArchived: false }).where(inArray(businesses.id, ids));
+  // Cascade unarchive so the businesses' training sessions reappear in the Training view.
+  await db.update(trainingSessions).set({ isArchived: false }).where(inArray(trainingSessions.businessId, ids));
 }
 
 // ============= API Key Operations =============

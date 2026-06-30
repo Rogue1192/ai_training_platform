@@ -331,6 +331,10 @@ export default function TrainingSessions() {
 
   // Filter sessions
   const filteredSessions = sessions?.filter((session) => {
+    // Hide sessions belonging to archived businesses (cascade-archived).
+    if ((session as any).isArchived) {
+      return false;
+    }
     if (businessFilter !== "all" && session.businessId && session.businessId.toString() !== businessFilter) {
       return false;
     }

@@ -1,3 +1,9 @@
+# Local Claude Code session memory / config / secrets (not committed)
+CLAUDE.md
+.mcp.json
+.secrets.local
+.playwright-mcp/
+
 # Dependencies
 **/node_modules
 .pnpm-store/
