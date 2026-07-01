@@ -229,6 +229,8 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
 
       const research = await runKeywordResearchPipeline(business.website, {
         maxKeywords: maxQueries,
+        businessType: business.businessType,
+        specialties: business.specialties,
       });
 
       topKeywords = research.topKeywords;

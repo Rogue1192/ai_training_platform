@@ -301,89 +301,285 @@ export async function searchLLMMentions(
 
 // ============= High-Level Pipeline Functions =============
 
+// ---- Industry-relevance seeding ----
+// Keyword research seeded from a bare domain returns generic high-volume
+// fallbacks (e.g. "banks near me") when a small site has little ranking data.
+// To keep results on-topic we derive buyer-intent seed queries from the
+// business's own businessType + specialties (relevant by construction) and use
+// a stem-based relevance filter to drop off-topic domain keywords.
+
+// Words that carry no industry signal — excluded from the relevance vocabulary
+// so we don't match generic keywords via them.
+const QUERY_STOPWORDS = new Set([
+  "near", "best", "top", "rated", "affordable", "cheap", "local", "me",
+  "company", "companies", "service", "services", "the", "and", "for", "with",
+]);
+
+// Generic service action-words shared across local/home-service verticals. A
+// specialty fragment counts as a real service if it contains one of these, even
+// when its vocabulary differs from the businessType (e.g. a "plumbing" business
+// offering "drain cleaning" / "water heater installation"). Kept to action
+// words (not object nouns like "carpet") so the accompanying verb carries it.
+const SERVICE_HEADS = new Set([
+  "cleaning", "cleanup", "cleanout", "maid", "janitorial", "housekeeping",
+  "repair", "installation", "install", "replacement", "maintenance",
+  "inspection", "removal", "restoration", "remediation", "hauling",
+  "landscaping", "mowing", "paving", "roofing", "painting", "remodeling",
+  "remodel", "plumbing", "heating", "cooling", "hvac", "electrical", "wiring",
+  "pest", "towing", "moving", "detailing", "grooming", "sealing", "staining",
+  "grading", "excavation", "fencing", "flooring", "tiling", "drywall",
+  "insulation", "waterproofing",
+]);
+
+// Geography / marketing filler tokens. A fragment containing one of these is
+// dropped unless it also names a real service (has a SERVICE_HEADS word).
+const NON_SERVICE_TOKENS = new Set([
+  "county", "city", "area", "areas", "radius", "mile", "miles", "region",
+  "homes", "home", "businesses", "residents", "customers", "clients",
+  "products", "product", "quality", "satisfaction", "guarantee", "family",
+  "owned", "operated", "trusted", "west", "east", "north", "south", "western",
+  "eastern", "northern", "southern", "half", "surrounding", "greater",
+]);
+
+// Leading filler words stripped from the front of a service phrase.
+const LEADING_FILLER = new Set([
+  "professional", "recurring", "our", "the", "a", "an", "full", "complete",
+  "quality", "affordable", "reliable", "expert",
+]);
+
+/** Lowercase, strip punctuation (keep hyphens), collapse whitespace. */
+function normalizePhrase(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Basic plural normalization for whole-word matching. Only strips a trailing
+ * "s" (and removes hyphens); it does NOT strip -ing/-er, so "server" and
+ * "serving" stay distinct — avoiding the false collisions a blunt prefix stem
+ * would cause.
+ */
+function normWord(word: string): string {
+  const w = word.replace(/-/g, "");
+  return w.length > 4 && w.endsWith("s") ? w.slice(0, -1) : w;
+}
+
+/** Meaningful (>=3 char) words of a phrase, hyphens removed. */
+function phraseWords(phrase: string): string[] {
+  return normalizePhrase(phrase)
+    .split(" ")
+    .map((w) => w.replace(/-/g, ""))
+    .filter((w) => w.length >= 3);
+}
+
+/**
+ * Build a small set of clean, service-specific seed phrases from the business's
+ * type + specialties. businessType is the reliable floor. A specialty fragment
+ * is kept when it names a real service — either it contains a generic service
+ * action-word (SERVICE_HEADS, so "drain cleaning" survives under "plumbing") or
+ * it shares a word with the businessType — and it is not pure geography/marketing
+ * filler. So "deep cleaning" / "pipe repair" survive but "homes and businesses"
+ * and "Cullman County" do not.
+ */
+export function buildServiceSeeds(
+  businessType?: string | null,
+  specialties?: string | null
+): string[] {
+  const seeds: string[] = [];
+  const seen = new Set<string>();
+  const add = (raw: string) => {
+    let words = normalizePhrase(raw).split(" ").filter(Boolean);
+    while (words.length > 1 && LEADING_FILLER.has(words[0]!)) words.shift();
+    words = words.slice(0, 5);
+    const n = words.join(" ").trim();
+    if (!n) return;
+    if (!words.some((w) => w.replace(/-/g, "").length >= 4)) return; // needs a meaningful word
+    if (seen.has(n)) return;
+    seen.add(n);
+    seeds.push(n);
+  };
+
+  // businessType words used for the "shares vocabulary" check (minus generic
+  // stopwords like "services" so they don't over-match).
+  const typeWords = new Set(
+    (businessType ? phraseWords(businessType) : [])
+      .map(normWord)
+      .filter((w) => w.length >= 4 && !QUERY_STOPWORDS.has(w))
+  );
+
+  if (businessType && normalizePhrase(businessType)) add(businessType);
+
+  if (specialties) {
+    // Only mine the leading clause; prose after the first sentence is usually
+    // marketing copy, not a service list.
+    const head = specialties.split(/(?<=\.)\s/)[0] || specialties;
+    const fragments = head.split(/[,;/]|\band\b|\bplus\b|\bfor\b|\bacross\b/i);
+    for (const frag of fragments) {
+      if (seeds.length >= 8) break;
+      const words = phraseWords(frag);
+      if (words.length === 0 || words.length > 4) continue;
+      const hasServiceHead = words.some((w) => SERVICE_HEADS.has(normWord(w)));
+      const sharesType = words.some((w) => typeWords.has(normWord(w)));
+      const hasGeoFiller = words.some((w) => NON_SERVICE_TOKENS.has(normWord(w)));
+      // Keep real services; drop geography/filler unless it also names a service.
+      if ((hasServiceHead || sharesType) && !(hasGeoFiller && !hasServiceHead)) {
+        add(frag);
+      }
+    }
+  }
+
+  return seeds.slice(0, 8);
+}
+
+/** Expand seed service phrases into buyer-intent query candidates. */
+export function expandToBuyerIntentQueries(seeds: string[], maxKeywords: number): string[] {
+  const templates = (s: string) => [
+    `${s} near me`,
+    `best ${s}`,
+    `${s} company`,
+    `affordable ${s}`,
+    `top rated ${s}`,
+  ];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (q: string) => {
+    if (!seen.has(q)) { seen.add(q); out.push(q); }
+  };
+  // Round-robin over template index so each seed contributes its primary variant first.
+  const perSeed = seeds.map(templates);
+  for (let t = 0; t < 5; t++) {
+    for (const variants of perSeed) push(variants[t]!);
+  }
+  return out.slice(0, Math.max(maxKeywords * 3, 15));
+}
+
+/** Whole-word vocabulary of the seed phrases, used to filter domain keywords. */
+export function seedStemVocab(seeds: string[]): Set<string> {
+  const vocab = new Set<string>();
+  for (const s of seeds) {
+    for (const w of phraseWords(s)) {
+      const nw = normWord(w);
+      if (nw.length >= 4 && !QUERY_STOPWORDS.has(nw)) vocab.add(nw);
+    }
+  }
+  return vocab;
+}
+
+/** A keyword is relevant if it shares a (plural-normalized) word with the vocab. */
+export function isRelevantKeyword(keyword: string, vocab: Set<string>): boolean {
+  if (vocab.size === 0) return true; // no signal -> don't filter
+  return phraseWords(keyword).some((w) => {
+    const nw = normWord(w);
+    return nw.length >= 4 && vocab.has(nw);
+  });
+}
+
 /**
  * Full keyword research pipeline for a new client:
- * 1. Get keywords from their website
- * 2. Filter to ONLY commercial and transactional intent — informational/navigational are useless for AI citation
- * 3. Check AI search volume for those buyer-intent keywords
- * 4. Sort by AI search volume desc and return up to maxKeywords
+ * 1. Derive industry-relevant buyer-intent seed queries from businessType +
+ *    specialties (relevant by construction; prevents generic "near me" junk).
+ * 2. Pull the domain's ranked keywords, keep commercial/transactional intent,
+ *    and drop off-topic ones via the seed relevance filter.
+ * 3. Check AI search volume for the combined candidate set.
+ * 4. Sort by AI search volume desc and return up to maxKeywords.
  *
- * NOTE: If fewer than maxKeywords commercial/transactional keywords exist, we return only what's available.
- * We do NOT fall back to informational keywords — they are not relevant to purchase-intent AI queries.
+ * If businessType/specialties are absent, we fall back to the previous
+ * domain-only behavior (no relevance filter) so nothing regresses.
  */
 export async function runKeywordResearchPipeline(
   domain: string,
   options: {
     maxKeywords: number; // Cap from package tier (e.g. 5 or 10)
+    businessType?: string | null;
+    specialties?: string | null;
     locationCode?: number;
     languageCode?: string;
   }
 ): Promise<KeywordResearchResult> {
-  const { maxKeywords, locationCode = 2840, languageCode = "en" } = options;
+  const { maxKeywords, businessType, specialties, locationCode = 2840, languageCode = "en" } = options;
 
   console.log(`[DataForSEO] Starting keyword research pipeline for ${domain} (max: ${maxKeywords})`);
 
-  // Step 1: Fetch a broad set of keywords from the site — we pull more than needed so filtering has room to work
+  // Step 1: Derive industry-relevant buyer-intent seeds from the business's own
+  // type + specialties. These are relevant by construction and are the primary
+  // source; the domain's ranked keywords are only a supplement below.
+  const seeds = buildServiceSeeds(businessType, specialties);
+  const seededQueries = seeds.length ? expandToBuyerIntentQueries(seeds, maxKeywords) : [];
+  const relevanceVocab = seedStemVocab(seeds);
+  if (seeds.length) {
+    console.log(`[DataForSEO] Seeded ${seededQueries.length} buyer-intent queries from ${seeds.length} service seed(s): ${seeds.join(" | ")}`);
+  } else {
+    console.log(`[DataForSEO] No businessType/specialties signal — falling back to domain-only keyword research`);
+  }
+
+  // Step 2: Pull the domain's ranked keywords, keep commercial/transactional
+  // intent, then drop off-topic ones when we have a relevance signal. This is
+  // what prevents generic high-volume fallbacks (e.g. "banks near me") from winning.
   const siteKeywords = await getKeywordsForSite(domain, {
     locationCode,
     languageCode,
-    limit: Math.min(maxKeywords * 20, 500), // Pull 20x so we have enough after filtering
+    limit: Math.min(maxKeywords * 20, 500),
   });
 
-  if (siteKeywords.length === 0) {
-    return { keywords: [], aiVolumes: [], topKeywords: [] };
-  }
-
-  // Step 2: Filter to ONLY commercial and transactional intent keywords
-  // Informational ("how does X work") and navigational ("X brand website") are irrelevant for
-  // AI citation campaigns — we only want buyer-intent queries like "best X near me" or "X service cost"
   const buyerIntentKeywords = siteKeywords.filter(
     (k) => k.searchIntent === "commercial" || k.searchIntent === "transactional"
   );
-
+  const relevantSiteKeywords = buyerIntentKeywords.filter((k) =>
+    isRelevantKeyword(k.keyword, relevanceVocab)
+  );
   console.log(
-    `[DataForSEO] Intent filter: ${buyerIntentKeywords.length} commercial/transactional out of ${siteKeywords.length} total keywords`
+    `[DataForSEO] Domain keywords: ${siteKeywords.length} total -> ${buyerIntentKeywords.length} buyer-intent -> ${relevantSiteKeywords.length} on-topic`
   );
 
-  if (buyerIntentKeywords.length === 0) {
-    console.warn(`[DataForSEO] WARNING: No commercial/transactional keywords found for ${domain}. Returning empty.`);
+  // Step 3: Candidate set = seeded queries + on-topic domain keywords (deduped).
+  const siteByKeyword = new Map(relevantSiteKeywords.map((k) => [k.keyword.toLowerCase(), k]));
+  const candidateStrings: string[] = [];
+  const seenCandidate = new Set<string>();
+  for (const q of [...seededQueries, ...relevantSiteKeywords.map((k) => k.keyword)]) {
+    const key = q.toLowerCase();
+    if (!seenCandidate.has(key)) {
+      seenCandidate.add(key);
+      candidateStrings.push(q);
+    }
+  }
+
+  if (candidateStrings.length === 0) {
+    console.warn(`[DataForSEO] No relevant keyword candidates for ${domain}. Returning empty.`);
     return { keywords: siteKeywords, aiVolumes: [], topKeywords: [] };
   }
 
-  // Step 3: Check AI search volume only for buyer-intent keywords (saves API credits)
-  const keywordStrings = buyerIntentKeywords.map((k) => k.keyword);
-  const aiVolumes = await getAIKeywordSearchVolume(keywordStrings, {
+  // Step 4: Check AI search volume for the candidates — this ranks them.
+  const aiVolumes = await getAIKeywordSearchVolume(candidateStrings, {
     locationCode,
     languageCode,
   });
-
-  console.log(`[DataForSEO] Got AI search volume for ${aiVolumes.length} buyer-intent keywords`);
-
-  // Step 4: Merge AI volume data back into buyer-intent keyword list
   const aiVolumeMap = new Map(aiVolumes.map((v) => [v.keyword.toLowerCase(), v]));
+  console.log(`[DataForSEO] Got AI search volume for ${aiVolumes.length} candidate keywords`);
 
-  const merged = buyerIntentKeywords.map((k) => {
-    const aiData = aiVolumeMap.get(k.keyword.toLowerCase());
+  const merged = candidateStrings.map((kw) => {
+    const site = siteByKeyword.get(kw.toLowerCase());
     return {
-      keyword: k.keyword,
-      searchVolume: k.searchVolume,
-      aiSearchVolume: aiData?.aiSearchVolume || 0,
-      searchIntent: k.searchIntent,
+      keyword: kw,
+      searchVolume: site?.searchVolume || 0,
+      aiSearchVolume: aiVolumeMap.get(kw.toLowerCase())?.aiSearchVolume || 0,
+      // Seeded queries are buyer-intent by construction; domain keywords carry their own intent.
+      searchIntent: site?.searchIntent || "commercial",
     };
   });
 
-  // Step 5: Sort by AI search volume desc, then regular search volume as tiebreaker
+  // Step 5: Sort by AI search volume desc, then regular search volume as tiebreaker.
   merged.sort((a, b) => {
     if (b.aiSearchVolume !== a.aiSearchVolume) return b.aiSearchVolume - a.aiSearchVolume;
     return b.searchVolume - a.searchVolume;
   });
 
-  // Step 6: Cap at maxKeywords — if fewer buyer-intent keywords exist, we use fewer (no informational fallback)
   const topKeywords = merged.slice(0, maxKeywords);
 
   console.log(
-    `[DataForSEO] Pipeline complete: ${topKeywords.length} keywords selected ` +
-    `(${buyerIntentKeywords.length} commercial/transactional available, capped at ${maxKeywords})`
+    `[DataForSEO] Pipeline complete: ${topKeywords.length} on-topic keywords selected from ${candidateStrings.length} candidates`
   );
 
   return {
