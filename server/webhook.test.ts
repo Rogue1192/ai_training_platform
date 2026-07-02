@@ -153,11 +153,15 @@ describe("webhook payload validation", () => {
   const onboardingPayloadSchema = z.object({
     businessName: z.string().min(1),
     websiteUrl: z.string().url(),
-    industry: z.string().min(1),
+    industry: z.string().optional(),
     contactEmail: z.string().email(),
     contactName: z.string().optional(),
     contactPhone: z.string().optional(),
-    locations: z.array(z.string().min(1)).min(1),
+    // locations is optional at the schema layer; the handler enforces that at
+    // least one location resolves (from `locations[]` or `city` + `state`).
+    locations: z.array(z.string().min(1)).optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
     packageTierSlug: z.string().optional(),
     packageTierId: z.number().optional(),
     clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).default("ai_only"),
@@ -254,17 +258,41 @@ describe("webhook payload validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects payload with empty locations array", () => {
+  // NOTE: ">=1 location" is now enforced in the webhook HANDLER (it composes
+  // finalLocations from `locations[]` or `city` + `state` and 400s if none
+  // resolve), not in the Zod schema. So an empty/absent `locations` passes
+  // schema validation on its own — see the GHL-shape test below.
+  it("schema allows an empty locations array (handler enforces >=1)", () => {
     const payload = {
       businessName: "Test",
       websiteUrl: "https://test.com",
-      industry: "HVAC",
       contactEmail: "test@test.com",
       locations: [],
     };
 
     const result = onboardingPayloadSchema.safeParse(payload);
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a GHL-shaped payload: no industry, no tier, city + state instead of locations", () => {
+    const payload = {
+      businessName: "Test Intake Co",
+      websiteUrl: "https://example.com",
+      contactEmail: "test@example.com",
+      contactName: "Test Intake User",
+      contactPhone: "+12058675309",
+      city: "Cullman",
+      state: "AL",
+    };
+
+    const result = onboardingPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.industry).toBeUndefined();
+      expect(result.data.packageTierSlug).toBeUndefined();
+      expect(result.data.city).toBe("Cullman");
+      expect(result.data.state).toBe("AL");
+    }
   });
 
   it("validates all three client types", () => {

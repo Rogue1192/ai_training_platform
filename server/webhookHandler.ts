@@ -28,13 +28,21 @@ const onboardingPayloadSchema = z.object({
   // Business info
   businessName: z.string().min(1, "Business name is required"),
   websiteUrl: z.string().url("Valid website URL is required"),
-  industry: z.string().min(1, "Industry is required"),
+  // Industry is optional: the GHL intake survey doesn't collect it. When omitted
+  // we default businessType to "general" server-side (keyword research uses the
+  // same fallback, and no downstream pipeline step hard-requires it).
+  industry: z.string().optional(),
   contactEmail: z.string().email("Valid contact email is required"),
   contactName: z.string().optional(),
   contactPhone: z.string().optional(),
 
-  // Location data
-  locations: z.array(z.string().min(1)).min(1, "At least one location is required"),
+  // Location data. Either pass a `locations` array, OR pass `city` + `state`
+  // (the GHL survey sends them as two separate fields) and we compose
+  // ["City, ST"] server-side. At least one location must resolve from one of
+  // these — enforced in the handler, not the schema, so we can accept either.
+  locations: z.array(z.string().min(1)).optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
 
   // Package selection — accept either slug or ID
   packageTierSlug: z.string().optional(),
@@ -199,10 +207,55 @@ export function createWebhookRouter(): Router {
 
       const payload = parseResult.data;
 
+      // Compose the effective location list. The GHL survey sends city + state as
+      // two separate fields; other callers may send a `locations` array. Prefer an
+      // explicit array; otherwise build ["City, ST"] from city + state.
+      //
+      // serializeLocations joins entries with ";", and the parser splits stored
+      // values on ";", so a caller-supplied ";" would fragment one location into
+      // several (phantom targets + prompt-injection into training prompts). Strip
+      // ";" from every location input and cap length before composing.
+      const sanitizeLoc = (s: string, max: number) =>
+        s.replace(/;/g, ",").replace(/\s+/g, " ").trim().slice(0, max);
+      const finalLocations: string[] = (payload.locations ?? [])
+        .map((l) => sanitizeLoc(l, 140))
+        .filter(Boolean);
+      if (
+        finalLocations.length === 0 &&
+        payload.city?.trim() &&
+        payload.state?.trim()
+      ) {
+        const city = sanitizeLoc(payload.city, 100);
+        const state = sanitizeLoc(payload.state, 40);
+        if (city && state) finalLocations.push(`${city}, ${state}`);
+      }
+      if (finalLocations.length === 0) {
+        await updateWebhookLog(webhookLog.id, {
+          status: "failed",
+          errorMessage:
+            "At least one location is required (provide `locations[]` or both `city` and `state`).",
+        });
+        res.status(400).json({
+          error: "At least one location is required (locations[] or city + state).",
+        });
+        return;
+      }
+
+      // Industry is optional from GHL; default to "general". Keyword research uses
+      // the same fallback and no downstream step hard-requires businessType.
+      const industry = payload.industry?.trim() || "general";
+
       // Ensure default package tiers exist
       await seedDefaultPackageTiers();
 
-      // Resolve the package tier
+      // Resolve the package tier. The GHL survey defers program/package selection
+      // to a post-submit step, so the webhook may arrive without a tier.
+      //  - No tier provided at all → default to "starter" (5×3), which matches the
+      //    trial limits initializeTrial() applies anyway.
+      //  - An explicit tier that doesn't resolve (e.g. a typo'd slug) → 400, so an
+      //    integration bug surfaces instead of being silently downgraded.
+      const tierExplicitlyProvided =
+        payload.packageTierId != null || payload.packageTierSlug != null;
       let packageTier;
       if (payload.packageTierId) {
         packageTier = await getPackageTierById(payload.packageTierId);
@@ -210,10 +263,25 @@ export function createWebhookRouter(): Router {
         packageTier = await getPackageTierBySlug(payload.packageTierSlug);
       }
 
-      if (!packageTier) {
+      if (!packageTier && tierExplicitlyProvided) {
         await updateWebhookLog(webhookLog.id, {
           status: "failed",
           errorMessage: "Package tier not found. Provide a valid packageTierSlug or packageTierId.",
+        });
+        res.status(400).json({ error: "Package tier not found" });
+        return;
+      }
+
+      // No tier supplied (GHL pre-program-selection) — fall back to "starter".
+      if (!packageTier) {
+        packageTier = await getPackageTierBySlug("starter");
+      }
+
+      if (!packageTier) {
+        await updateWebhookLog(webhookLog.id, {
+          status: "failed",
+          errorMessage:
+            "Package tier could not be resolved (default 'starter' tier missing). Seed package tiers or provide a valid packageTierSlug/packageTierId.",
         });
         res.status(400).json({ error: "Package tier not found" });
         return;
@@ -248,7 +316,7 @@ export function createWebhookRouter(): Router {
         businessId = existingBusinesses[0]!.id;
         // ISSUE-011 FIX: Update ALL fields from the webhook, not just a few
         const updateFields: Record<string, any> = {
-          businessType: payload.industry,
+          businessType: industry,
           contactEmail: payload.contactEmail,
           updatedAt: new Date(),
         };
@@ -261,7 +329,7 @@ export function createWebhookRouter(): Router {
         if (payload.clientType) updateFields.clientType = payload.clientType;
         // ISSUE-014 FIX: Store ALL locations, ";"-delimited so a "City, ST"
         // location is never re-split on its internal comma.
-        if (payload.locations.length > 0) updateFields.location = serializeLocations(payload.locations);
+        updateFields.location = serializeLocations(finalLocations);
         // ISSUE-010 FIX: Store WP credentials (encrypted)
         if (payload.siteAdminUrl) updateFields.siteAdminUrl = payload.siteAdminUrl;
         // siteUsername stored plaintext — it is not a secret
@@ -282,13 +350,13 @@ export function createWebhookRouter(): Router {
             userId: ownerId,
             name: payload.businessName,
             website: payload.websiteUrl,
-            businessType: payload.industry,
+            businessType: industry,
             contactEmail: payload.contactEmail,
             contactName: payload.contactName || null,
             phone: payload.contactPhone || null,
             // ISSUE-014 FIX: Store ALL locations, ";"-delimited so a "City, ST"
             // location is never re-split on its internal comma.
-            location: serializeLocations(payload.locations),
+            location: serializeLocations(finalLocations),
             description: null,
             clientType: payload.clientType,
             yearsInBusiness: payload.yearsFounded || null,
@@ -373,7 +441,7 @@ export function createWebhookRouter(): Router {
       // Build the query×location matrix
       // If specific queries were provided, use those. Otherwise, we'll generate them in the keyword research phase.
       const queries = payload.searchQueries?.slice(0, packageTier.maxQueries) || [];
-      const locations = payload.locations.slice(0, packageTier.maxLocations);
+      const locations = finalLocations.slice(0, packageTier.maxLocations);
 
       if (queries.length > 0 && locations.length > 0) {
         // Build the full matrix
