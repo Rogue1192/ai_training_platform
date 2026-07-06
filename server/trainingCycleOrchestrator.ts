@@ -175,8 +175,13 @@ async function pollCombo(
 ): Promise<PollResult> {
   try {
     const { searchLLMMentions } = await import("./dataforseoService");
+    // Fetch a full mention set (matching rankTrackingEngine's limit) — the API
+    // returns keywords the domain is mentioned for, and we then look up this
+    // combo's exact query. A small limit (was 10) silently drops the combo's
+    // keyword once the domain is mentioned for more keywords than the limit,
+    // making the win undetectable and burning all 4 runs.
     const mentions = await searchLLMMentions(websiteUrl, {
-      limit: 10,
+      limit: 500,
       targetType: "domain",
     });
     const match = mentions.find(
