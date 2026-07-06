@@ -42,7 +42,6 @@ import {
   Package,
   Link2,
   FileText,
-  Database,
   Mail,
   BarChart3,
   Users,
@@ -58,7 +57,9 @@ const adminNavigationItems = [
   { href: "/packages", label: "Packages", icon: Package },
   { href: "/client-dashboards", label: "Client Links", icon: Link2 },
   { href: "/prompts", label: "Prompts", icon: FileText },
-  { href: "/keyword-cache", label: "Keyword Cache", icon: Database },
+  // Keyword Cache is intentionally hidden from the nav. The page still exists at
+  // /keyword-cache and the caching logic keeps running in the background — we
+  // just removed the menu item to reduce clutter.
   { href: "/llm-insights", label: "LLM Insights", icon: BarChart3 },
   { href: "/emails", label: "Emails", icon: Mail },
   { href: "/settings", label: "Settings", icon: SettingsIcon },

@@ -2353,6 +2353,22 @@ export const llmInsightsRouter = router({
     }),
 
   /**
+   * Delete a tracked query (campaignQueryLocation). Its rank snapshots cascade
+   * away via the FK. Used by the "remove query" control on LLM Insights.
+   */
+  deleteQueryLocation: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { campaignQueryLocations } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      await db.delete(campaignQueryLocations).where(eq(campaignQueryLocations.id, input.id));
+      return { success: true };
+    }),
+
+  /**
    * Get aggregate LLM mention stats across all campaigns.
    * Shows total queries tracked, mention rates per platform, etc.
    */
