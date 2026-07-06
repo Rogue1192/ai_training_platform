@@ -2309,7 +2309,7 @@ export const llmInsightsRouter = router({
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
       const { campaignQueryLocations, campaigns, businesses } = await import("../drizzle/schema");
-      const { desc, eq, isNotNull } = await import("drizzle-orm");
+      const { eq, sql } = await import("drizzle-orm");
       const db = await getDb();
       if (!db) return [];
 
@@ -2336,12 +2336,17 @@ export const llmInsightsRouter = router({
         .from(campaignQueryLocations)
         .leftJoin(campaigns, eq(campaignQueryLocations.campaignId, campaigns.id))
         .leftJoin(businesses, eq(campaigns.businessId, businesses.id))
+        // Show ALL tracked queries. Previously this hid any query whose
+        // aiSearchVolume was null, which made a campaign read "N queries tracked"
+        // in the summary but show an empty table (queries created without AI-volume
+        // data, e.g. via the intake webhook). Order by volume with nulls last so
+        // volume-ranked queries stay on top and no-volume ones still appear.
         .where(
           input.campaignId
             ? eq(campaignQueryLocations.campaignId, input.campaignId)
-            : isNotNull(campaignQueryLocations.aiSearchVolume)
+            : undefined
         )
-        .orderBy(desc(campaignQueryLocations.aiSearchVolume))
+        .orderBy(sql`${campaignQueryLocations.aiSearchVolume} desc nulls last`)
         .limit(input.limit);
 
       return query;
