@@ -533,9 +533,15 @@ export const appRouter = router({
             });
             const valid = resp.status === 200 && resp.data?.success === true;
             const credits = resp.data?.data?.credits?.available;
+            // Surface the actual reason from Monkey Indexer (was hidden before).
+            // 401 = bad/missing key; 403 = key recognized but account/action forbidden.
+            const detail =
+              resp.data && typeof resp.data === "object"
+                ? (resp.data.message || resp.data.error || JSON.stringify(resp.data).slice(0, 300))
+                : String(resp.data ?? "").slice(0, 300);
             const msg = valid
               ? `Monkey Indexer key verified — ${credits ?? "?"} credits available`
-              : `Monkey Indexer returned status ${resp.status}`;
+              : `Monkey Indexer returned HTTP ${resp.status}: ${detail}`;
             return { success: valid, message: msg };
           } else if (input.service === "resend") {
             const { Resend } = await import("resend");

@@ -129,13 +129,18 @@ async function submitBatch(
     }
 
     if (!data?.success) {
+      // Surface the real reason. 401 = bad key; 403 = key valid but account/action
+      // forbidden (suspended, inactive plan, unverified). Include any body message.
+      const detail =
+        (data && typeof data === "object" ? (data.message || data.error) : null) ||
+        (typeof data === "string" ? data.slice(0, 200) : null);
       return {
         success: false,
         submitted: 0,
         rejected: urls.length,
         invalidUrls: [],
         trackingIds: [],
-        error: data?.message || `Unexpected response (HTTP ${resp.status})`,
+        error: `Monkey Indexer HTTP ${resp.status}${detail ? `: ${detail}` : " (no message returned)"}`,
       };
     }
 
