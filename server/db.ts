@@ -244,15 +244,22 @@ export async function getApiKeyByProvider(provider: "openai" | "anthropic" | "go
  */
 export async function validateApiKeysForTraining(
   targetProvider: "openai" | "anthropic" | "google",
-  influencerProvider: "openai" | "anthropic" | "google" | "minimax"
+  influencerProvider?: "openai" | "anthropic" | "google" | "minimax" | null
 ): Promise<{ valid: boolean; missingProviders: string[]; corruptedProviders: string[] }> {
   const { decrypt } = await import("./encryption");
   const missingProviders: string[] = [];
   const corruptedProviders: string[] = [];
 
+  // Only the target key is always required. The influencer key is used by the
+  // legacy V1 engine only — V2 (phase-based, the default for new sessions) never
+  // calls the influencer, so validating it there would spuriously block starting
+  // a session on a minimax key that is never used. Callers pass the influencer
+  // provider only for legacy sessions.
   // Dedup so target===influencer is only checked once.
   const providers = Array.from(
-    new Set<"openai" | "anthropic" | "google" | "minimax">([targetProvider, influencerProvider])
+    new Set<"openai" | "anthropic" | "google" | "minimax">(
+      influencerProvider ? [targetProvider, influencerProvider] : [targetProvider]
+    )
   );
   for (const provider of providers) {
     const key = await getApiKeyByProvider(provider);

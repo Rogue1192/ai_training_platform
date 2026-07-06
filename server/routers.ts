@@ -694,9 +694,10 @@ export const appRouter = router({
           
           const validation = await validateApiKeysForTraining(
             session.targetAiProvider as "openai" | "anthropic" | "google",
-            session.influencerAiProvider as "openai" | "anthropic" | "google" | "minimax"
+            // Only legacy (V1) sessions use the influencer; V2 never calls it.
+            session.isLegacy ? (session.influencerAiProvider as "openai" | "anthropic" | "google" | "minimax") : undefined
           );
-          
+
           if (!validation.valid) {
             const cap = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
             const issues: string[] = [];
@@ -915,10 +916,10 @@ export const appRouter = router({
                 await updateTrainingSession(session.id, modelUpdates);
               }
               
-              // Validate API keys
+              // Validate API keys (influencer only matters for legacy V1 sessions)
               const validation = await validateApiKeysForTraining(
                 session.targetAiProvider as "openai" | "anthropic" | "google",
-                session.influencerAiProvider as "openai" | "anthropic" | "google" | "minimax"
+                session.isLegacy ? (session.influencerAiProvider as "openai" | "anthropic" | "google" | "minimax") : undefined
               );
               
               if (!validation.valid) {
