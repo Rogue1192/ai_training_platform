@@ -2369,6 +2369,44 @@ export const llmInsightsRouter = router({
     }),
 
   /**
+   * Fetch AI search volume from DataForSEO for a campaign's tracked queries and
+   * write it onto each query-location. Used by the "Refresh AI volume" button —
+   * fills the AI Vol column for queries that were added without volume data.
+   */
+  refreshAiVolume: protectedProcedure
+    .input(z.object({ campaignId: z.number() }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { campaignQueryLocations } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const { getAIKeywordSearchVolume } = await import("./dataforseoService");
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      const qls = await db
+        .select()
+        .from(campaignQueryLocations)
+        .where(eq(campaignQueryLocations.campaignId, input.campaignId));
+      if (qls.length === 0) return { updated: 0, checked: 0 };
+
+      const keywords = Array.from(new Set(qls.map((q) => q.searchQuery)));
+      const volumes = await getAIKeywordSearchVolume(keywords);
+      const volMap = new Map(volumes.map((v) => [v.keyword.toLowerCase(), v]));
+
+      let updated = 0;
+      for (const q of qls) {
+        const v = volMap.get(q.searchQuery.toLowerCase());
+        if (!v) continue;
+        await db
+          .update(campaignQueryLocations)
+          .set({ aiSearchVolume: v.aiSearchVolume, monthlyTrend: v.monthlyTrend as any, updatedAt: new Date() })
+          .where(eq(campaignQueryLocations.id, q.id));
+        updated++;
+      }
+      return { updated, checked: keywords.length };
+    }),
+
+  /**
    * Get aggregate LLM mention stats across all campaigns.
    * Shows total queries tracked, mention rates per platform, etc.
    */

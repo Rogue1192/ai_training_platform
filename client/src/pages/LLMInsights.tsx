@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   Loader2, Search, TrendingUp, MessageSquare, Brain, Globe, Target,
-  Plus, Trash2, ChevronDown, ChevronRight, Building2,
+  Plus, Trash2, ChevronDown, ChevronRight, Building2, RefreshCw,
 } from "lucide-react";
 
 function formatVolume(v: number | null | undefined): string {
@@ -80,6 +80,24 @@ export default function LLMInsights() {
 
   const addMutation = trpc.campaign.addQueryLocations.useMutation();
   const deleteMutation = trpc.llmInsights.deleteQueryLocation.useMutation();
+  const refreshVolMutation = trpc.llmInsights.refreshAiVolume.useMutation();
+
+  const handleRefreshVolume = (campaignId: number) => {
+    refreshVolMutation.mutate(
+      { campaignId },
+      {
+        onSuccess: (r) => {
+          toast.success(
+            r.updated > 0
+              ? `Updated AI volume for ${r.updated} of ${r.checked} queries`
+              : `No AI volume data found for these queries (DataForSEO returned none)`
+          );
+          invalidate();
+        },
+        onError: (e) => toast.error(e.message),
+      }
+    );
+  };
 
   const filtered = (queries || []).filter((q) => {
     if (!search.trim()) return true;
@@ -297,6 +315,24 @@ export default function LLMInsights() {
                 {/* Body */}
                 {expanded && (
                   <CardContent className="pt-0 pb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-muted-foreground">{client.rows.length} tracked quer{client.rows.length === 1 ? "y" : "ies"}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        title="Fetch AI search volume from DataForSEO for these queries"
+                        disabled={refreshVolMutation.isPending && refreshVolMutation.variables?.campaignId === client.campaignId}
+                        onClick={() => handleRefreshVolume(client.campaignId)}
+                      >
+                        {refreshVolMutation.isPending && refreshVolMutation.variables?.campaignId === client.campaignId ? (
+                          <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                        )}
+                        Refresh AI volume
+                      </Button>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
