@@ -438,6 +438,24 @@ export async function runPipelineStep(
           }).where(eq(cqlTable.id, ql.id));
         }
 
+        // ── Bootstrap the training cycle (fire Run 1) ─────────────────────────
+        // Without this the sessions created above stay `paused` forever. The
+        // hourly cycle-advancer (checkTrainingCycleAdvances → advanceCampaignCycle)
+        // only picks up combos whose nextPollAt is in the past, but nextPollAt
+        // starts NULL and is ONLY set inside the cycle itself. startInitialTrainingCycle
+        // is the one place that fires Run 1 and seeds nextPollAt = now + 24h so the
+        // scheduler can take over for runs 2–4. It was defined but never called.
+        try {
+          const { startInitialTrainingCycle } = await import("./trainingCycleOrchestrator");
+          const kickoff = await startInitialTrainingCycle(campaignId, userId);
+          console.log(`[Pipeline] Initial training cycle bootstrapped: ${kickoff.combosStarted} combo(s) started Run 1`);
+          if (kickoff.errors.length) {
+            console.warn(`[Pipeline] Initial cycle kickoff errors:`, kickoff.errors);
+          }
+        } catch (e: any) {
+          console.warn(`[Pipeline] Failed to bootstrap initial training cycle: ${e.message}`);
+        }
+
         const totalCombos = queryLocations.length;
         let trainingMessage: string;
         if (sessionsCreated > 0) {

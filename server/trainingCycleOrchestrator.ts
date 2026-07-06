@@ -109,7 +109,7 @@ async function fireSessionsForCombo(
  */
 async function fireRecoveryRunForCombo(
   ql: typeof campaignQueryLocations.$inferSelect,
-  business: { name: string; businessType: string | null; location: string | null },
+  business: { id: number; name: string; businessType: string | null; location: string | null },
   systemUserId: number,
   droppedProviders: Set<"chatgpt" | "gemini">,
 ): Promise<void> {
@@ -139,7 +139,7 @@ async function fireRecoveryRunForCombo(
     try {
       const session = await createTrainingSession({
         userId: systemUserId,
-        businessId: ql.campaignId,
+        businessId: business.id,
         campaignId: ql.campaignId,
         campaignQueryLocationId: ql.id,
         trainingName: `[Recovery] ${business.name} | ${ql.location} | ${ql.searchQuery} | ${target.label}`,
@@ -184,7 +184,12 @@ async function pollCombo(
     );
     return {
       chatgptMentioned: match?.llmResponses?.chatgpt?.mentioned ?? false,
-      geminiMentioned: match?.llmResponses?.gemini?.mentioned ?? false,
+      // A Gemini "win" counts either a Gemini-proper mention OR a Google AI
+      // Overview mention — matching how rankTrackingEngine / keywordResearchPipeline
+      // define a win everywhere else in the app. Checking only .gemini here made
+      // AI-Overview-only wins invisible, so those combos burned all 4 runs.
+      geminiMentioned:
+        (match?.llmResponses?.gemini?.mentioned || match?.llmResponses?.aiOverview?.mentioned) ?? false,
     };
   } catch (e: any) {
     console.warn(`[CycleOrchestrator] Poll failed for ql#${ql.id}: ${e.message}`);
