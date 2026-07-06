@@ -34,6 +34,15 @@ const SCHEDULER_INTERVAL = 60 * 1000;
 const STALE_FLOOR_MS = 30 * 60 * 1000;       // 30 minutes
 const STALE_CEILING_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+// Scheduled rank tracking cadence. runScheduledRankCheck records a fresh
+// rankSnapshot (positions + mentions) per query-location and updates the
+// currentRank* fields LLM Insights reads. Nothing scheduled it before, so no
+// positions were ever tracked. Cadence is data-driven: a campaign is only
+// re-checked if its most recent snapshot is older than the min gap, so app
+// restarts / Railway redeploys don't trigger duplicate DataForSEO calls.
+const RANK_TRACK_TICK_MS = 6 * 60 * 60 * 1000;      // re-evaluate every 6 hours
+const RANK_TRACK_MIN_GAP_MS = 23 * 60 * 60 * 1000;  // but skip if checked within ~23h (≈ once/day)
+
 let schedulerTimer: NodeJS.Timeout | null = null;
 
 // Day name mapping for display
@@ -784,6 +793,15 @@ export function startScheduler(): void {
     checkTrainingCycleAdvances().catch((err: Error) => console.error("[Scheduler] Training cycle advance failed:", err));
   }, 60 * 60 * 1000); // every hour
 
+  // Scheduled rank tracking — records positions/mentions per campaign ~daily.
+  // Runs immediately on start so a newly-added campaign (e.g. Titan) gets a
+  // baseline snapshot right away, then re-evaluates on a tick (the per-campaign
+  // gap guard enforces the real once-a-day cadence).
+  checkScheduledRankTracking().catch((err: Error) => console.error("[Scheduler] Rank tracking failed:", err));
+  setInterval(() => {
+    checkScheduledRankTracking().catch((err: Error) => console.error("[Scheduler] Rank tracking failed:", err));
+  }, RANK_TRACK_TICK_MS);
+
   console.log("[Scheduler] Scheduler started successfully");
 }
 
@@ -898,6 +916,69 @@ async function checkTrainingCycleAdvances(): Promise<void> {
     }
   } catch (err: any) {
     console.error('[Scheduler] checkTrainingCycleAdvances error:', err.message);
+  }
+}
+
+/**
+ * Scheduled rank tracking.
+ *
+ * Records a fresh rank snapshot (per-platform mention + position) for every
+ * campaign that has query-locations, roughly once per day. runScheduledRankCheck
+ * writes rankSnapshots and updates currentRank* on each query-location — the data
+ * LLM Insights and the campaign rank report read. The first run for a campaign
+ * seeds a baseline (no wins are emailed on the first check — win detection needs a
+ * prior snapshot to compare against).
+ *
+ * The per-campaign gap guard makes this idempotent across restarts/redeploys.
+ */
+async function checkScheduledRankTracking(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    const { runScheduledRankCheck } = await import("./rankTrackingEngine");
+    const { campaignQueryLocations: cqlTable, rankSnapshots: rsTable } = await import("../drizzle/schema");
+
+    // Every campaign that has at least one query-location is a rank-tracking target.
+    const targets = await db
+      .selectDistinct({ campaignId: cqlTable.campaignId })
+      .from(cqlTable);
+
+    if (targets.length === 0) return;
+
+    const now = Date.now();
+    let checked = 0;
+
+    for (const { campaignId } of targets) {
+      if (campaignId == null) continue;
+      try {
+        // Data-driven guard: skip if we already have a recent snapshot for this
+        // campaign, so restarts / redeploys don't re-run the DataForSEO check.
+        const [last] = await db
+          .select({ checkedAt: rsTable.checkedAt })
+          .from(rsTable)
+          .where(eq(rsTable.campaignId, campaignId))
+          .orderBy(desc(rsTable.checkedAt))
+          .limit(1);
+
+        if (last && now - new Date(last.checkedAt).getTime() < RANK_TRACK_MIN_GAP_MS) {
+          continue;
+        }
+
+        const result = await runScheduledRankCheck(campaignId);
+        checked++;
+        console.log(
+          `[Scheduler] Rank check campaign ${campaignId}: ${result.snapshotsCreated} snapshot(s), ` +
+          `${result.winsDetected.length} win(s), score ${result.currentScore.overall}/100`
+        );
+      } catch (err: any) {
+        console.error(`[Scheduler] Rank check failed for campaign ${campaignId}:`, err.message);
+      }
+    }
+
+    if (checked > 0) console.log(`[Scheduler] Scheduled rank tracking checked ${checked} campaign(s)`);
+  } catch (err: any) {
+    console.error("[Scheduler] checkScheduledRankTracking error:", err.message);
   }
 }
 
