@@ -1453,7 +1453,15 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           .where(eq(contentPages.campaignId, updatedPage.campaignId!));
         const allHaveUrls = allPages.length > 0 && allPages.every((p: { id: number; publishedUrl: string | null }) => !!p.publishedUrl);
         if (allHaveUrls && updatedPage.campaignId) {
-          // All pages now have URLs — auto-kick off indexing step
+          // All pages now have URLs. Mark publishing complete first — the manual-copy
+          // publishing branch intentionally pauses without setting publishingCompletedAt,
+          // so without this the Publish step shows "in progress" forever for manual-copy
+          // clients even after every live URL has been entered.
+          const { campaigns: campaignsTable } = await import("../drizzle/schema");
+          await db.update(campaignsTable)
+            .set({ publishingCompletedAt: new Date(), updatedAt: new Date() })
+            .where(eq(campaignsTable.id, updatedPage.campaignId));
+          // Auto-kick off indexing step
           setImmediate(async () => {
             try {
               const { runPipelineStep } = await import("./pipelineOrchestrator");
