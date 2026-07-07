@@ -37,6 +37,9 @@ import {
   buildEnrichedSystemMessage,
   buildSourceCitationBlock,
   buildSpecialtiesReinforcementBlock,
+  isAiOverviewSession,
+  buildAiOverviewSystemMessage,
+  toSearchQueryStyle,
 } from "./trainingContextEnricher";
 import { isModelDeprecatedError, buildDeprecationAlert, getModelConfig } from "./modelConfigService";
 
@@ -234,19 +237,32 @@ async function executeBaselineTest(sessionId: number, userId: number): Promise<v
   );
   let _targetApiKey = targetApiKey; // mutable ref for clearSensitiveData
 
+  // Detect AI Overview mode from session name
+  const aiOverviewMode = isAiOverviewSession(session.trainingName);
+
   try {
     // Use suggestive promptsm prompt and generate CLEAN version
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
-    const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo);
+    let cleanPrompt: string;
+    if (aiOverviewMode) {
+      // AI Overview baseline: use search-query-style prompt (no conversational framing)
+      const { prompt: rawClean } = await generateCleanPromptAsync(basePrompt, businessInfo);
+      cleanPrompt = toSearchQueryStyle(rawClean, businessInfo.businessType, businessInfo.location);
+    } else {
+      const { prompt: rawClean } = await generateCleanPromptAsync(basePrompt, businessInfo);
+      cleanPrompt = rawClean;
+    }
     
-    console.log(`[Training V2] Baseline clean prompt: "${cleanPrompt}"`);
+    console.log(`[Training V2] Baseline ${aiOverviewMode ? "(AI Overview search-query)" : ""} prompt: "${cleanPrompt}"`);
     
     // Call target AI with clean prompt - NO training context to avoid bias!
     // Baseline tests must be unbiased to accurately measure if AI already knows the business
     const messages: AIMessage[] = [
       {
         role: "system",
-        content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.",
+        content: aiOverviewMode
+          ? "You are a Google Search AI assistant that generates AI Overview summaries for local business queries. Provide concise, factual summaries highlighting relevant local options."
+          : "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.",
       },
       {
         role: "user",
@@ -343,21 +359,39 @@ async function executeTrainingIteration(
     session.targetAiProvider as AIProvider
   );
 
+  // Detect AI Overview mode from session name
+  const aiOverviewMode = isAiOverviewSession(session.trainingName);
+
   try {
     // Build suggestive prompt for training phase.
     // Pass iterationNumber so the shuffled-cycle strategy cycles through ALL
     // prompt variations evenly instead of picking randomly (which can repeat).
     const basePrompt = selectRandomPrompt(session.trainingPrompts, iterationNumber);
-    const { prompt: suggestivePrompt } = await generateSuggestivePromptAsync(basePrompt, businessInfo);
+    let suggestivePrompt: string;
+    if (aiOverviewMode) {
+      // AI Overview training: use search-query-style prompt instead of conversational
+      const { prompt: rawSuggestive } = await generateSuggestivePromptAsync(basePrompt, businessInfo);
+      // Convert to search-query style but keep the business mention embedded
+      const cleanPart = toSearchQueryStyle(rawSuggestive, businessInfo.businessType, businessInfo.location);
+      // Append business mention in a search-context way
+      suggestivePrompt = `${cleanPart} ${businessInfo.name}`;
+    } else {
+      const { prompt: rawSuggestive } = await generateSuggestivePromptAsync(basePrompt, businessInfo);
+      suggestivePrompt = rawSuggestive;
+    }
     
-    console.log(`[Training V2] Training suggestive prompt: "${suggestivePrompt.substring(0, 100)}..."`);
+    console.log(`[Training V2] Training ${aiOverviewMode ? "(AI Overview search-query)" : ""} prompt: "${suggestivePrompt.substring(0, 100)}..."`);
     
     // Enrich system message with credibility data and published URLs if available
     // This is the key improvement: training prompts now include real, verifiable facts
     const trainingContext = await getTrainingContextForSession(sessionId);
     const enrichedSystemMessage = trainingContext
-      ? await buildEnrichedSystemMessage(trainingContext)
-      : "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.";
+      ? (aiOverviewMode
+          ? await buildAiOverviewSystemMessage(trainingContext)
+          : await buildEnrichedSystemMessage(trainingContext))
+      : (aiOverviewMode
+          ? "You are a Google Search AI assistant that generates AI Overview summaries for local business queries. Provide concise, factual summaries highlighting relevant local options."
+          : "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.");
     
     // Append source citation block to suggestive prompt — throttled to every 3rd iteration.
     // Specialties are already in the system message on every call; repeating in the
@@ -546,19 +580,32 @@ async function executeEvaluationTest(sessionId: number, userId: number): Promise
     session.targetAiProvider as AIProvider
   );
 
+  // Detect AI Overview mode from session name
+  const aiOverviewMode = isAiOverviewSession(session.trainingName);
+
   try {
     // Build clean promptsandom prompt and generate CLEAN version (same as baseline)
     const basePrompt = selectRandomPrompt(session.trainingPrompts);
-    const { prompt: cleanPrompt } = await generateCleanPromptAsync(basePrompt, businessInfo);
+    let cleanPrompt: string;
+    if (aiOverviewMode) {
+      // AI Overview evaluation: use search-query-style prompt (no conversational framing)
+      const { prompt: rawClean } = await generateCleanPromptAsync(basePrompt, businessInfo);
+      cleanPrompt = toSearchQueryStyle(rawClean, businessInfo.businessType, businessInfo.location);
+    } else {
+      const { prompt: rawClean } = await generateCleanPromptAsync(basePrompt, businessInfo);
+      cleanPrompt = rawClean;
+    }
     
-    console.log(`[Training V2] Evaluation clean prompt: "${cleanPrompt}"`);
+    console.log(`[Training V2] Evaluation ${aiOverviewMode ? "(AI Overview search-query)" : ""} prompt: "${cleanPrompt}"`);
     
     // Evaluation uses CLEAN system prompt - NO training context to avoid bias!
     // This measures if the AI learned to recommend the business without being told about it
     const messages: AIMessage[] = [
       {
         role: "system",
-        content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.",
+        content: aiOverviewMode
+          ? "You are a Google Search AI assistant that generates AI Overview summaries for local business queries. Provide concise, factual summaries highlighting relevant local options."
+          : "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge.",
       },
       {
         role: "user",

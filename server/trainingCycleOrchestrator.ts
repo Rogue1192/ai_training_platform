@@ -7,8 +7,8 @@
  *   Run N fires → sessions for non-won providers start → sessions complete →
  *   nextPollAt = now + 24h → scheduler picks it up → LLM poll runs →
  *   wins extracted per provider (win emails sent, after video captured) →
- *   if ChatGPT won but Gemini didn't → next run fires Gemini sessions only →
- *   if both won → combo enters monitoring immediately →
+ *   if ChatGPT won but Gemini/AI Overview didn't → next run fires remaining sessions only →
+ *   if all three won → combo enters monitoring immediately →
  *   if runCount = 4 and still not fully won → enter monitoring
  *
  * MONITORING PHASE (weekly, indefinite):
@@ -56,7 +56,11 @@ async function fireSessionsForCombo(
   qlId: number,
   campaignId: number,
   systemUserId: number,
+  // wonProviders is keyed by targetAiProvider ("openai" | "google").
+  // Note: both Gemini and AI Overview share provider "google", so we use
+  // a separate wonSessionLabels set to skip AI Overview sessions independently.
   wonProviders: Set<"openai" | "google"> = new Set(),
+  wonSessionLabels: Set<string> = new Set(),
 ): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
@@ -78,7 +82,17 @@ async function fireSessionsForCombo(
   for (const session of sessions) {
     // Skip sessions for already-won providers
     const provider = session.targetAiProvider as "openai" | "google";
-    if (wonProviders.has(provider)) {
+    // Determine the label from the trainingName (last " | "-delimited segment)
+    const nameParts = (session.trainingName || "").split(" | ");
+    const sessionLabel = nameParts[nameParts.length - 1] ?? "";
+    const isAiOverview = sessionLabel === "AI Overview";
+
+    // For AI Overview sessions, check wonSessionLabels; for others, check wonProviders
+    if (isAiOverview && wonSessionLabels.has("AI Overview")) {
+      console.log(`[CycleOrchestrator] Skipping session ${session.id} — AI Overview already won for ql#${qlId}`);
+      continue;
+    }
+    if (!isAiOverview && wonProviders.has(provider)) {
       console.log(`[CycleOrchestrator] Skipping session ${session.id} — provider ${provider} already won for ql#${qlId}`);
       continue;
     }
@@ -111,7 +125,7 @@ async function fireRecoveryRunForCombo(
   ql: typeof campaignQueryLocations.$inferSelect,
   business: { id: number; name: string; businessType: string | null; location: string | null },
   systemUserId: number,
-  droppedProviders: Set<"chatgpt" | "gemini">,
+  droppedProviders: Set<"chatgpt" | "gemini" | "ai_overview">,
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -131,6 +145,8 @@ async function fireRecoveryRunForCombo(
   const allTargets = [
     { provider: "openai" as const, model: "gpt-4.1", label: "ChatGPT", key: "chatgpt" as const },
     { provider: "google" as const, model: "gemini-2.5-flash", label: "Gemini", key: "gemini" as const },
+    // AI Overview uses the same Gemini model but with search-query-style prompt framing
+    { provider: "google" as const, model: "gemini-2.5-flash", label: "AI Overview", key: "ai_overview" as const },
   ];
 
   const targets = allTargets.filter((t) => droppedProviders.has(t.key));
@@ -167,6 +183,7 @@ async function fireRecoveryRunForCombo(
 interface PollResult {
   chatgptMentioned: boolean;
   geminiMentioned: boolean;
+  aiOverviewMentioned: boolean;
 }
 
 async function pollCombo(
@@ -195,10 +212,13 @@ async function pollCombo(
       // AI-Overview-only wins invisible, so those combos burned all 4 runs.
       geminiMentioned:
         (match?.llmResponses?.gemini?.mentioned || match?.llmResponses?.aiOverview?.mentioned) ?? false,
+      // AI Overview is also tracked separately so the dedicated AI Overview
+      // training sessions can be evaluated and won independently.
+      aiOverviewMentioned: match?.llmResponses?.aiOverview?.mentioned ?? false,
     };
   } catch (e: any) {
     console.warn(`[CycleOrchestrator] Poll failed for ql#${ql.id}: ${e.message}`);
-    return { chatgptMentioned: false, geminiMentioned: false };
+    return { chatgptMentioned: false, geminiMentioned: false, aiOverviewMentioned: false };
   }
 }
 
@@ -229,11 +249,11 @@ async function captureAfterVideo(
 /**
  * Mark a single provider win for a combo.
  * Does NOT change trainingStatus — that is handled by the caller after checking
- * whether both providers are now won.
+ * whether all providers are now won.
  */
 async function processWin(
   ql: typeof campaignQueryLocations.$inferSelect,
-  platform: "chatgpt" | "gemini",
+  platform: "chatgpt" | "gemini" | "ai_overview",
   campaignId: number,
 ): Promise<void> {
   const db = await getDb();
@@ -241,19 +261,33 @@ async function processWin(
 
   const now = new Date();
 
-  // Capture after video (non-blocking)
-  captureAfterVideo(ql, platform).catch(() => {});
+  // Capture after video for ChatGPT and Gemini (AI Overview shares Gemini video)
+  if (platform !== "ai_overview") {
+    captureAfterVideo(ql, platform).catch(() => {});
+  }
+
+  // Determine which rank column to update
+  const rankColumn =
+    platform === "chatgpt" ? "currentRankChatGPT" :
+    platform === "gemini" ? "currentRankGemini" :
+    "currentRankAIOverview"; // ai_overview
 
   // Update the per-provider rank — do NOT change trainingStatus here
   await db
     .update(campaignQueryLocations)
     .set({
       firstMentionedAt: ql.firstMentionedAt ?? now,
-      [platform === "chatgpt" ? "currentRankChatGPT" : "currentRankGemini"]: "mentioned",
+      [rankColumn]: "mentioned",
       lastRankCheckAt: now,
       updatedAt: now,
     })
     .where(eq(campaignQueryLocations.id, ql.id));
+
+  // Build human-readable platform label for the win email
+  const platformLabel =
+    platform === "chatgpt" ? "ChatGPT" :
+    platform === "gemini" ? "Gemini" :
+    "Google AI Overview";
 
   // Send win email
   try {
@@ -262,15 +296,15 @@ async function processWin(
       campaignId,
       [
         {
-          platform,
+          platform: platform === "ai_overview" ? "gemini" : platform, // email service uses gemini for AI Overview
           query: ql.searchQuery,
           location: ql.location,
-          message: `Now appearing in ${platform === "chatgpt" ? "ChatGPT" : "Gemini"} results for "${ql.searchQuery}" in ${ql.location}.`,
+          message: `Now appearing in ${platformLabel} results for "${ql.searchQuery}" in ${ql.location}.`,
           significance: "breakthrough" as const,
           beforeVideoChatgpt: ql.beforeVideoChatgpt ?? undefined,
           beforeVideoGoogleAi: ql.beforeVideoGoogleAi ?? undefined,
           afterVideoChatgpt: platform === "chatgpt" ? (ql.afterVideoChatgpt ?? undefined) : undefined,
-          afterVideoGoogleAi: platform === "gemini" ? (ql.afterVideoGoogleAi ?? undefined) : undefined,
+          afterVideoGoogleAi: platform !== "chatgpt" ? (ql.afterVideoGoogleAi ?? undefined) : undefined,
         },
       ],
       100, // currentScore placeholder — will be recalculated by sendCampaignWinEmails
@@ -339,6 +373,7 @@ export async function advanceCampaignCycle(
       // Determine new wins per provider
       const chatgptWon = poll.chatgptMentioned && ql.currentRankChatGPT !== "mentioned";
       const geminiWon = poll.geminiMentioned && ql.currentRankGemini !== "mentioned";
+      const aiOverviewWon = poll.aiOverviewMentioned && (ql as any).currentRankAIOverview !== "mentioned";
 
       if (chatgptWon) {
         await processWin(ql, "chatgpt", campaignId);
@@ -348,14 +383,19 @@ export async function advanceCampaignCycle(
         await processWin(ql, "gemini", campaignId);
         result.newWins++;
       }
+      if (aiOverviewWon) {
+        await processWin(ql, "ai_overview", campaignId);
+        result.newWins++;
+      }
 
       // Determine the updated win state (accounting for wins just processed)
       const chatgptNowWon = poll.chatgptMentioned || ql.currentRankChatGPT === "mentioned";
       const geminiNowWon = poll.geminiMentioned || ql.currentRankGemini === "mentioned";
-      const bothWon = chatgptNowWon && geminiNowWon;
+      const aiOverviewNowWon = poll.aiOverviewMentioned || (ql as any).currentRankAIOverview === "mentioned";
+      const allWon = chatgptNowWon && geminiNowWon && aiOverviewNowWon;
 
-      if (bothWon) {
-        // Both providers achieved — move to monitoring, no more training needed
+      if (allWon) {
+        // All three targets achieved — move to monitoring, no more training needed
         await db.update(campaignQueryLocations).set({
           trainingStatus: "monitoring",
           monitoringStartedAt: now,
@@ -364,17 +404,22 @@ export async function advanceCampaignCycle(
         }).where(eq(campaignQueryLocations.id, ql.id));
         result.combosEnteredMonitoring++;
       } else {
-        // At least one provider still not won — continue training if runs remain
+        // At least one target still not won — continue training if runs remain
         const runCount = (ql.trainingRunCount ?? 0);
 
-        // Build the set of already-won providers to skip in the next run
+        // Build the set of already-won providers to skip in the next run.
+        // wonProviders skips by provider (openai/google); wonSessionLabels skips
+        // AI Overview specifically (since it shares the google provider with Gemini).
         const wonProviders = new Set<"openai" | "google">();
+        const wonSessionLabels = new Set<string>();
         if (chatgptNowWon) wonProviders.add("openai");
-        if (geminiNowWon) wonProviders.add("google");
+        // Only skip all google sessions if BOTH Gemini AND AI Overview are won
+        if (geminiNowWon && aiOverviewNowWon) wonProviders.add("google");
+        if (aiOverviewNowWon) wonSessionLabels.add("AI Overview");
 
         if (runCount < MAX_INITIAL_RUNS) {
-          // Fire next run — only for providers that haven't won yet
-          const started = await fireSessionsForCombo(ql.id, campaignId, systemUserId, wonProviders);
+          // Fire next run — only for targets that haven't won yet
+          const started = await fireSessionsForCombo(ql.id, campaignId, systemUserId, wonProviders, wonSessionLabels);
           result.runsStarted += started;
 
           await db.update(campaignQueryLocations).set({
@@ -420,6 +465,7 @@ export async function advanceCampaignCycle(
       // Check for new wins (non-won combos that now appear)
       const chatgptWon = poll.chatgptMentioned && ql.currentRankChatGPT !== "mentioned";
       const geminiWon = poll.geminiMentioned && ql.currentRankGemini !== "mentioned";
+      const aiOverviewWon = poll.aiOverviewMentioned && (ql as any).currentRankAIOverview !== "mentioned";
 
       if (chatgptWon) {
         await processWin(ql, "chatgpt", campaignId);
@@ -429,16 +475,22 @@ export async function advanceCampaignCycle(
         await processWin(ql, "gemini", campaignId);
         result.newWins++;
       }
+      if (aiOverviewWon) {
+        await processWin(ql, "ai_overview", campaignId);
+        result.newWins++;
+      }
 
       // Check for drop-outs (previously won, now not appearing)
       const chatgptDropped = ql.currentRankChatGPT === "mentioned" && !poll.chatgptMentioned;
       const geminiDropped = ql.currentRankGemini === "mentioned" && !poll.geminiMentioned;
+      const aiOverviewDropped = (ql as any).currentRankAIOverview === "mentioned" && !poll.aiOverviewMentioned;
 
-      if (chatgptDropped || geminiDropped) {
+      if (chatgptDropped || geminiDropped || aiOverviewDropped) {
         // Build the set of dropped providers — only fire recovery for those
-        const droppedProviders = new Set<"chatgpt" | "gemini">();
+        const droppedProviders = new Set<"chatgpt" | "gemini" | "ai_overview">();
         if (chatgptDropped) droppedProviders.add("chatgpt");
         if (geminiDropped) droppedProviders.add("gemini");
+        if (aiOverviewDropped) droppedProviders.add("ai_overview");
 
         await fireRecoveryRunForCombo(ql, business, systemUserId, droppedProviders);
         result.recoveryRunsStarted++;
@@ -452,6 +504,7 @@ export async function advanceCampaignCycle(
         };
         if (chatgptDropped) dropUpdates.currentRankChatGPT = "not_mentioned";
         if (geminiDropped) dropUpdates.currentRankGemini = "not_mentioned";
+        if (aiOverviewDropped) dropUpdates.currentRankAIOverview = "not_mentioned";
 
         await db.update(campaignQueryLocations).set(dropUpdates)
           .where(eq(campaignQueryLocations.id, ql.id));
@@ -501,8 +554,8 @@ export async function startInitialTrainingCycle(
       // Only start if this combo hasn't had a run yet
       if ((ql.trainingRunCount ?? 0) > 0) continue;
 
-      // Fire both providers on Run 1 (nothing is won yet)
-      const started = await fireSessionsForCombo(ql.id, campaignId, systemUserId, new Set());
+      // Fire all three targets on Run 1 (nothing is won yet): ChatGPT, Gemini, AI Overview
+      const started = await fireSessionsForCombo(ql.id, campaignId, systemUserId, new Set(), new Set());
       if (started > 0) {
         await db.update(campaignQueryLocations).set({
           trainingRunCount: 1,

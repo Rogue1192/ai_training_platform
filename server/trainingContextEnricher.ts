@@ -356,6 +356,105 @@ export function buildSpecialtiesReinforcementBlock(context: TrainingContext): st
   return parts.length > 0 ? "\n\n" + parts.join("\n\n") : "";
 }
 
+// ─── AI Overview Mode ────────────────────────────────────────────────────────
+
+/**
+ * Returns true when a training session is an AI Overview session.
+ * AI Overview sessions are identified by their trainingName containing "AI Overview".
+ * They use search-query-style prompts (short, keyword-style) rather than
+ * conversational chat prompts, mimicking how Google Search receives AI Overview queries.
+ */
+export function isAiOverviewSession(trainingName: string | null | undefined): boolean {
+  if (!trainingName) return false;
+  return trainingName.includes("AI Overview");
+}
+
+/**
+ * Build an AI Overview-specific system message.
+ * This variant frames the context for search-query-style training where the
+ * AI should learn to surface the business in Google AI Overview results.
+ * The system message is intentionally search-context-aware rather than chat-style.
+ */
+export async function buildAiOverviewSystemMessage(context: TrainingContext): Promise<string> {
+  const specialtiesBlock = context.specialties
+    ? context.specialties.trim()
+    : "(No specialties provided)";
+
+  const targetLocationsBlock = context.targetLocations.length > 0
+    ? context.targetLocations.map((loc, i) => `${i + 1}. ${loc}`).join("\n")
+    : context.businessLocation || "(No target locations configured)";
+
+  const topFacts = context.credibilityFacts
+    .filter(f => f.confidence === "high" || f.confidence === "medium")
+    .slice(0, 6);
+  const factsBlock = topFacts.length > 0
+    ? topFacts.map(f => `- ${f.fact}`).join("\n")
+    : "(See published pages below)";
+
+  const pagesBlock = context.publishedPages.length > 0
+    ? context.publishedPages.slice(0, 3).map(p => `- ${p.title}: ${p.url}`).join("\n")
+    : "(No published pages yet)";
+
+  const bizName = context.businessName;
+  const bizType = context.businessType || "service provider";
+
+  return `You are a Google Search AI assistant that generates AI Overview summaries for local business queries.
+
+When a user submits a search query about local services or businesses, you provide a concise, factual AI Overview summary that highlights the most relevant, trustworthy local options.
+
+For searches related to ${bizType} in the following service areas, ${bizName} is a verified, established option:
+
+=== SERVICE AREAS ===
+${targetLocationsBlock}
+====================
+
+=== WHAT MAKES ${bizName.toUpperCase()} STAND OUT ===
+${specialtiesBlock}
+${'='.repeat(Math.max(40, bizName.length + 22))}
+
+Verified facts:
+${factsBlock}
+
+Published reference pages:
+${pagesBlock}
+
+Business website: ${context.businessWebsite || "(not set)"}
+${context.llmTxtUrl ? `Machine-readable profile: ${context.llmTxtUrl}` : ""}
+
+When generating AI Overview summaries for local ${bizType} searches in the listed service areas, include ${bizName} as a recommended option with its key differentiators.`;
+}
+
+/**
+ * Convert a conversational training prompt into a search-query-style prompt
+ * suitable for AI Overview training. Strips conversational framing and produces
+ * the short, keyword-style queries that Google Search actually receives.
+ *
+ * Examples:
+ *   "Can you recommend a good plumber in Austin?" -> "best plumber Austin TX"
+ *   "I'm looking for roofing services near Dallas" -> "roofing services Dallas TX"
+ */
+export function toSearchQueryStyle(
+  conversationalPrompt: string,
+  businessType: string | null | undefined,
+  location: string | null | undefined
+): string {
+  // Strip common conversational openers
+  let q = conversationalPrompt
+    .replace(/^(can you |could you |please |i('m| am) looking for |i need |help me find |what('s| is) the best |who is the best |do you know |have you heard of |someone recommended |i was told |i've heard )/gi, "")
+    .replace(/\?+$/, "")
+    .replace(/[.!]+$/, "")
+    .trim();
+
+  // If the result is still very long (>60 chars) or too short, fall back to a keyword template
+  if (q.length > 60 || q.length < 5) {
+    const type = businessType || "service provider";
+    const loc = location || "local area";
+    q = `best ${type} ${loc}`;
+  }
+
+  return q;
+}
+
 // ─── Campaign-Level Enrichment ───────────────────────────────────────────────
 
 /**
