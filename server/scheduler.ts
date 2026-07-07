@@ -828,14 +828,17 @@ export async function checkPendingIndexingVerifications(): Promise<void> {
   if (!db) return;
 
   try {
-    // Find campaigns that have submitted indexing but not yet verified
+    // Find campaigns that have submitted indexing but not yet verified AND haven't started training yet.
+    // Critically: exclude campaigns that already have trainingStartedAt set — those are already
+    // past this step and re-running would overwrite their rank data with a fresh baseline check.
     const pendingCampaigns = await db
       .select()
       .from(campaigns)
       .where(
         and(
           sql`${campaigns.indexingSubmittedAt} IS NOT NULL`,
-          isNull(campaigns.indexingVerifiedAt)
+          isNull(campaigns.indexingVerifiedAt),
+          isNull(campaigns.trainingStartedAt)  // ← safety: never re-trigger for active campaigns
         )
       );
 
@@ -849,12 +852,23 @@ export async function checkPendingIndexingVerifications(): Promise<void> {
       try {
         const result = await verifyCampaignIndexing(campaign.id);
         if (result.verified) {
-          console.log(`[Scheduler] Indexing verified for campaign ${campaign.id} (${result.accessibleUrls}/${result.totalUrls} URLs accessible) — advancing to training`);
-          // verifyCampaignIndexing already set indexingVerifiedAt and status="baseline_check" (legacy).
-          // Now run the training step to complete the pipeline.
-          const { runPipelineStep } = await import('./pipelineOrchestrator');
-          const trainResult = await runPipelineStep(campaign.id, 'training', ownerId);
-          console.log(`[Scheduler] Training kickoff for campaign ${campaign.id}: ${trainResult.message}`);
+          console.log(`[Scheduler] Indexing verified for campaign ${campaign.id} (${result.accessibleUrls}/${result.totalUrls} URLs accessible) — advancing pipeline`);
+          const { runPipelineStep, determineNextStep } = await import('./pipelineOrchestrator');
+          // Re-fetch campaign to get the latest state (verifyCampaignIndexing may have updated it)
+          const { getCampaignById } = await import('./dbCampaigns');
+          const freshCampaign = await getCampaignById(campaign.id);
+          if (!freshCampaign) continue;
+          // Use determineNextStep so we always run the correct next step, not hardcoded 'training'.
+          // This respects the new pipeline order (baseline_check comes before credibility_research)
+          // and won't re-run steps that are already completed.
+          const nextStep = determineNextStep(freshCampaign);
+          if (nextStep === 'indexing_verification') {
+            // Still waiting — shouldn't happen but guard against infinite loop
+            console.log(`[Scheduler] Campaign ${campaign.id} indexing verified but determineNextStep still returns indexing_verification — skipping`);
+            continue;
+          }
+          const stepResult = await runPipelineStep(campaign.id, nextStep, ownerId);
+          console.log(`[Scheduler] Pipeline step '${nextStep}' for campaign ${campaign.id}: ${stepResult.message}`);
         }
       } catch (err: any) {
         console.error(`[Scheduler] Indexing verification failed for campaign ${campaign.id}:`, err.message);

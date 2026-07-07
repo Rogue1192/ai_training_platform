@@ -338,6 +338,21 @@ export async function runPipelineStep(
       }
       
       case "baseline_check": {
+        // ── Idempotency guard ─────────────────────────────────────────────────
+        // If baselineCheckCompletedAt is already set, the baseline has already
+        // run and its snapshots are in the DB. Re-running would overwrite the
+        // clean-slate data with fresh (potentially different) results, breaking
+        // the before/after comparison. Skip silently and advance.
+        if (campaign.baselineCheckCompletedAt) {
+          console.log(`[Pipeline] baseline_check already completed for campaign ${campaignId} at ${campaign.baselineCheckCompletedAt.toISOString()} — skipping to avoid overwriting baseline data`);
+          result = {
+            step,
+            success: true,
+            message: `Baseline check already completed at ${campaign.baselineCheckCompletedAt.toISOString()} — skipped (idempotent).`,
+            nextStep: "credibility_research",
+          };
+          break;
+        }
         const { runCampaignBaselineCheck } = await import("./keywordResearchPipeline");
         const baselineResult = await runCampaignBaselineCheck(campaignId);
         result = {
