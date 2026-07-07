@@ -429,7 +429,7 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
       `[Pipeline] Baseline check complete for campaign ${campaignId}: ${mentions.length} total mentions, ${snapshotsCreated} snapshots created`
     );
 
-    // ── Separate queries into "not ranking" (record video) vs "already ranking" (skip) ──
+    // ── Separate queries into "not ranking" vs "already ranking" ──
     const notRankingQls: typeof queryLocations = [];
     const alreadyRankingQls: typeof queryLocations = [];
 
@@ -444,27 +444,8 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
 
       if (isAlreadyRanking) {
         alreadyRankingQls.push(ql);
-        console.log(`[Pipeline] Skipping video for already-ranking query: "${ql.searchQuery}" in ${ql.location}`);
       } else {
         notRankingQls.push(ql);
-      }
-    }
-
-    // ── Record "before" videos for queries where client is NOT ranking ──
-    if (notRankingQls.length > 0) {
-      try {
-        const { recordBaselineVideos } = await import("./scanVideoRecorder");
-        await recordBaselineVideos(
-          campaignId,
-          notRankingQls.map((ql) => ({
-            id: ql.id,
-            searchQuery: ql.searchQuery,
-            location: ql.location,
-          }))
-        );
-        console.log(`[Pipeline] Baseline videos recorded for ${notRankingQls.length} queries`);
-      } catch (videoErr: any) {
-        console.error(`[Pipeline] Baseline video recording failed (non-fatal):`, videoErr.message);
       }
     }
 
@@ -472,8 +453,6 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
     if (business.contactEmail) {
       try {
         const { sendBaselineVisibilityEmail } = await import("./emailService");
-        // Fetch updated query-locations with video URLs
-        const updatedQls = await getQueryLocationsByCampaignId(campaignId);
         const clientDashboardResult = await db
           .select()
           .from(require("../drizzle/schema").clientDashboards)
@@ -488,15 +467,10 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
           contactName: business.contactName || business.name,
           contactEmail: business.contactEmail,
           dashboardUrl,
-          notRankingQueries: notRankingQls.map((ql) => {
-            const updated = updatedQls.find((u) => u.id === ql.id);
-            return {
-              query: ql.searchQuery,
-              location: ql.location,
-              beforeVideoChatgpt: (updated as any)?.beforeVideoChatgpt || undefined,
-              beforeVideoGoogleAi: (updated as any)?.beforeVideoGoogleAi || undefined,
-            };
-          }),
+          notRankingQueries: notRankingQls.map((ql) => ({
+            query: ql.searchQuery,
+            location: ql.location,
+          })),
           alreadyRankingQueries: alreadyRankingQls.map((ql) => ({
             query: ql.searchQuery,
             location: ql.location,

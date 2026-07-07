@@ -222,27 +222,6 @@ async function pollCombo(
   }
 }
 
-// ─── After-video capture ──────────────────────────────────────────────────────
-
-async function captureAfterVideo(
-  ql: typeof campaignQueryLocations.$inferSelect,
-  platform: "chatgpt" | "gemini",
-): Promise<void> {
-  // Only capture if not already captured
-  const alreadyCaptured =
-    platform === "chatgpt" ? ql.afterVideoChatgpt : ql.afterVideoGoogleAi;
-  if (alreadyCaptured) return;
-
-  try {
-    const { recordWinVideo } = await import("./scanVideoRecorder");
-    // scanVideoRecorder uses 'google_ai' for Gemini
-    const scanPlatform = platform === "chatgpt" ? "chatgpt" : "google_ai";
-    await recordWinVideo(ql.campaignId, ql.id, ql.searchQuery, ql.location, scanPlatform);
-  } catch (e: any) {
-    // Non-fatal — video capture failure should not block win processing
-    console.warn(`[CycleOrchestrator] After-video capture failed for ql#${ql.id} on ${platform}: ${e.message}`);
-  }
-}
 
 // ─── Win processing ───────────────────────────────────────────────────────────
 
@@ -260,11 +239,6 @@ async function processWin(
   if (!db) return;
 
   const now = new Date();
-
-  // Capture after video for ChatGPT and Gemini (AI Overview shares Gemini video)
-  if (platform !== "ai_overview") {
-    captureAfterVideo(ql, platform).catch(() => {});
-  }
 
   // Determine which rank column to update
   const rankColumn =
@@ -301,10 +275,6 @@ async function processWin(
           location: ql.location,
           message: `Now appearing in ${platformLabel} results for "${ql.searchQuery}" in ${ql.location}.`,
           significance: "breakthrough" as const,
-          beforeVideoChatgpt: ql.beforeVideoChatgpt ?? undefined,
-          beforeVideoGoogleAi: ql.beforeVideoGoogleAi ?? undefined,
-          afterVideoChatgpt: platform === "chatgpt" ? (ql.afterVideoChatgpt ?? undefined) : undefined,
-          afterVideoGoogleAi: platform !== "chatgpt" ? (ql.afterVideoGoogleAi ?? undefined) : undefined,
         },
       ],
       100, // currentScore placeholder — will be recalculated by sendCampaignWinEmails

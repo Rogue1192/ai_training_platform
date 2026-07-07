@@ -57,12 +57,12 @@ export interface PipelineStatus {
 
 const PIPELINE_STEPS: PipelineStep[] = [
   "keyword_research",
+  "baseline_check",
   "credibility_research",
   "content_generation",
   "publishing",
   "indexing",
   "indexing_verification",
-  "baseline_check",
   "training",
 ];
 
@@ -91,12 +91,12 @@ function statusToStep(status: string): PipelineStep {
  */
 export function determineNextStep(campaign: any): PipelineStep {
   if (!campaign.keywordResearchCompletedAt) return "keyword_research";
+  if (!campaign.baselineCheckCompletedAt) return "baseline_check";
   if (!campaign.credibilityResearchCompletedAt) return "credibility_research";
   if (!campaign.contentGenerationCompletedAt) return "content_generation";
   if (!campaign.publishingCompletedAt) return "publishing";
   if (!campaign.indexingSubmittedAt) return "indexing";
   if (!campaign.indexingVerifiedAt) return "indexing_verification";
-  if (!campaign.baselineCheckCompletedAt) return "baseline_check";
   return "training";
 }
 
@@ -106,12 +106,12 @@ export function determineNextStep(campaign: any): PipelineStep {
 export function getCompletedSteps(campaign: any): PipelineStep[] {
   const completed: PipelineStep[] = [];
   if (campaign.keywordResearchCompletedAt) completed.push("keyword_research");
+  if (campaign.baselineCheckCompletedAt) completed.push("baseline_check");
   if (campaign.credibilityResearchCompletedAt) completed.push("credibility_research");
   if (campaign.contentGenerationCompletedAt) completed.push("content_generation");
   if (campaign.publishingCompletedAt) completed.push("publishing");
   if (campaign.indexingSubmittedAt) completed.push("indexing");
   if (campaign.indexingVerifiedAt) completed.push("indexing_verification");
-  if (campaign.baselineCheckCompletedAt) completed.push("baseline_check");
   if (campaign.trainingStartedAt) completed.push("training");
   return completed;
 }
@@ -345,7 +345,7 @@ export async function runPipelineStep(
           success: true,
           message: `Baseline rank check complete. ${baselineResult.snapshotsCreated || 0} rank snapshots recorded.`,
           data: baselineResult,
-          nextStep: "training",
+          nextStep: "credibility_research",
         };
         break;
       }
@@ -648,12 +648,12 @@ export async function getPipelineStatus(campaignId: number): Promise<PipelineSta
 export function getPipelineStepLabels(): Array<{ step: PipelineStep; label: string; description: string }> {
   return [
     { step: "keyword_research", label: "Keyword Research", description: "Discover AI search queries and volumes using DataForSEO" },
+    { step: "baseline_check", label: "Baseline Visibility Report", description: "Measure clean-slate AI visibility before any content is added" },
     { step: "credibility_research", label: "Credibility Research", description: "Research business credentials, awards, and trust signals" },
     { step: "content_generation", label: "Content Generation", description: "Generate optimized content pages for AI citation" },
     { step: "publishing", label: "WordPress Publishing", description: "Auto-publish content pages to client website" },
     { step: "indexing", label: "Indexing Submission", description: "Submit URLs to Monkey Indexer for fast Google indexing" },
-    { step: "indexing_verification", label: "Indexing Verification", description: "Verify URLs are indexed (3-4 day wait)" },
-    { step: "baseline_check", label: "Baseline Rank Check", description: "Check initial AI visibility across all queries" },
+    { step: "indexing_verification", label: "Indexing Verification", description: "Verify published URLs are accessible (auto-advances within minutes)" },
     { step: "training", label: "AI Training", description: "Train AI models to cite the business" },
   ];
 }

@@ -35,15 +35,6 @@ export interface Win {
   description: string;
   significance: "minor" | "moderate" | "major" | "breakthrough";
   detectedAt: Date;
-  // Before/after evidence (screenshots preferred, video fallback)
-  beforeScreenshotChatgpt?: string;
-  beforeScreenshotGoogleAi?: string;
-  afterScreenshotChatgpt?: string;
-  afterScreenshotGoogleAi?: string;
-  beforeVideoChatgpt?: string;
-  beforeVideoGoogleAi?: string;
-  afterVideoChatgpt?: string;
-  afterVideoGoogleAi?: string;
 }
 
 export interface WinReport {
@@ -203,25 +194,7 @@ export async function detectWins(campaignId: number): Promise<Win[]> {
     }
   }
   
-  // Attach screenshot/video URLs from campaignQueryLocations to each win
-  const winsWithEvidence = await Promise.all(wins.map(async (win) => {
-    if (!win.queryLocationId) return win;
-    const [ql] = await db!.select().from(campaignQueryLocations).where(eq(campaignQueryLocations.id, win.queryLocationId)).limit(1);
-    if (!ql) return win;
-    return {
-      ...win,
-      beforeScreenshotChatgpt: (ql as any).beforeScreenshotChatgpt ?? undefined,
-      beforeScreenshotGoogleAi: (ql as any).beforeScreenshotGoogleAi ?? undefined,
-      afterScreenshotChatgpt: (ql as any).afterScreenshotChatgpt ?? undefined,
-      afterScreenshotGoogleAi: (ql as any).afterScreenshotGoogleAi ?? undefined,
-      beforeVideoChatgpt: (ql as any).beforeVideoChatgpt ?? undefined,
-      beforeVideoGoogleAi: (ql as any).beforeVideoGoogleAi ?? undefined,
-      afterVideoChatgpt: (ql as any).afterVideoChatgpt ?? undefined,
-      afterVideoGoogleAi: (ql as any).afterVideoGoogleAi ?? undefined,
-    };
-  }));
-
-  return winsWithEvidence;
+  return wins;
 }
 
 // ─── Win Report Generation ───────────────────────────────────────────────────
@@ -357,69 +330,21 @@ export async function checkAllCampaignsForWins(): Promise<{
       // Trial upgrades happen automatically at day 14 via the scheduler.
       // Win detection does NOT trigger early conversion — GHL handles billing.
 
-      // Record "after" videos for breakthrough wins (first appearance)
-      const breakthroughWins = report.wins.filter(w => w.significance === "breakthrough");
-      if (breakthroughWins.length > 0) {
-        try {
-          const { recordWinVideo } = await import("./scanVideoRecorder");
-          for (const win of breakthroughWins.slice(0, 2)) { // Max 2 videos per check
-            const platform = win.platform === "chatgpt" ? "chatgpt" : "google_ai";
-            await recordWinVideo(
-              campaign.id,
-              win.queryLocationId || 0,
-              win.query,
-              win.location,
-              platform
-            );
-          }
-        } catch (err) {
-          console.error("[Win Notifications] Win video recording failed:", err);
-        }
-      }
-
-      // Build win email entries with before/after video URLs from DB
+      // Build win email entries and send
       try {
         const { sendCampaignWinEmails } = await import("./emailService");
-        const { campaignQueryLocations } = await import("../drizzle/schema");
-        const { eq: eqOp } = await import("drizzle-orm");
-        const db = await getDb();
 
-        const winsWithVideos = await Promise.all(report.wins.map(async (win) => {
-          let beforeVideoChatgpt: string | undefined;
-          let beforeVideoGoogleAi: string | undefined;
-          let afterVideoChatgpt: string | undefined;
-          let afterVideoGoogleAi: string | undefined;
-
-          if (win.queryLocationId && db) {
-            const [ql] = await db
-              .select()
-              .from(campaignQueryLocations)
-              .where(eqOp(campaignQueryLocations.id, win.queryLocationId))
-              .limit(1);
-            if (ql) {
-              beforeVideoChatgpt = (ql as any).beforeVideoChatgpt ?? undefined;
-              beforeVideoGoogleAi = (ql as any).beforeVideoGoogleAi ?? undefined;
-              afterVideoChatgpt = (ql as any).afterVideoChatgpt ?? undefined;
-              afterVideoGoogleAi = (ql as any).afterVideoGoogleAi ?? undefined;
-            }
-          }
-
-          return {
-            platform: win.platform,
-            query: win.query,
-            location: win.location,
-            message: win.description,
-            significance: win.significance,
-            beforeVideoChatgpt,
-            beforeVideoGoogleAi,
-            afterVideoChatgpt,
-            afterVideoGoogleAi,
-          };
+        const winEntries = report.wins.map((win) => ({
+          platform: win.platform,
+          query: win.query,
+          location: win.location,
+          message: win.description,
+          significance: win.significance,
         }));
 
         // Calculate a simple score (% of queries where business is mentioned)
         const currentScore = report.totalWins > 0 ? Math.min(100, report.totalWins * 10) : 0;
-        await sendCampaignWinEmails(campaign.id, winsWithVideos, currentScore, null);
+        await sendCampaignWinEmails(campaign.id, winEntries, currentScore, null);
       } catch (emailErr) {
         console.error("[Win Notifications] Failed to send win email:", emailErr);
       }

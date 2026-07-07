@@ -40,7 +40,6 @@ import {
   Bot,
   Video,
   Play,
-  Film,
 } from "lucide-react";
 
 // ============= Score Color Utilities =============
@@ -252,145 +251,6 @@ function ScoreComparisonCard({
         />
       </div>
     </motion.div>
-  );
-}
-
-// ============= Before/After Video Section =============
-
-function BeforeAfterVideos({ queryDetails }: { queryDetails: any[] }) {
-  // Only show queries that have at least one video
-  const queriesWithVideos = queryDetails.filter(
-    (q) => q.beforeVideoChatgpt || q.beforeVideoGoogleAi || q.afterVideoChatgpt || q.afterVideoGoogleAi
-  );
-  if (queriesWithVideos.length === 0) return null;
-
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.25 }}
-    >
-      <h2 className="text-lg font-heading font-bold text-white mb-4 flex items-center gap-2">
-        <Film className="w-5 h-5 text-blue-400" />
-        Before &amp; After Proof
-        <span className="text-xs font-normal text-muted-foreground ml-1">
-          — AI search recordings captured at campaign start and after wins
-        </span>
-      </h2>
-      <div className="space-y-6">
-        {queriesWithVideos.map((q) => (
-          <div
-            key={q.queryLocationId}
-            className="rounded-2xl border border-white/5 bg-gradient-to-br from-white/[0.02] to-transparent p-5"
-          >
-            <div className="mb-4">
-              <p className="text-sm font-semibold text-foreground">{q.searchQuery}</p>
-              <p className="text-xs text-muted-foreground">{q.location}</p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* ChatGPT pair */}
-              {(q.beforeVideoChatgpt || q.afterVideoChatgpt) && (
-                <>
-                  {q.beforeVideoChatgpt && (
-                    <VideoCard
-                      url={q.beforeVideoChatgpt}
-                      label="Before"
-                      platform="ChatGPT"
-                      platformColor="#22c55e"
-                      icon={Bot}
-                    />
-                  )}
-                  {q.afterVideoChatgpt && (
-                    <VideoCard
-                      url={q.afterVideoChatgpt}
-                      label="After"
-                      platform="ChatGPT"
-                      platformColor="#22c55e"
-                      icon={Bot}
-                    />
-                  )}
-                </>
-              )}
-              {/* Google AI pair */}
-              {(q.beforeVideoGoogleAi || q.afterVideoGoogleAi) && (
-                <>
-                  {q.beforeVideoGoogleAi && (
-                    <VideoCard
-                      url={q.beforeVideoGoogleAi}
-                      label="Before"
-                      platform="Google AI"
-                      platformColor="#f97316"
-                      icon={Eye}
-                    />
-                  )}
-                  {q.afterVideoGoogleAi && (
-                    <VideoCard
-                      url={q.afterVideoGoogleAi}
-                      label="After"
-                      platform="Google AI"
-                      platformColor="#f97316"
-                      icon={Eye}
-                    />
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </motion.section>
-  );
-}
-
-function VideoCard({
-  url,
-  label,
-  platform,
-  platformColor,
-  icon: Icon,
-}: {
-  url: string;
-  label: "Before" | "After";
-  platform: string;
-  platformColor: string;
-  icon: React.ElementType;
-}) {
-  const isAfter = label === "After";
-  return (
-    <div className="rounded-xl border border-white/5 bg-white/[0.02] overflow-hidden">
-      {/* Header */}
-      <div
-        className="flex items-center gap-2 px-3 py-2"
-        style={{ background: `${platformColor}18`, borderBottom: `1px solid ${platformColor}30` }}
-      >
-        <Icon className="w-3.5 h-3.5" style={{ color: platformColor }} />
-        <span className="text-xs font-bold" style={{ color: platformColor }}>{platform}</span>
-        <span
-          className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${
-            isAfter
-              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-              : "bg-gray-500/20 text-gray-400 border border-gray-500/30"
-          }`}
-        >
-          {label.toUpperCase()}
-        </span>
-      </div>
-      {/* Video */}
-      <div className="relative bg-black aspect-video">
-        <video
-          src={url}
-          controls
-          preload="metadata"
-          className="w-full h-full object-contain"
-          style={{ maxHeight: "220px" }}
-        />
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 hover:opacity-100 transition-opacity">
-          <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-sm">
-            <Play className="w-5 h-5 text-white ml-0.5" />
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -759,9 +619,6 @@ export default function ClientDashboard() {
             </div>
           </motion.section>
         )}
-
-        {/* Before/After Videos */}
-        <BeforeAfterVideos queryDetails={report.queryDetails} />
 
         {/* Wins Section */}
         {report.recentWins.length > 0 && (

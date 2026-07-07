@@ -117,10 +117,6 @@ export interface WinEmailData {
     location: string;
     message: string;
     significance: "minor" | "moderate" | "major" | "breakthrough";
-    beforeVideoChatgpt?: string;
-    beforeVideoGoogleAi?: string;
-    afterVideoChatgpt?: string;
-    afterVideoGoogleAi?: string;
   }>;
   currentScore: number;
   previousScore: number | null;
@@ -177,8 +173,6 @@ export interface BaselineVisibilityEmailData {
   notRankingQueries: Array<{
     query: string;
     location: string;
-    beforeVideoChatgpt?: string;
-    beforeVideoGoogleAi?: string;
   }>;
   alreadyRankingQueries: Array<{
     query: string;
@@ -197,8 +191,6 @@ export interface PackageUpgradeEmailData {
   newBaselineQueries: Array<{
     query: string;
     location: string;
-    beforeVideoChatgpt?: string;
-    beforeVideoGoogleAi?: string;
   }>;
 }
 
@@ -401,35 +393,6 @@ function baseTemplate(content: string, preheader: string = "", wl: WhiteLabelSet
       font-size: 13px;
       color: #64748b;
       margin: 0 0 18px;
-    }
-
-    .video-btn-row {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 14px;
-    }
-
-    .video-btn {
-      display: inline-block;
-      padding: 9px 18px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      text-decoration: none;
-    }
-
-    .video-btn-before {
-      background: rgba(59, 130, 246, 0.15);
-      color: #93c5fd;
-      border: 1px solid rgba(59, 130, 246, 0.3);
-    }
-
-    .video-btn-after {
-      background: rgba(34, 197, 94, 0.15);
-      color: #86efac;
-      border: 1px solid rgba(34, 197, 94, 0.3);
     }
 
     /* ── Baseline Query Card ── */
@@ -684,26 +647,13 @@ function buildWinEmailHtml(data: WinEmailData, wl: WhiteLabelSettings): string {
 
     const headline = buildWinHeadline(win, data.businessName);
 
-    // Video buttons
-    const beforeBtns: string[] = [];
-    const afterBtns: string[] = [];
-    if (win.beforeVideoChatgpt)  beforeBtns.push(`<a href="${win.beforeVideoChatgpt}"  class="video-btn video-btn-before" style="display:inline-block;padding:9px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);">&#9654; Before — ChatGPT</a>`);
-    if (win.beforeVideoGoogleAi) beforeBtns.push(`<a href="${win.beforeVideoGoogleAi}" class="video-btn video-btn-before" style="display:inline-block;padding:9px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);">&#9654; Before — Google AI</a>`);
-    if (win.afterVideoChatgpt)   afterBtns.push(`<a href="${win.afterVideoChatgpt}"   class="video-btn video-btn-after"  style="display:inline-block;padding:9px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);">&#9654; After — ChatGPT</a>`);
-    if (win.afterVideoGoogleAi)  afterBtns.push(`<a href="${win.afterVideoGoogleAi}"  class="video-btn video-btn-after"  style="display:inline-block;padding:9px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);">&#9654; After — Google AI</a>`);
 
-    const videosHtml = (beforeBtns.length > 0 || afterBtns.length > 0) ? `
-      <div style="margin-top:14px;">
-        ${beforeBtns.length > 0 ? `<div style="margin-bottom:8px;"><span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">Before:</span><br/><div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">${beforeBtns.join("")}</div></div>` : ""}
-        ${afterBtns.length > 0  ? `<div><span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">After:</span><br/><div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">${afterBtns.join("")}</div></div>` : ""}
-      </div>` : "";
 
     return `
     <div class="win-hero" style="background:linear-gradient(135deg,#0d2137 0%,#0f172a 100%);border:2px solid rgba(34,197,94,0.4);border-radius:14px;padding:28px 24px;margin:16px 0;text-align:center;">
       <div class="win-hero-badge ${win.significance}" style="display:inline-block;background:rgba(34,197,94,0.15);color:#22c55e;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;padding:4px 14px;border-radius:20px;margin-bottom:14px;">${badgeLabel}</div>
       <p class="win-hero-headline" style="font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;margin:0 0 10px;letter-spacing:-0.02em;">${headline}</p>
       <p class="win-hero-sub" style="font-size:13px;color:#64748b;margin:0;">${win.platform} &bull; ${win.location}</p>
-      ${videosHtml}
     </div>`;
   }).join("");
 
@@ -758,14 +708,11 @@ function buildAgencyWinEmailHtml(data: AgencyWinEmailData, wl: WhiteLabelSetting
     : "";
 
   const winsHtml = data.wins.slice(0, 5).map((win) => {
-    const afterBtns: string[] = [];
-    if (win.afterVideoChatgpt)  afterBtns.push(`<a href="${win.afterVideoChatgpt}"  style="display:inline-block;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;text-decoration:none;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);">&#9654; ChatGPT Proof</a>`);
-    if (win.afterVideoGoogleAi) afterBtns.push(`<a href="${win.afterVideoGoogleAi}" style="display:inline-block;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;text-decoration:none;background:rgba(34,197,94,0.15);color:#86efac;border:1px solid rgba(34,197,94,0.3);">&#9654; Google AI Proof</a>`);
     return `
     <div style="background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:16px 20px;margin:10px 0;">
       <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#f1f5f9;">${win.query}</p>
       <p style="margin:0 0 8px;font-size:12px;color:#64748b;">${win.platform} &bull; ${win.location}</p>
-      ${afterBtns.length > 0 ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${afterBtns.join("")}</div>` : ""}
+
     </div>`;
   }).join("");
 
@@ -825,21 +772,11 @@ export async function sendAgencyWinNotificationEmail(data: AgencyWinEmailData): 
 
 function buildBaselineVisibilityEmailHtml(data: BaselineVisibilityEmailData, wl: WhiteLabelSettings): string {
   const queryRows = data.notRankingQueries.map((q) => {
-    const beforeBtns: string[] = [];
-    if (q.beforeVideoChatgpt) {
-      beforeBtns.push(`<a href="${q.beforeVideoChatgpt}" style="display:inline-block;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);">&#9654; Watch ChatGPT Scan</a>`);
-    }
-    if (q.beforeVideoGoogleAi) {
-      beforeBtns.push(`<a href="${q.beforeVideoGoogleAi}" style="display:inline-block;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);">&#9654; Watch Google AI Scan</a>`);
-    }
     return `
       <div class="query-card" style="background:rgba(15,23,42,0.7);border:1px solid rgba(59,130,246,0.15);border-radius:12px;padding:20px;margin:10px 0;">
         <p class="query-card-title" style="font-size:16px;font-weight:700;color:#f1f5f9;margin:0 0 4px;">&ldquo;${q.query}&rdquo;</p>
         <p class="query-card-loc" style="font-size:12px;color:#64748b;margin:0 0 14px;">&#128205; ${q.location} &nbsp;&bull;&nbsp; Not yet appearing in AI results</p>
-        ${beforeBtns.length > 0
-          ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${beforeBtns.join("")}</div>`
-          : `<p style="font-size:12px;color:#475569;margin:0;">No video recorded yet</p>`
-        }
+
       </div>`;
   }).join("\n");
 
@@ -863,9 +800,9 @@ function buildBaselineVisibilityEmailHtml(data: BaselineVisibilityEmailData, wl:
       <p style="font-size:14px;color:#94a3b8;margin:0;">${data.notRankingQueries.length} quer${data.notRankingQueries.length === 1 ? "y" : "ies"} where you're not yet appearing</p>
     </div>
 
-    <p>We ran live scans on <strong>ChatGPT</strong> and <strong>Google AI</strong> for every query and location in your campaign. Click the videos below to see exactly what happens when someone searches for your services right now.</p>
+    <p>We ran live AI scans on <strong>ChatGPT</strong>, <strong>Gemini</strong>, and <strong>Google AI Overview</strong> for every query and location in your campaign.</p>
 
-    <p><strong>That's about to change.</strong> Watch these videos, then check your dashboard over the coming days as your name starts showing up.</p>
+    <p><strong>That's about to change.</strong> Check your dashboard over the coming days as your name starts showing up.</p>
 
     <h2 style="font-size:16px;margin-top:24px;">Queries Where You're Not Yet Ranking</h2>
     ${queryRows || "<p style='color:#94a3b8;'>All queries are already ranking — great starting position!</p>"}
@@ -880,7 +817,7 @@ function buildBaselineVisibilityEmailHtml(data: BaselineVisibilityEmailData, wl:
     ` : ""}
 
     <div class="divider"></div>
-    <p style="font-size:13px;color:#64748b;">Every time your name appears in a new AI result, you'll get an email with a before-and-after video showing the change. Most clients start seeing results within 7–14 days.</p>
+    <p style="font-size:13px;color:#64748b;">Every time your name appears in a new AI result, you'll get an email notification. Most clients start seeing results within 7–14 days.</p>
   `;
 
   return baseTemplate(content, `${data.businessName} AI Visibility Baseline — here's where you stand today.`, wl);
@@ -890,21 +827,11 @@ function buildBaselineVisibilityEmailHtml(data: BaselineVisibilityEmailData, wl:
 
 function buildPackageUpgradeEmailHtml(data: PackageUpgradeEmailData, wl: WhiteLabelSettings): string {
   const newQueryRows = data.newBaselineQueries.map((q) => {
-    const beforeBtns: string[] = [];
-    if (q.beforeVideoChatgpt) {
-      beforeBtns.push(`<a href="${q.beforeVideoChatgpt}" style="display:inline-block;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);">&#9654; Watch ChatGPT Scan</a>`);
-    }
-    if (q.beforeVideoGoogleAi) {
-      beforeBtns.push(`<a href="${q.beforeVideoGoogleAi}" style="display:inline-block;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);">&#9654; Watch Google AI Scan</a>`);
-    }
     return `
       <div class="query-card" style="background:rgba(15,23,42,0.7);border:1px solid rgba(59,130,246,0.15);border-radius:12px;padding:20px;margin:10px 0;">
         <p class="query-card-title" style="font-size:16px;font-weight:700;color:#f1f5f9;margin:0 0 4px;">&ldquo;${q.query}&rdquo;</p>
         <p class="query-card-loc" style="font-size:12px;color:#64748b;margin:0 0 14px;">&#128205; ${q.location} &nbsp;&bull;&nbsp; Baseline scan complete</p>
-        ${beforeBtns.length > 0
-          ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${beforeBtns.join("")}</div>`
-          : `<p style="font-size:12px;color:#475569;margin:0;">Scan video processing…</p>`
-        }
+
       </div>`;
   }).join("\n");
 

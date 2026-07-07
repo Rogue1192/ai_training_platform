@@ -458,16 +458,7 @@ export const campaignQueryLocations = pgTable("campaignQueryLocations", {
   nextPollAt: timestamp("nextPollAt"),                                        // When to next run the LLM poll (24h after run, or weekly in monitoring)
   monitoringStartedAt: timestamp("monitoringStartedAt"),                     // When combo entered weekly monitoring state
   lastMonitoringPollAt: timestamp("lastMonitoringPollAt"),                   // Last weekly monitoring poll timestamp
-  beforeVideoCapturedAt: timestamp("beforeVideoCapturedAt"),                 // Set once when before video is captured at campaign start
   // Before/after scan video + screenshot URLs (uploaded to Supabase Storage)
-  beforeVideoChatgpt: text("beforeVideoChatgpt"),              // "Before" video on ChatGPT
-  beforeVideoGoogleAi: text("beforeVideoGoogleAi"),            // "Before" video on Google AI
-  beforeScreenshotChatgpt: text("beforeScreenshotChatgpt"),    // "Before" screenshot on ChatGPT
-  beforeScreenshotGoogleAi: text("beforeScreenshotGoogleAi"),  // "Before" screenshot on Google AI
-  afterVideoChatgpt: text("afterVideoChatgpt"),                // "After" video on ChatGPT (set on first win)
-  afterVideoGoogleAi: text("afterVideoGoogleAi"),              // "After" video on Google AI (set on first win)
-  afterScreenshotChatgpt: text("afterScreenshotChatgpt"),      // "After" screenshot on ChatGPT (set on first win)
-  afterScreenshotGoogleAi: text("afterScreenshotGoogleAi"),    // "After" screenshot on Google AI (set on first win)
   /**
    * true  = this location was explicitly set as a target in the client’s package (default)
    * false = bonus win — the business appeared in a location NOT in their target list

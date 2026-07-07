@@ -208,28 +208,6 @@ async function runExpandedBaselineAfterUpgrade(
 
     console.log(`[TrialManager] ${newQls.length} new query-locations added for campaign ${campaignId}`);
 
-    // ── Record "before" baseline videos for new queries ────────────────────
-    if (newQls.length > 0) {
-      try {
-        const { recordBaselineVideos } = await import("./scanVideoRecorder");
-        await recordBaselineVideos(
-          campaignId,
-          newQls.map((ql) => ({
-            id: ql.id,
-            searchQuery: ql.searchQuery,
-            location: ql.location,
-          }))
-        );
-        console.log(`[TrialManager] Baseline videos recorded for ${newQls.length} new queries`);
-      } catch (videoErr: any) {
-        console.error(`[TrialManager] Baseline video recording failed (non-fatal):`, videoErr.message);
-      }
-    }
-
-    // ── Fetch updated query-locations (with video URLs) ────────────────────
-    const updatedQls = await getQueryLocationsByCampaignId(campaignId);
-    const updatedMap = new Map(updatedQls.map((q) => [q.id, q]));
-
     // ── Get dashboard URL ──────────────────────────────────────────────────
     const [dashboard] = await db
       .select()
@@ -251,15 +229,10 @@ async function runExpandedBaselineAfterUpgrade(
       maxQueries: tier.maxQueries,
       maxLocations: tier.maxLocations,
       dashboardUrl,
-      newBaselineQueries: newQls.map((ql) => {
-        const updated = updatedMap.get(ql.id);
-        return {
-          query: ql.searchQuery,
-          location: ql.location,
-          beforeVideoChatgpt: updated?.beforeVideoChatgpt || undefined,
-          beforeVideoGoogleAi: updated?.beforeVideoGoogleAi || undefined,
-        };
-      }),
+      newBaselineQueries: newQls.map((ql) => ({
+        query: ql.searchQuery,
+        location: ql.location,
+      })),
     });
 
     console.log(`[TrialManager] Package upgrade email sent to ${business.contactEmail} for campaign ${campaignId}`);

@@ -779,7 +779,16 @@ export function startScheduler(): void {
     });
   }, 24 * 60 * 60 * 1000);
 
-  // Check for campaigns ready for training kickoff (2-day indexing wait) — runs every 6 hours
+  // Auto-advance indexing_verification every 3 minutes — Monkey Indexer makes URLs
+  // accessible almost immediately after submission, so we poll frequently and advance
+  // to training as soon as 80%+ of URLs are reachable.
+  checkPendingIndexingVerifications().catch((err: Error) => console.error("[Scheduler] Indexing verification check failed:", err));
+  setInterval(() => {
+    checkPendingIndexingVerifications().catch((err: Error) => console.error("[Scheduler] Indexing verification check failed:", err));
+  }, 3 * 60 * 1000); // every 3 minutes
+
+  // Check for campaigns ready for training kickoff — runs every 6 hours.
+  // Catches any campaigns that slipped through the indexing_verification auto-advance.
   checkPendingTrainingKickoffs().catch((err: Error) => console.error("[Scheduler] Training kickoff check failed:", err));
   setInterval(() => {
     checkPendingTrainingKickoffs().catch((err: Error) => console.error("[Scheduler] Training kickoff check failed:", err));
@@ -806,38 +815,85 @@ export function startScheduler(): void {
 }
 
 /**
- * Check for campaigns that are ready to begin training.
+ * Auto-advance campaigns stuck in indexing_verification.
  *
- * Logic: indexingSubmittedAt is set (indexing was submitted), trainingStartedAt is null
- * (training has not started yet), and at least 2 days have passed since indexing submission
- * to give the links time to index before training begins.
+ * Monkey Indexer makes URLs accessible within minutes of submission.
+ * This runs every 3 minutes and calls verifyCampaignIndexing for any campaign
+ * that has submitted indexing but not yet verified it. Once 80%+ of URLs are
+ * accessible, verifyCampaignIndexing sets indexingVerifiedAt and advances
+ * the campaign status to training automatically.
+ */
+export async function checkPendingIndexingVerifications(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    // Find campaigns that have submitted indexing but not yet verified
+    const pendingCampaigns = await db
+      .select()
+      .from(campaigns)
+      .where(
+        and(
+          sql`${campaigns.indexingSubmittedAt} IS NOT NULL`,
+          isNull(campaigns.indexingVerifiedAt)
+        )
+      );
+
+    if (pendingCampaigns.length === 0) return;
+
+    const { verifyCampaignIndexing } = await import('./monkeyIndexer');
+    const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
+    const ownerId = adminUsers[0]?.id ?? 0;
+
+    for (const campaign of pendingCampaigns) {
+      try {
+        const result = await verifyCampaignIndexing(campaign.id);
+        if (result.verified) {
+          console.log(`[Scheduler] Indexing verified for campaign ${campaign.id} (${result.accessibleUrls}/${result.totalUrls} URLs accessible) — advancing to training`);
+          // verifyCampaignIndexing already set indexingVerifiedAt and status="baseline_check" (legacy).
+          // Now run the training step to complete the pipeline.
+          const { runPipelineStep } = await import('./pipelineOrchestrator');
+          const trainResult = await runPipelineStep(campaign.id, 'training', ownerId);
+          console.log(`[Scheduler] Training kickoff for campaign ${campaign.id}: ${trainResult.message}`);
+        }
+      } catch (err: any) {
+        console.error(`[Scheduler] Indexing verification failed for campaign ${campaign.id}:`, err.message);
+      }
+    }
+  } catch (err: any) {
+    console.error('[Scheduler] checkPendingIndexingVerifications error:', err.message);
+  }
+}
+
+/**
+ * Check for campaigns that are ready to begin training (safety net).
  *
- * Runs once per day. Finds qualifying campaigns and executes the "training" pipeline step
- * for each, which auto-creates the training session and sets aggressive mode.
+ * Logic: indexingVerifiedAt is set but trainingStartedAt is null.
+ * This is a fallback for campaigns that slipped through the 3-minute
+ * indexing verification poller.
+ *
+ * Runs every 6 hours.
  */
 export async function checkPendingTrainingKickoffs(): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
-  const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-
   try {
-    // Find campaigns where indexing was submitted 2+ days ago but training hasn't started
+    // Find campaigns where indexing is verified but training hasn't started
     const readyCampaigns = await db
       .select()
       .from(campaigns)
       .where(
         and(
-          isNull(campaigns.trainingStartedAt),
-          lt(campaigns.indexingSubmittedAt, twoDaysAgo)
+          sql`${campaigns.indexingVerifiedAt} IS NOT NULL`,
+          isNull(campaigns.trainingStartedAt)
         )
       );
 
     if (readyCampaigns.length === 0) return;
 
-    console.log(`[Scheduler] Found ${readyCampaigns.length} campaign(s) ready for training kickoff (2-day indexing wait elapsed)`);
+    console.log(`[Scheduler] Found ${readyCampaigns.length} campaign(s) ready for training kickoff (indexing verified, training not started)`);
 
-    // Get an admin user to own the auto-created training sessions
     const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
     const ownerId = adminUsers[0]?.id ?? 0;
 
@@ -845,7 +901,7 @@ export async function checkPendingTrainingKickoffs(): Promise<void> {
 
     for (const campaign of readyCampaigns) {
       try {
-        console.log(`[Scheduler] Kicking off training for campaign ${campaign.id} (indexing submitted ${campaign.indexingSubmittedAt?.toISOString()})`);
+        console.log(`[Scheduler] Kicking off training for campaign ${campaign.id} (indexing verified ${campaign.indexingVerifiedAt?.toISOString()})`);
         const result = await runPipelineStep(campaign.id, 'training', ownerId);
         console.log(`[Scheduler] Training kickoff for campaign ${campaign.id}: ${result.message}`);
       } catch (err: any) {
