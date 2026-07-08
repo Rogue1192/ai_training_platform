@@ -186,8 +186,15 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
       ? await getPackageTierById(campaign.packageTierId)
       : null;
 
-    const maxQueries = packageTier?.maxQueries || 5;
-    const maxLocations = packageTier?.maxLocations || 3;
+    // New query-budget model: maxQuerySlots is the total number of query-location pairs allowed.
+    // Fall back to the legacy maxQueries * maxLocations calculation for older tiers without maxQuerySlots.
+    const maxQuerySlots = campaign.maxQuerySlots || packageTier?.maxQuerySlots || (packageTier ? packageTier.maxQueries * packageTier.maxLocations : 15);
+    // For keyword generation, use all unique query slots (we'll distribute across locations below)
+    const allLocations = business.location ? parseLocations(business.location) : [];
+    const numLocations = Math.max(allLocations.length, 1);
+    // How many unique keyword topics to generate = ceil(budget / locations)
+    const maxQueries = Math.ceil(maxQuerySlots / numLocations);
+    const maxLocations = allLocations.length; // use all provided locations
 
     // Check if query-locations already exist (e.g., from webhook with pre-set queries)
     const existingQLs = await getQueryLocationsByCampaignId(campaignId);
@@ -271,13 +278,7 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
 
     // Step 4: Build query×location matrix
     // Get locations from the business record
-    const locations: string[] = [];
-    if (business.location) {
-      // Parse the ";"-delimited location string (legacy "City, ST" comma
-      // fallback handled in shared/location.ts) into individual locations.
-      const parsed = parseLocations(business.location);
-      locations.push(...parsed.slice(0, maxLocations));
-    }
+    const locations: string[] = allLocations;
 
     // If no locations found, we can't build the matrix
     if (locations.length === 0) {
@@ -294,10 +295,12 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
       };
     }
 
-    // Build the matrix
+    // Build the matrix — cap total pairs at maxQuerySlots
     const entries = [];
-    for (const kw of topKeywords) {
+    let slotsUsed = 0;
+    outer: for (const kw of topKeywords) {
       for (const location of locations) {
+        if (slotsUsed >= maxQuerySlots) break outer;
         entries.push({
           campaignId,
           searchQuery: kw.keyword,
@@ -306,6 +309,7 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
           trainingStatus: "pending" as const,
           trainingSessions: 0,
         });
+        slotsUsed++;
       }
     }
 

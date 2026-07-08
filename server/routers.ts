@@ -246,6 +246,8 @@ export const appRouter = router({
             const { getBusinessById } = await import('./db');
             const biz = await getBusinessById(business.id);
             if (!biz) return;
+            // Resolve query-slot budget from tier (new model)
+            const resolvedMaxQuerySlots = tier.maxQuerySlots || (tier.maxQueries * tier.maxLocations);
             // Create campaign
             const campaign = await createCampaign({
               userId: ownerId,
@@ -260,6 +262,7 @@ export const appRouter = router({
               trialStatus: 'trial',
               maxQueries: tier.maxQueries,
               maxLocations: tier.maxLocations,
+              maxQuerySlots: resolvedMaxQuerySlots,
               selectedPackage: packageTier,
             });
             // Initialize trial

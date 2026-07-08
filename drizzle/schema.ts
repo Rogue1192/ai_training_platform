@@ -363,8 +363,9 @@ export const packageTiers = pgTable("packageTiers", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 100 }).notNull(), // e.g., "Starter", "Growth", "Pro", "Enterprise"
   slug: varchar("slug", { length: 50 }).notNull().unique(), // e.g., "starter", "growth", "pro", "enterprise"
-  maxQueries: integer("maxQueries").notNull(), // Max search queries allowed
-  maxLocations: integer("maxLocations").notNull(), // Max locations allowed
+  maxQueries: integer("maxQueries").notNull(), // Max search queries allowed (legacy)
+  maxLocations: integer("maxLocations").notNull(), // Max locations allowed (legacy)
+  maxQuerySlots: integer("maxQuerySlots").notNull().default(15), // Total query-location pairs budget (new model: Starter=15, Growth=30, Pro=50)
   description: text("description"),
   monthlyPrice: integer("monthlyPrice"), // Price in cents (for reference, not billing)
   isActive: boolean("isActive").default(true).notNull(),
@@ -416,8 +417,9 @@ export const campaigns = pgTable("campaigns", {
   // Package tier selected during onboarding (from GHL webhook)
   // e.g., 'starter_5loc' | 'growth_5loc' | 'pro_5loc' | 'starter_10loc' | 'growth_10loc' | 'pro_10loc'
   selectedPackage: varchar("selectedPackage", { length: 50 }),
-  maxQueries: integer("maxQueries").default(5).notNull(),   // Trial: 5, paid: per package
-  maxLocations: integer("maxLocations").default(3).notNull(), // Trial: 3, paid: per package
+  maxQueries: integer("maxQueries").default(5).notNull(),   // Trial: 5, paid: per package (legacy)
+  maxLocations: integer("maxLocations").default(3).notNull(), // Trial: 3, paid: per package (legacy)
+  maxQuerySlots: integer("maxQuerySlots").default(15).notNull(), // Total query-location pairs budget (new model)
   // Stripe
   stripePaymentLinkSentAt: timestamp("stripePaymentLinkSentAt"),
   stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),

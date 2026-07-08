@@ -184,8 +184,9 @@ export interface PackageUpgradeEmailData {
   contactName: string;
   contactEmail: string;
   packageName: string;
-  maxQueries: number;
-  maxLocations: number;
+  maxQuerySlots?: number;  // New model: total query-location slots
+  maxQueries?: number;    // Legacy
+  maxLocations?: number;  // Legacy
   dashboardUrl?: string;
   newBaselineQueries: Array<{
     query: string;
@@ -838,7 +839,7 @@ function buildPackageUpgradeEmailHtml(data: PackageUpgradeEmailData, wl: WhiteLa
     <div style="background:linear-gradient(135deg,#0d2137 0%,#0f172a 100%);border:2px solid rgba(34,197,94,0.4);border-radius:14px;padding:28px 24px;margin:0 0 24px;text-align:center;">
       <div style="display:inline-block;background:rgba(34,197,94,0.15);color:#22c55e;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;padding:4px 14px;border-radius:20px;margin-bottom:14px;">&#127942; Full Package Activated</div>
       <p style="font-size:26px;font-weight:800;color:#ffffff;line-height:1.3;margin:0 0 10px;letter-spacing:-0.02em;">${data.businessName} is now on the <span style="color:#22c55e;">${data.packageName}</span></p>
-      <p style="font-size:14px;color:#94a3b8;margin:0;">${data.maxQueries} queries &times; ${data.maxLocations} locations — full coverage activated</p>
+      <p style="font-size:14px;color:#94a3b8;margin:0;">${data.maxQuerySlots ? `${data.maxQuerySlots} query-location slots` : `${data.maxQueries} queries × ${data.maxLocations} locations`} — full coverage activated</p>
     </div>
 
     <h1>Your Full Package Has Started</h1>
@@ -858,7 +859,7 @@ function buildPackageUpgradeEmailHtml(data: PackageUpgradeEmailData, wl: WhiteLa
     ` : ""}
 
     <div class="divider"></div>
-    <p style="font-size:13px;color:#64748b;">Your expanded training is now running across all ${data.maxQueries} queries and ${data.maxLocations} locations. You'll receive win notifications as each new query starts appearing in AI results.</p>
+    <p style="font-size:13px;color:#64748b;">Your expanded training is now running across all ${data.maxQuerySlots ? `${data.maxQuerySlots} query-location slots` : `${data.maxQueries} queries and ${data.maxLocations} locations`}. You'll receive win notifications as each new query starts appearing in AI results.</p>
   `;
 
   return baseTemplate(content, `${data.businessName} — your full ${data.packageName} package is now active!`, wl);

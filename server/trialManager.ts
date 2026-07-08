@@ -4,21 +4,18 @@
  * 14-day risk-free trial logic.
  *
  * Flow:
- *  1. Client onboards via GHL → onboarding webhook → trial starts (5q × 3loc)
+ *  1. Client onboards via GHL → onboarding webhook → trial starts (15 query slots)
  *  2. Day 14 arrives → system automatically upgrades to their selected package
  *     (no manual action, no payment confirmation needed — GHL handles billing)
- *  3. After upgrade, run baseline scans for NEW queries/locations (beyond the 5×3 trial set)
+ *  3. After upgrade, run baseline scans for NEW query-location pairs (beyond the trial set)
  *     and send a "Your Full Package Has Started" email with before-videos for all new queries.
  *  4. ONLY exception: if GHL sends a cancellation webhook before day 14,
  *     the campaign stops and no upgrade happens.
  *
- * Package tier mapping (from GHL webhook `selectedPackage` field):
- *  starter_5loc  → 5 queries × 5 locations  → $697/mo
- *  growth_5loc   → 8 queries × 5 locations  → $797/mo
- *  pro_5loc      → 10 queries × 5 locations → $897/mo
- *  starter_10loc → 5 queries × 10 locations → $1,097/mo
- *  growth_10loc  → 8 queries × 10 locations → $1,297/mo
- *  pro_10loc     → 10 queries × 10 locations → $1,497/mo
+ * Package tier mapping (from GHL webhook `selectedPackage` field or packageTierSlug):
+ *  starter → 15 query-location slots  → $199/mo (direct) / $99/mo (white-label)
+ *  growth  → 30 query-location slots  → $299/mo (direct) / $149/mo (white-label)
+ *  pro     → 50 query-location slots  → $349/mo (direct) / $179/mo (white-label)
  */
 
 import { getDb } from "./db";
@@ -30,22 +27,27 @@ import { eq } from "drizzle-orm";
 export interface PackageTier {
   id: string;
   name: string;
-  maxQueries: number;
-  maxLocations: number;
-  monthlyPrice: number;
+  maxQuerySlots: number;  // Total query-location pairs budget (new model)
+  maxQueries: number;     // Legacy: kept for backward compat
+  maxLocations: number;   // Legacy: kept for backward compat
+  monthlyPriceDirect: number;     // Retail/direct client price (cents)
+  monthlyPriceWhiteLabel: number; // Agency wholesale price (cents)
 }
 
 export const PACKAGE_TIERS: Record<string, PackageTier> = {
-  // Trial (default for all new campaigns)
-  trial: { id: "trial", name: "14-Day Trial", maxQueries: 5, maxLocations: 3, monthlyPrice: 0 },
-  // Territory Control (5 locations)
-  starter_5loc:  { id: "starter_5loc",  name: "Starter — Territory Control",  maxQueries: 5,  maxLocations: 5,  monthlyPrice: 697  },
-  growth_5loc:   { id: "growth_5loc",   name: "Growth — Territory Control",   maxQueries: 8,  maxLocations: 5,  monthlyPrice: 797  },
-  pro_5loc:      { id: "pro_5loc",      name: "Pro — Territory Control",      maxQueries: 10, maxLocations: 5,  monthlyPrice: 897  },
-  // Market Dominance (10 locations)
-  starter_10loc: { id: "starter_10loc", name: "Starter — Market Dominance",   maxQueries: 5,  maxLocations: 10, monthlyPrice: 1097 },
-  growth_10loc:  { id: "growth_10loc",  name: "Growth — Market Dominance",    maxQueries: 8,  maxLocations: 10, monthlyPrice: 1297 },
-  pro_10loc:     { id: "pro_10loc",     name: "Pro — Market Dominance",       maxQueries: 10, maxLocations: 10, monthlyPrice: 1497 },
+  // Trial (default for all new campaigns) — 15 slots, same as Starter
+  trial:   { id: "trial",   name: "14-Day Trial", maxQuerySlots: 15, maxQueries: 5,  maxLocations: 3,  monthlyPriceDirect: 0,     monthlyPriceWhiteLabel: 0     },
+  // Current tier slugs (new query-budget model)
+  starter: { id: "starter", name: "Starter",      maxQuerySlots: 15, maxQueries: 5,  maxLocations: 3,  monthlyPriceDirect: 19900, monthlyPriceWhiteLabel: 9900  },
+  growth:  { id: "growth",  name: "Growth",       maxQuerySlots: 30, maxQueries: 6,  maxLocations: 5,  monthlyPriceDirect: 29900, monthlyPriceWhiteLabel: 14900 },
+  pro:     { id: "pro",     name: "Pro",          maxQuerySlots: 50, maxQueries: 10, maxLocations: 5,  monthlyPriceDirect: 34900, monthlyPriceWhiteLabel: 17900 },
+  // Legacy tier slugs (kept for backward compat with existing campaigns)
+  starter_5loc:  { id: "starter_5loc",  name: "Starter — Territory Control",  maxQuerySlots: 25, maxQueries: 5,  maxLocations: 5,  monthlyPriceDirect: 69700, monthlyPriceWhiteLabel: 9900  },
+  growth_5loc:   { id: "growth_5loc",   name: "Growth — Territory Control",   maxQuerySlots: 40, maxQueries: 8,  maxLocations: 5,  monthlyPriceDirect: 79700, monthlyPriceWhiteLabel: 14900 },
+  pro_5loc:      { id: "pro_5loc",      name: "Pro — Territory Control",      maxQuerySlots: 50, maxQueries: 10, maxLocations: 5,  monthlyPriceDirect: 89700, monthlyPriceWhiteLabel: 17900 },
+  starter_10loc: { id: "starter_10loc", name: "Starter — Market Dominance",   maxQuerySlots: 50, maxQueries: 5,  maxLocations: 10, monthlyPriceDirect: 109700, monthlyPriceWhiteLabel: 9900 },
+  growth_10loc:  { id: "growth_10loc",  name: "Growth — Market Dominance",    maxQuerySlots: 80, maxQueries: 8,  maxLocations: 10, monthlyPriceDirect: 129700, monthlyPriceWhiteLabel: 14900 },
+  pro_10loc:     { id: "pro_10loc",     name: "Pro — Market Dominance",       maxQuerySlots: 100, maxQueries: 10, maxLocations: 10, monthlyPriceDirect: 149700, monthlyPriceWhiteLabel: 17900 },
 };
 
 export const TRIAL_DURATION_DAYS = 14;
@@ -74,6 +76,7 @@ export async function initializeTrial(
       trialExpiresAt: upgradeAt, // At this date, auto-upgrade fires
       maxQueries: PACKAGE_TIERS.trial.maxQueries,
       maxLocations: PACKAGE_TIERS.trial.maxLocations,
+      maxQuerySlots: PACKAGE_TIERS.trial.maxQuerySlots,
       selectedPackage: selectedPackage || null,
       updatedAt: now,
     })
@@ -130,8 +133,8 @@ export async function autoUpgradeTrial(
   const db = await getDb();
   if (!db) return;
 
-  const packageKey = selectedPackage || "growth_5loc";
-  const tier = PACKAGE_TIERS[packageKey] || PACKAGE_TIERS.growth_5loc;
+  const packageKey = selectedPackage || "growth";
+  const tier = PACKAGE_TIERS[packageKey] || PACKAGE_TIERS.growth;
 
   // ── Step 1: Upgrade DB limits ──────────────────────────────────────────────
   await db
@@ -141,13 +144,14 @@ export async function autoUpgradeTrial(
       trialConvertedAt: new Date(),
       maxQueries: tier.maxQueries,
       maxLocations: tier.maxLocations,
+      maxQuerySlots: tier.maxQuerySlots,
       selectedPackage: packageKey,
       status: "training",
       updatedAt: new Date(),
     })
     .where(eq(campaigns.id, campaignId));
 
-  console.log(`[TrialManager] Campaign ${campaignId} auto-upgraded to ${tier.name} (${tier.maxQueries}q × ${tier.maxLocations}loc).`);
+  console.log(`[TrialManager] Campaign ${campaignId} auto-upgraded to ${tier.name} (${tier.maxQuerySlots} query slots).`);
 
   // ── Step 2: Run expanded baseline for NEW queries/locations (async) ────────
   runExpandedBaselineAfterUpgrade(campaignId, tier).catch((err: any) => {
@@ -226,8 +230,7 @@ async function runExpandedBaselineAfterUpgrade(
       contactName: business.contactName || business.name,
       contactEmail: business.contactEmail,
       packageName: tier.name,
-      maxQueries: tier.maxQueries,
-      maxLocations: tier.maxLocations,
+      maxQuerySlots: tier.maxQuerySlots,
       dashboardUrl,
       newBaselineQueries: newQls.map((ql) => ({
         query: ql.searchQuery,

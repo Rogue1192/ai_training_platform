@@ -47,31 +47,31 @@ const PACKAGES = [
     value: "starter" as const,
     name: "Starter",
     price: "$99/mo",
-    keywords: 5,
-    locations: 3,
+    maxQuerySlots: 15,
     totalSessions: 120,
-    suggestedRetail: "$297–$347/mo",
-    description: "5 keyword topics × 3 locations",
+    suggestedRetail: "$199/mo",
+    description: "15 query-location slots",
+    hint: "e.g. 5 keywords × 3 cities, or 15 keywords in 1 city",
   },
   {
     value: "growth" as const,
     name: "Growth",
     price: "$149/mo",
-    keywords: 5,
-    locations: 5,
-    totalSessions: 200,
-    suggestedRetail: "$397–$497/mo",
-    description: "5 keyword topics × 5 locations",
+    maxQuerySlots: 30,
+    totalSessions: 240,
+    suggestedRetail: "$299/mo",
+    description: "30 query-location slots",
+    hint: "e.g. 6 keywords × 5 cities, or 30 keywords in 1 city",
   },
   {
     value: "pro" as const,
     name: "Pro",
     price: "$179/mo",
-    keywords: 10,
-    locations: 5,
+    maxQuerySlots: 50,
     totalSessions: 400,
-    suggestedRetail: "$697–$797/mo",
-    description: "10 keyword topics × 5 locations",
+    suggestedRetail: "$349/mo",
+    description: "50 query-location slots",
+    hint: "e.g. 10 keywords × 5 cities, or 50 keywords in 1 city",
   },
 ];
 
@@ -175,9 +175,8 @@ export default function AddClientModal({
     return true;
   };
 
-  // How many location slots are filled for the current package tier
+  // Query-slot budget for the selected package
   const selectedPackage = PACKAGES.find((p) => p.value === form.packageTier)!;
-  const maxLocationsForTier = selectedPackage.locations;
   const filledLocationCount = form.locations.filter((l) => l.trim().length > 0).length;
 
   // Handle Next button — intercept on step 1 if fewer than 2 locations filled
@@ -243,18 +242,19 @@ export default function AddClientModal({
             </AlertDialogTitle>
             <AlertDialogDescription className="text-sm leading-relaxed space-y-2">
               <span className="block">
-                The <strong>{selectedPackage.name}</strong> plan supports up to{" "}
-                <strong>{maxLocationsForTier} locations</strong>. You've only entered{" "}
+                The <strong>{selectedPackage.name}</strong> plan includes{" "}
+                <strong>{selectedPackage.maxQuerySlots} query-location slots</strong>. You've only entered{" "}
                 {filledLocationCount === 0 ? "no locations" : "1 location"} so far.
               </span>
               <span className="block">
-                Each additional location multiplies the AI training coverage — the client will be
-                recommended in more cities, generating more leads. Leaving location slots empty
-                means paying for capacity that isn't being used.
+                Each additional city multiplies the AI training coverage — the client will appear
+                in more cities, generating more leads. With only 1 location, all{" "}
+                {selectedPackage.maxQuerySlots} slots target the same city instead of spreading
+                across multiple markets.
               </span>
               <span className="block font-medium text-foreground">
-                Please go back and fill in all {maxLocationsForTier} location slots to maximize
-                this client's campaign.
+                Add more service area cities to get the most out of this plan, or continue
+                with 1 location if this client only serves a single metro area.
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -355,7 +355,7 @@ export default function AddClientModal({
                     <MapPin className="h-4 w-4 text-muted-foreground" />
                     Target Locations / Service Areas
                     <span className="text-xs text-muted-foreground font-normal ml-1">
-                      (fill all slots — plan allows up to {maxLocationsForTier})
+                      ({selectedPackage.maxQuerySlots} query slots total — {selectedPackage.hint})
                     </span>
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
@@ -604,7 +604,10 @@ export default function AddClientModal({
                       </div>
                       <p className="text-lg font-bold">{pkg.price}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {pkg.keywords} keywords × {pkg.locations} locations
+                        {pkg.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground/70 italic">
+                        {pkg.hint}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {pkg.totalSessions} AI training sessions/mo

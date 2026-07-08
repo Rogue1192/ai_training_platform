@@ -57,7 +57,20 @@ const onboardingPayloadSchema = z.object({
   sitePassword: z.string().optional(),
 
   // Optional: specific search queries (if client/salesperson already knows them)
+  // These will be distributed across all provided locations up to the plan's maxQuerySlots.
   searchQueries: z.array(z.string()).optional(),
+
+  // Optional: per-location query map for clients who want different queries per city
+  // e.g. [{"location": "Atlanta, GA", "queries": ["roof repair Atlanta", ...]}, ...]
+  // Total pairs across all locations must not exceed the plan's maxQuerySlots.
+  locationQueryMap: z.array(z.object({
+    location: z.string().min(1),
+    queries: z.array(z.string().min(1)),
+  })).optional(),
+
+  // Optional: billing type override for this campaign
+  // 'white_label' = agency wholesale, 'direct' = retail, 'legacy' = costs only
+  billingType: z.enum(["white_label", "direct", "legacy"]).optional(),
 
   // Optional: additional business info for credibility research
   yearsFounded: z.number().optional(),
@@ -415,6 +428,9 @@ export function createWebhookRouter(): Router {
         return;
       }
 
+      // Resolve the query-slot budget from the package tier
+      const resolvedMaxQuerySlots = packageTier.maxQuerySlots || (packageTier.maxQueries * packageTier.maxLocations);
+
       // Create the campaign
       const campaign = await createCampaign({
         userId: ownerId,
@@ -429,9 +445,11 @@ export function createWebhookRouter(): Router {
         errorCount: 0,
         // Trial defaults — overridden by initializeTrial() below
         trialStatus: "trial",
-        maxQueries: 5,
-        maxLocations: 3,
+        maxQueries: packageTier.maxQueries,
+        maxLocations: packageTier.maxLocations,
+        maxQuerySlots: resolvedMaxQuerySlots,
         selectedPackage: payload.selectedPackage || null,
+        billingType: payload.billingType || (payload.agencyId ? "white_label" : "direct"),
       });
 
       // Initialize 14-day trial
@@ -439,24 +457,34 @@ export function createWebhookRouter(): Router {
       await initializeTrial(campaign.id, payload.selectedPackage);
 
       // Build the query×location matrix
-      // If specific queries were provided, use those. Otherwise, we'll generate them in the keyword research phase.
-      const queries = payload.searchQueries?.slice(0, packageTier.maxQueries) || [];
-      const locations = finalLocations.slice(0, packageTier.maxLocations);
+      // Priority: locationQueryMap > searchQueries (distributed across all locations) > auto-generate in keyword research phase
+      const entries: { campaignId: number; searchQuery: string; location: string; trainingStatus: "pending"; trainingSessions: number }[] = [];
+      let slotsUsed = 0;
 
-      if (queries.length > 0 && locations.length > 0) {
-        // Build the full matrix
-        const entries = [];
-        for (const query of queries) {
-          for (const location of locations) {
-            entries.push({
-              campaignId: campaign.id,
-              searchQuery: query,
-              location,
-              trainingStatus: "pending" as const,
-              trainingSessions: 0,
-            });
+      if (payload.locationQueryMap && payload.locationQueryMap.length > 0) {
+        // Per-location query map — most flexible option
+        for (const lqEntry of payload.locationQueryMap) {
+          for (const q of lqEntry.queries) {
+            if (slotsUsed >= resolvedMaxQuerySlots) break;
+            entries.push({ campaignId: campaign.id, searchQuery: q, location: lqEntry.location, trainingStatus: "pending", trainingSessions: 0 });
+            slotsUsed++;
           }
+          if (slotsUsed >= resolvedMaxQuerySlots) break;
         }
+      } else if (payload.searchQueries && payload.searchQueries.length > 0 && finalLocations.length > 0) {
+        // Flat query list — distribute across all locations up to budget
+        for (const query of payload.searchQueries) {
+          for (const location of finalLocations) {
+            if (slotsUsed >= resolvedMaxQuerySlots) break;
+            entries.push({ campaignId: campaign.id, searchQuery: query, location, trainingStatus: "pending", trainingSessions: 0 });
+            slotsUsed++;
+          }
+          if (slotsUsed >= resolvedMaxQuerySlots) break;
+        }
+      }
+      // If no queries provided, keyword research phase will auto-generate them
+
+      if (entries.length > 0) {
         await createCampaignQueryLocations(entries);
       }
 
