@@ -418,7 +418,9 @@ export async function publishCampaignContent(params: {
     .where(eq(contentPages.campaignId, campaignId))
     .orderBy(contentPages.createdAt);
 
-  const pagesToPublish = pages.filter(p => p.status === "generated" && p.pageType !== "llm_txt");
+  // Exclude internal/system pages that are not publishable web pages
+  const NON_PUBLISHABLE_TYPES = new Set(["llm_txt", "schema_package", "schema_audit", "schema_delivery"]);
+  const pagesToPublish = pages.filter(p => p.status === "generated" && !NON_PUBLISHABLE_TYPES.has(p.pageType));
 
   if (pagesToPublish.length === 0) {
     return { totalPages: 0, published: 0, failed: 0, results: [] };

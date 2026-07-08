@@ -266,7 +266,8 @@ export async function runPipelineStep(
           const { contentPages: cpTable } = await import("../drizzle/schema");
           const { eq: eqOp } = await import("drizzle-orm");
           const pages = await db.select().from(cpTable).where(eqOp(cpTable.campaignId, campaignId));
-          const pageCount = pages.filter(p => p.pageType !== "llm_txt").length;
+          const NON_PUBLISHABLE_TYPES = new Set(["llm_txt", "schema_package", "schema_audit", "schema_delivery"]);
+          const pageCount = pages.filter(p => !NON_PUBLISHABLE_TYPES.has(p.pageType)).length;
           const adminUrl = `${process.env.APP_BASE_URL ?? ""}/campaigns/${campaignId}`;
           try {
             const { notifyOwner } = await import("./_core/notification");

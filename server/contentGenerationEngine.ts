@@ -19,6 +19,8 @@ import { contentPages, campaigns, businesses, credibilityData } from "../drizzle
 import { eq, and, desc } from "drizzle-orm";
 import type { CredibilityResearchResult, CredibilityFact, SuggestedPage } from "./credibilityResearchEngine";
 import { buildPageSchema, buildSchemaPackageForBusiness, schemaPackageToString } from "./schemaMarkupEngine";
+import { auditSiteSchema } from "./siteSchemaAuditor";
+import { buildSchemaDeliveryPlan, serializeDeliveryPlan } from "./schemaDeliveryEngine";
 
 // ============= Types =============
 
@@ -466,12 +468,28 @@ export async function generateAllContentPages(params: {
         }).where(eq(campaigns.id, campaignId));
   }
 
-  // Build and store the full schema package (site-wide + per-page)
+  // ── Schema audit + delivery pipeline ──────────────────────────────────────
+  // Step 1: Audit the client's site for existing schema
+  // Step 2: Build the schema package (site-wide + per-page)
+  // Step 3: Build a smart delivery plan (full / additive / replace)
+  // Step 4: Store audit result + delivery plan as internal content pages
   try {
+    // Step 1: Audit the client's site
+    let auditResult = null;
+    if (websiteUrl) {
+      console.log(`[Content Generation] Auditing existing schema on ${websiteUrl}...`);
+      try {
+        auditResult = await auditSiteSchema(websiteUrl);
+        console.log(`[Content Generation] ✓ Schema audit complete: mode=${auditResult.deliveryMode}, foundTypes=${auditResult.foundTypes.join(",") || "none"}, faqPairs=${auditResult.existingFaqPairs.length}`);
+      } catch (auditErr: any) {
+        console.warn(`[Content Generation] Schema audit failed (non-fatal):`, auditErr.message);
+      }
+    }
+
+    // Step 2: Build the schema package
     const schemaPkg = await buildSchemaPackageForBusiness(businessId, campaignId);
     if (schemaPkg && db) {
       // Store the composite site-wide schema as a special content page
-      // so the team can copy it from the Campaign Detail UI
       const existingSchemaPage = await db.select()
         .from(contentPages)
         .where(and(eq(contentPages.campaignId, campaignId), eq(contentPages.pageType, "schema_package")))
@@ -490,7 +508,7 @@ export async function generateAllContentPages(params: {
           pageSlug: "schema",
           pageContent: schemaContent,
           schemaMarkup: JSON.stringify(schemaPkg.siteWideSchema),
-          status: "generated",
+          status: "draft",
           deliveryType: "inject_existing",
           placementInstructions: `Paste the SITE-WIDE SCHEMA block into the <head> of every page on the client's site (or use Insert Headers and Footers plugin in WordPress). Paste each per-page schema block into the corresponding page. Summary: ${schemaPkg.summary}`,
           generationModel: "system",
@@ -498,6 +516,89 @@ export async function generateAllContentPages(params: {
         });
       }
       console.log(`[Content Generation] ✓ Schema package built: ${schemaPkg.summary}`);
+
+      // Step 3: Build the smart delivery plan (requires audit result)
+      if (auditResult) {
+        // Fetch business record for gap-field pre-fill
+        const db2 = await getDb();
+        let businessPhone: string | null = null;
+        let businessAddress: string | null = null;
+        let businessDescription: string | null = null;
+        if (db2) {
+          const { businesses: bizTable } = await import("../drizzle/schema");
+          const [biz] = await db2.select().from(bizTable).where(eq(bizTable.id, businessId)).limit(1);
+          if (biz) {
+            businessPhone = biz.phone || null;
+            businessAddress = biz.address || null;
+            businessDescription = biz.description || null;
+          }
+        }
+
+        const deliveryPlan = buildSchemaDeliveryPlan(
+          auditResult,
+          schemaPkg,
+          {
+            name: businessName,
+            phone: businessPhone,
+            address: businessAddress,
+            website: websiteUrl,
+            description: businessDescription,
+          }
+        );
+
+        // Step 4a: Store audit result as schema_audit page
+        const existingAuditPage = await db.select()
+          .from(contentPages)
+          .where(and(eq(contentPages.campaignId, campaignId), eq(contentPages.pageType, "schema_audit")))
+          .limit(1);
+        const auditJson = JSON.stringify(auditResult, null, 2);
+        if (existingAuditPage.length > 0) {
+          await db.update(contentPages)
+            .set({ pageContent: auditJson, updatedAt: new Date() })
+            .where(eq(contentPages.id, existingAuditPage[0]!.id));
+        } else {
+          await db.insert(contentPages).values({
+            businessId,
+            campaignId,
+            pageType: "schema_audit",
+            pageTitle: "Schema Site Audit",
+            pageSlug: "schema-audit",
+            pageContent: auditJson,
+            status: "draft",
+            deliveryType: "inject_existing",
+            placementInstructions: `Audit of existing schema on ${websiteUrl}. Delivery mode: ${auditResult.deliveryMode}. Found types: ${auditResult.foundTypes.join(", ") || "none"}.`,
+            generationModel: "system",
+            generationPrompt: `Schema audit for ${websiteUrl}`,
+          });
+        }
+
+        // Step 4b: Store delivery plan as schema_delivery page
+        const existingDeliveryPage = await db.select()
+          .from(contentPages)
+          .where(and(eq(contentPages.campaignId, campaignId), eq(contentPages.pageType, "schema_delivery")))
+          .limit(1);
+        const deliveryJson = serializeDeliveryPlan(deliveryPlan);
+        if (existingDeliveryPage.length > 0) {
+          await db.update(contentPages)
+            .set({ pageContent: deliveryJson, updatedAt: new Date() })
+            .where(eq(contentPages.id, existingDeliveryPage[0]!.id));
+        } else {
+          await db.insert(contentPages).values({
+            businessId,
+            campaignId,
+            pageType: "schema_delivery",
+            pageTitle: "Schema Delivery Plan",
+            pageSlug: "schema-delivery",
+            pageContent: deliveryJson,
+            status: "draft",
+            deliveryType: "inject_existing",
+            placementInstructions: deliveryPlan.auditSummary,
+            generationModel: "system",
+            generationPrompt: `Schema delivery plan for ${businessName}`,
+          });
+        }
+        console.log(`[Content Generation] ✓ Schema delivery plan built: mode=${deliveryPlan.deliveryMode}, ${deliveryPlan.actionCount} blocks to deliver, ${deliveryPlan.gapFields.length} gap fields`);
+      }
     }
   } catch (schemaPackageError: any) {
     console.warn(`[Content Generation] Schema package build failed:`, schemaPackageError.message);

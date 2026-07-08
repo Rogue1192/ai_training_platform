@@ -53,8 +53,14 @@ import {
   ChevronUp,
   History,
   Code,
+  AlertCircle,
+  CheckCircle,
+  Info,
+  Save,
+  RefreshCw,
 } from "lucide-react";
 import { useState, useMemo } from "react";
+import { Textarea } from "@/components/ui/textarea";
 import { useRoute, useLocation } from "wouter";
 import { toast } from "sonner";
 
@@ -987,7 +993,8 @@ function ContentTab({ campaignId }: { campaignId: number }) {
   // Fire a toast the first time generated pages arrive
   const currentCount = contentPages?.length ?? 0;
   if (!toastFired && currentCount > 0) {
-    const pageCount = contentPages!.filter((p: any) => p.pageType !== "llm_txt").length;
+    const INTERNAL_TYPES = new Set(["llm_txt", "schema_package", "schema_audit", "schema_delivery"]);
+    const pageCount = contentPages!.filter((p: any) => !INTERNAL_TYPES.has(p.pageType)).length;
     toast.success(`📄 ${pageCount} content page${pageCount !== 1 ? "s" : ""} ready — go to the Content tab to copy them in.`, {
       duration: 8000,
     });
@@ -1014,10 +1021,18 @@ function ContentTab({ campaignId }: { campaignId: number }) {
     );
   }
 
-  const visiblePages = contentPages?.filter((p: any) => p.pageType !== "llm_txt" && p.pageType !== "schema_package") ?? [];
+  const INTERNAL_PAGE_TYPES = new Set(["llm_txt", "schema_package", "schema_audit", "schema_delivery"]);
+  const visiblePages = contentPages?.filter((p: any) => !INTERNAL_PAGE_TYPES.has(p.pageType)) ?? [];
   const llmTxtPage = contentPages?.find((p: any) => p.pageType === "llm_txt");
   const schemaPackagePage = contentPages?.find((p: any) => p.pageType === "schema_package");
+  const schemaDeliveryPage = contentPages?.find((p: any) => p.pageType === "schema_delivery");
   const allUrlsEntered = visiblePages.length > 0 && visiblePages.every((p: any) => !!p.publishedUrl);
+
+  // Parse the schema delivery plan from the DB content page
+  const deliveryPlan = useMemo(() => {
+    if (!schemaDeliveryPage?.pageContent) return null;
+    try { return JSON.parse(schemaDeliveryPage.pageContent); } catch { return null; }
+  }, [schemaDeliveryPage?.pageContent]);
 
   return (
     <div className="space-y-4">
@@ -1247,8 +1262,11 @@ function ContentTab({ campaignId }: { campaignId: number }) {
         </Card>
       )}
 
-      {/* Schema Markup Package */}
-      {schemaPackagePage && (
+      {/* Schema Delivery Plan — Smart delivery with audit results */}
+      {deliveryPlan ? (
+        <SchemaDeliveryPanel campaignId={campaignId} plan={deliveryPlan} />
+      ) : schemaPackagePage ? (
+        // Fallback: show the old schema package if no delivery plan yet
         <Card className="bg-card border-border">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
@@ -1272,7 +1290,6 @@ function ContentTab({ campaignId }: { campaignId: number }) {
                 size="sm"
                 className="h-7 text-xs gap-1.5"
                 onClick={() => {
-                  // Copy only the site-wide schema block
                   const match = schemaPackagePage.pageContent.match(/<script type="application\/ld\+json">[\s\S]*?<\/script>/);
                   const siteWide = match ? match[0] : schemaPackagePage.pageContent;
                   navigator.clipboard.writeText(siteWide);
@@ -1302,8 +1319,187 @@ function ContentTab({ campaignId }: { campaignId: number }) {
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
+  );
+}
+
+// ─── Schema Delivery Panel ────────────────────────────────────────────────────
+
+function SchemaDeliveryPanel({ campaignId, plan }: { campaignId: number; plan: any }) {
+  const [gapValues, setGapValues] = useState<Record<string, string>>(
+    () => Object.fromEntries((plan.gapFields || []).map((f: any) => [f.field, f.currentValue || ""]))
+  );
+  const [savingGaps, setSavingGaps] = useState(false);
+  const [copiedBlock, setCopiedBlock] = useState<string | null>(null);
+
+  const updateGapFields = trpc.campaign.updateSchemaGapFields.useMutation({
+    onSuccess: () => toast.success("Gap fields saved."),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleCopy = (scriptTag: string, label: string) => {
+    navigator.clipboard.writeText(scriptTag);
+    setCopiedBlock(label);
+    toast.success(`${label} copied to clipboard!`);
+    setTimeout(() => setCopiedBlock(null), 2000);
+  };
+
+  const handleSaveGaps = async () => {
+    setSavingGaps(true);
+    await updateGapFields.mutateAsync({
+      campaignId,
+      gapFields: Object.entries(gapValues).map(([field, value]) => ({ field, value })),
+    });
+    setSavingGaps(false);
+  };
+
+  const deliveryModeColor = plan.deliveryMode === "full"
+    ? "bg-green-500/20 text-green-400 border-green-500/30"
+    : plan.deliveryMode === "replace"
+    ? "bg-red-500/20 text-red-400 border-red-500/30"
+    : "bg-blue-500/20 text-blue-400 border-blue-500/30";
+
+  const deliveryModeLabel = plan.deliveryMode === "full"
+    ? "Full Package"
+    : plan.deliveryMode === "replace"
+    ? "Replace Existing"
+    : "Additive Only";
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+            <Code className="w-4 h-4 text-orange-400" />
+            Schema Delivery Plan
+          </CardTitle>
+          <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${deliveryModeColor}`}>
+            {deliveryModeLabel}
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Audit summary */}
+        <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded p-2">
+          <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-blue-400" />
+          <span>{plan.auditSummary}</span>
+        </div>
+
+        {/* Removal warning */}
+        {plan.requiresRemoval && plan.removalInstructions && (
+          <div className="flex items-start gap-2 text-xs text-red-300 bg-red-500/10 rounded p-2 border border-red-500/20">
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span>{plan.removalInstructions}</span>
+          </div>
+        )}
+
+        {/* Gap fields */}
+        {plan.gapFields && plan.gapFields.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-amber-400 flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5" />
+              {plan.gapFields.length} missing field{plan.gapFields.length !== 1 ? "s" : ""} — fill in to improve schema quality
+            </p>
+            <div className="grid gap-2">
+              {plan.gapFields.map((gf: any) => (
+                <div key={gf.field} className="space-y-1">
+                  <label className="text-xs text-muted-foreground">
+                    {gf.label}{gf.required && <span className="text-red-400 ml-1">*</span>}
+                  </label>
+                  {gf.inputType === "textarea" ? (
+                    <Textarea
+                      value={gapValues[gf.field] || ""}
+                      onChange={(e) => setGapValues((v) => ({ ...v, [gf.field]: e.target.value }))}
+                      placeholder={gf.placeholder}
+                      className="text-xs min-h-[60px] bg-muted/30 border-border"
+                    />
+                  ) : (
+                    <Input
+                      type={gf.inputType === "number" ? "number" : "text"}
+                      value={gapValues[gf.field] || ""}
+                      onChange={(e) => setGapValues((v) => ({ ...v, [gf.field]: e.target.value }))}
+                      placeholder={gf.placeholder}
+                      className="text-xs h-7 bg-muted/30 border-border"
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1.5"
+              onClick={handleSaveGaps}
+              disabled={savingGaps}
+            >
+              {savingGaps ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              Save Gap Fields
+            </Button>
+          </div>
+        )}
+
+        {/* Schema blocks */}
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">
+            {plan.actionCount} block{plan.actionCount !== 1 ? "s" : ""} to deliver
+          </p>
+          {(plan.blocks || []).map((block: any, idx: number) => {
+            const actionColor = block.action === "add"
+              ? "bg-green-500/20 text-green-400 border-green-500/30"
+              : block.action === "replace"
+              ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
+              : "bg-muted/30 text-muted-foreground border-border";
+            const actionLabel = block.action === "add" ? "ADD" : block.action === "replace" ? "REPLACE" : "SKIP";
+
+            return (
+              <div key={idx} className="rounded-md border border-border bg-muted/20 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    {block.isSiteWide ? (
+                      <Globe className="w-3.5 h-3.5 text-orange-400" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+                    )}
+                    <span className="text-xs font-medium text-foreground">{block.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs px-1.5 py-0.5 rounded border font-mono font-bold ${actionColor}`}>
+                      {actionLabel}
+                    </span>
+                    {block.action !== "skip" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-xs gap-1 px-2"
+                        onClick={() => handleCopy(block.scriptTag, block.label)}
+                      >
+                        {copiedBlock === block.label ? (
+                          <CheckCircle className="w-3 h-3 text-green-400" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                        Copy
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="px-3 py-2">
+                  <p className="text-xs text-muted-foreground">{block.placementInstructions}</p>
+                  {block.action !== "skip" && (
+                    <div className="mt-2 rounded bg-muted/40 p-2 max-h-32 overflow-y-auto">
+                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
+                        {block.scriptTag}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

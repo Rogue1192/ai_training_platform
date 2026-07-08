@@ -1504,6 +1504,54 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { getPageTypeConfigs } = await import("./contentGenerationEngine");
         return getPageTypeConfigs();
       }),
+
+    /**
+     * Save updated gap field values into the schema_delivery content page
+     * and regenerate the delivery plan with the new values.
+     */
+    updateSchemaGapFields: protectedProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        gapFields: z.array(z.object({
+          field: z.string(),
+          value: z.string(),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Admin access required");
+        }
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const { contentPages: cpTable } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+
+        // Load the existing delivery plan
+        const [deliveryPage] = await db
+          .select()
+          .from(cpTable)
+          .where(and(eq(cpTable.campaignId, input.campaignId), eq(cpTable.pageType, "schema_delivery")))
+          .limit(1);
+        if (!deliveryPage) throw new Error("Schema delivery plan not found. Run content generation first.");
+
+        const plan = JSON.parse(deliveryPage.pageContent || "{}");
+
+        // Apply the updated gap field values into the plan
+        const updatedGapFields = (plan.gapFields || []).map((gf: any) => {
+          const update = input.gapFields.find((u) => u.field === gf.field);
+          return update ? { ...gf, currentValue: update.value } : gf;
+        });
+        const updatedPlan = { ...plan, gapFields: updatedGapFields };
+
+        // Save the updated plan back to the DB
+        await db
+          .update(cpTable)
+          .set({ pageContent: JSON.stringify(updatedPlan, null, 2), updatedAt: new Date() })
+          .where(eq(cpTable.id, deliveryPage.id));
+
+        return { success: true, updatedFields: input.gapFields.length };
+      }),
   }),
 
   // ============= AI ANSWER FORGE — Webhook Logs =============
