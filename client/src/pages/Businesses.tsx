@@ -563,10 +563,10 @@ export default function Businesses() {
               </DialogHeader>
 
               <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="basic">Basic Info</TabsTrigger>
                   <TabsTrigger value="credibility">Credibility Data</TabsTrigger>
-                  <TabsTrigger value="publishing">Publishing</TabsTrigger>
+
                 </TabsList>
 
                 <TabsContent value="basic" className="space-y-4 py-4">
@@ -754,25 +754,7 @@ export default function Businesses() {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="publishing" className="space-y-4 py-4">
-                  <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-300">
-                    WordPress auto-publishing is disabled. Your team will manually add credibility pages to the client site.
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="siteAdminUrl">WordPress Admin URL (optional reference)</Label>
-                    <Input id="siteAdminUrl" value={formData.siteAdminUrl} onChange={(e) => setFormData({ ...formData, siteAdminUrl: e.target.value })} placeholder="https://example.com/wp-admin" className="bg-background border-input" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="siteUsername">Username</Label>
-                      <Input id="siteUsername" value={formData.siteUsername} onChange={(e) => setFormData({ ...formData, siteUsername: e.target.value })} placeholder="admin" className="bg-background border-input" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="sitePassword">Password</Label>
-                      <Input id="sitePassword" type="password" value={formData.sitePassword} onChange={(e) => setFormData({ ...formData, sitePassword: e.target.value })} placeholder="••••••••" className="bg-background border-input" />
-                    </div>
-                  </div>
-                </TabsContent>
+
               </Tabs>
 
               <DialogFooter className="mt-6">
