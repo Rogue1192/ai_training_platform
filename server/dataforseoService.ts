@@ -647,3 +647,146 @@ export async function checkRankForQueries(
 
   return results;
 }
+
+// ============= Direct LLM Visibility Check =============
+
+/**
+ * Result of a direct real-time LLM visibility check for a single query.
+ * Mirrors the shape of LLMMentionResult.llmResponses so callers can use
+ * the same snapshot-creation code regardless of which method was used.
+ */
+export interface DirectVisibilityResult {
+  keyword: string;
+  llmResponses: {
+    chatgpt?: { mentioned: boolean; position: number | null; snippet: string | null; sourcesCited: string[] };
+    gemini?: { mentioned: boolean; position: number | null; snippet: string | null; sourcesCited: string[] };
+    aiOverview?: { mentioned: boolean; position: number | null; snippet: string | null; sourcesCited: string[] };
+  };
+}
+
+/**
+ * Check whether a business is mentioned by ChatGPT, Gemini, and AI Overview
+ * for a specific search query — using LIVE direct LLM calls instead of the
+ * DataForSEO domain-index lookup.
+ *
+ * This is the authoritative baseline/rank-check method because:
+ *  - It returns real-time results regardless of DataForSEO index lag
+ *  - It uses the same prompt framing as the training system
+ *  - It is accurate for new/small businesses not yet in DataForSEO's index
+ *
+ * @param query      The search query (e.g. "house cleaning services in Austin TX")
+ * @param businessName  The business name to look for in the response
+ * @param agencyId   Optional agency ID to resolve the correct API keys
+ */
+export async function checkLLMVisibilityDirect(
+  query: string,
+  businessName: string,
+  agencyId?: number | null
+): Promise<DirectVisibilityResult> {
+  const { callAI } = await import("./aiProviders");
+  const { getApiKeyByProvider } = await import("./db");
+  const { getAgencyById } = await import("./dbAgencies");
+  const { decrypt } = await import("./encryption");
+
+  // ── Helper: resolve API key for a provider ──────────────────────────────────
+  async function resolveKey(provider: "openai" | "google"): Promise<string | null> {
+    if (agencyId) {
+      try {
+        const agency = await getAgencyById(agencyId);
+        if (agency) {
+          const encryptedKey = provider === "openai" ? agency.agencyOpenAiKey : agency.agencyGeminiKey;
+          if (encryptedKey) return decrypt(encryptedKey);
+        }
+      } catch { /* fall through to platform key */ }
+    }
+    const record = await getApiKeyByProvider(provider);
+    if (!record) return null;
+    try { return decrypt(record.encryptedKey); } catch { return null; }
+  }
+
+  // ── Helper: detect mention in LLM response ──────────────────────────────────
+  function detectMention(responseText: string, name: string): boolean {
+    const lower = responseText.toLowerCase();
+    const nameLower = name.toLowerCase();
+    if (lower.includes(nameLower)) return true;
+    // Partial match: ≥60% of significant words present
+    const stopWords = new Set(["the", "and", "inc", "llc", "corp", "company", "services", "group"]);
+    const sigWords = nameLower.split(/\s+/).filter(w => w.length > 3 && !stopWords.has(w));
+    if (sigWords.length === 0) return false;
+    const matched = sigWords.filter(w => lower.includes(w));
+    return matched.length / sigWords.length >= 0.6;
+  }
+
+  const result: DirectVisibilityResult = { keyword: query, llmResponses: {} };
+
+  // ── ChatGPT check ────────────────────────────────────────────────────────────
+  const openaiKey = await resolveKey("openai");
+  if (openaiKey) {
+    try {
+      const resp = await callAI("openai", openaiKey, "gpt-4.1", [
+        { role: "system", content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge." },
+        { role: "user", content: query },
+      ]);
+      const mentioned = detectMention(resp.content, businessName);
+      result.llmResponses.chatgpt = {
+        mentioned,
+        position: null,
+        snippet: resp.content.substring(0, 500),
+        sourcesCited: [],
+      };
+      console.log(`[DirectCheck] ChatGPT for "${query}": mentioned=${mentioned}`);
+    } catch (err: any) {
+      console.error(`[DirectCheck] ChatGPT check failed for "${query}":`, err.message);
+    }
+  } else {
+    console.warn(`[DirectCheck] No OpenAI API key — skipping ChatGPT check for "${query}"`);
+  }
+
+  // ── Gemini check ─────────────────────────────────────────────────────────────
+  const googleKey = await resolveKey("google");
+  if (googleKey) {
+    try {
+      const resp = await callAI("google", googleKey, "gemini-2.5-flash", [
+        { role: "system", content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge." },
+        { role: "user", content: query },
+      ]);
+      const mentioned = detectMention(resp.content, businessName);
+      result.llmResponses.gemini = {
+        mentioned,
+        position: null,
+        snippet: resp.content.substring(0, 500),
+        sourcesCited: [],
+      };
+      console.log(`[DirectCheck] Gemini for "${query}": mentioned=${mentioned}`);
+    } catch (err: any) {
+      console.error(`[DirectCheck] Gemini check failed for "${query}":`, err.message);
+    }
+
+    // ── AI Overview check (same model, search-query framing) ──────────────────
+    try {
+      // Convert conversational query to search-query style for AI Overview
+      const searchQuery = query
+        .replace(/^(can you |please |could you |i('m| am) looking for |who (are|is) |what (are|is) )/i, "")
+        .replace(/\?$/, "")
+        .trim();
+      const resp = await callAI("google", googleKey, "gemini-2.5-flash", [
+        { role: "system", content: "You are a Google Search AI assistant that generates AI Overview summaries for local business queries. Provide concise, factual summaries highlighting relevant local options." },
+        { role: "user", content: searchQuery },
+      ]);
+      const mentioned = detectMention(resp.content, businessName);
+      result.llmResponses.aiOverview = {
+        mentioned,
+        position: null,
+        snippet: resp.content.substring(0, 500),
+        sourcesCited: [],
+      };
+      console.log(`[DirectCheck] AI Overview for "${query}": mentioned=${mentioned}`);
+    } catch (err: any) {
+      console.error(`[DirectCheck] AI Overview check failed for "${query}":`, err.message);
+    }
+  } else {
+    console.warn(`[DirectCheck] No Google API key — skipping Gemini/AI Overview checks for "${query}"`);
+  }
+
+  return result;
+}

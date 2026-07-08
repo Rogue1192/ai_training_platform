@@ -18,7 +18,7 @@ import {
   businesses,
 } from "../drizzle/schema";
 import { eq, and, desc, asc, gte, lte, sql } from "drizzle-orm";
-import { checkRankForQueries, searchLLMMentions } from "./dataforseoService";
+import { checkRankForQueries, searchLLMMentions, checkLLMVisibilityDirect } from "./dataforseoService";
 import {
   getCampaignById,
   getQueryLocationsByCampaignId,
@@ -237,15 +237,10 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
   // Get previous snapshots for comparison (most recent per query-location)
   const previousSnapshots = await getLatestSnapshots(campaignId);
 
-  // Run the rank check via DataForSEO
-  const mentions = await searchLLMMentions(business.website, {
-    limit: 500,
-    targetType: "domain",
-  });
-
-  const mentionsByKeyword = new Map(
-    mentions.map((m) => [m.keyword.toLowerCase(), m])
-  );
+  // ── Direct real-time LLM check per query ─────────────────────────────────
+  // Ask ChatGPT, Gemini, and AI Overview directly for each tracked query.
+  // This is accurate and real-time regardless of DataForSEO index lag.
+  console.log(`[Rank Tracking] Running direct LLM visibility checks for ${queryLocations.length} queries`);
 
   let snapshotsCreated = 0;
   const winsDetected: WinDetection[] = [];
@@ -257,16 +252,28 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
     aiOverviewMentioned: boolean | null;
     aiOverviewPosition: number | null;
   }> = [];
+  // Collect all mention results so the bonus-location detection block below
+  // (which iterates over `mentions`) still works without changes.
+  const mentions: import("./dataforseoService").DirectVisibilityResult[] = [];
 
   for (const ql of queryLocations) {
-    const mention = mentionsByKeyword.get(ql.searchQuery.toLowerCase()) || null;
+    const queryWithLocation = ql.location
+      ? `${ql.searchQuery} in ${ql.location}`
+      : ql.searchQuery;
 
-    const chatgptMentioned = mention?.llmResponses.chatgpt?.mentioned || false;
-    const chatgptPosition = mention?.llmResponses.chatgpt?.position || null;
-    const geminiMentioned = mention?.llmResponses.gemini?.mentioned || false;
-    const geminiPosition = mention?.llmResponses.gemini?.position || null;
-    const aiOverviewMentioned = mention?.llmResponses.aiOverview?.mentioned || false;
-    const aiOverviewPosition = mention?.llmResponses.aiOverview?.position || null;
+    const mention = await checkLLMVisibilityDirect(
+      queryWithLocation,
+      business.name,
+      (business as any).agencyId ?? null
+    );
+    mentions.push(mention);
+
+    const chatgptMentioned = mention.llmResponses.chatgpt?.mentioned || false;
+    const chatgptPosition = mention.llmResponses.chatgpt?.position || null;
+    const geminiMentioned = mention.llmResponses.gemini?.mentioned || false;
+    const geminiPosition = mention.llmResponses.gemini?.position || null;
+    const aiOverviewMentioned = mention.llmResponses.aiOverview?.mentioned || false;
+    const aiOverviewPosition = mention.llmResponses.aiOverview?.position || null;
 
     // Create snapshot
     await createRankSnapshot({
@@ -274,20 +281,14 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
       queryLocationId: ql.id,
       chatgptMentioned,
       chatgptPosition,
-      chatgptResponseSnippet: mention?.llmResponses.chatgpt?.snippet || null,
+      chatgptResponseSnippet: mention.llmResponses.chatgpt?.snippet || null,
       geminiMentioned,
       geminiPosition,
-      geminiResponseSnippet: mention?.llmResponses.gemini?.snippet || null,
+      geminiResponseSnippet: mention.llmResponses.gemini?.snippet || null,
       aiOverviewMentioned,
       aiOverviewPosition,
-      aiOverviewResponseSnippet: mention?.llmResponses.aiOverview?.snippet || null,
-      sourcesCited: mention
-        ? [
-            ...(mention.llmResponses.chatgpt?.sourcesCited || []),
-            ...(mention.llmResponses.gemini?.sourcesCited || []),
-            ...(mention.llmResponses.aiOverview?.sourcesCited || []),
-          ]
-        : null,
+      aiOverviewResponseSnippet: mention.llmResponses.aiOverview?.snippet || null,
+      sourcesCited: null,
       checkType: "scheduled",
       checkedAt: new Date(),
     });
@@ -438,7 +439,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
         campaignId,
         searchQuery: mention.keyword,
         location: detectedLocation,
-        aiSearchVolume: mention.aiSearchVolume || null,
+        aiSearchVolume: null, // DirectVisibilityResult has no aiSearchVolume
         trainingStatus: "monitoring" as const, // bonus wins go straight to monitoring
         trainingSessions: 0,
         isTargetLocation: false,

@@ -1,6 +1,7 @@
 import {
   runKeywordResearchPipeline,
   runBaselineRankCheck,
+  checkLLMVisibilityDirect,
   type KeywordResearchResult,
   type LLMMentionResult,
 } from "./dataforseoService";
@@ -360,58 +361,65 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
     if (businessResult.length === 0) throw new Error(`Business ${campaign.businessId} not found`);
     const business = businessResult[0]!;
 
-    if (!business.website) {
-      throw new Error("Business has no website URL — cannot run baseline check");
+    // Business name is required to detect mentions in LLM responses
+    if (!business.name) {
+      throw new Error("Business has no name — cannot run baseline check");
     }
 
-    // Run the baseline check via DataForSEO
-    const mentions = await runBaselineRankCheck(business.website);
-
-    // Get the campaign's query-locations to match against
+    // Get the campaign's query-locations
     const queryLocations = await getQueryLocationsByCampaignId(campaignId);
 
     let snapshotsCreated = 0;
+    let mentionsFound = 0;
 
-    // Create rank snapshots for each query-location
+    // ── Direct real-time LLM check per query ─────────────────────────────────
+    // We ask ChatGPT, Gemini, and AI Overview directly for each tracked query
+    // instead of using the DataForSEO domain-index lookup. This gives accurate
+    // results for new/small businesses not yet in DataForSEO's index and avoids
+    // the index-lag problem that caused all-zero baselines.
+    console.log(`[Pipeline] Running direct LLM visibility checks for ${queryLocations.length} queries (business: "${business.name}")`);
+
     for (const ql of queryLocations) {
-      // Find if this query has a mention
-      const mention = mentions.find(
-        (m) => m.keyword.toLowerCase() === ql.searchQuery.toLowerCase()
+      // Build the query string — use searchQuery + location for specificity
+      const queryWithLocation = ql.location
+        ? `${ql.searchQuery} in ${ql.location}`
+        : ql.searchQuery;
+
+      const mention = await checkLLMVisibilityDirect(
+        queryWithLocation,
+        business.name,
+        business.agencyId ?? null
       );
 
-      const snapshot = await createRankSnapshot({
+      const chatgptMentioned = mention.llmResponses.chatgpt?.mentioned || false;
+      const geminiMentioned = mention.llmResponses.gemini?.mentioned || false;
+      const aiOverviewMentioned = mention.llmResponses.aiOverview?.mentioned || false;
+
+      await createRankSnapshot({
         campaignId,
         queryLocationId: ql.id,
-        chatgptMentioned: mention?.llmResponses.chatgpt?.mentioned || false,
-        chatgptPosition: mention?.llmResponses.chatgpt?.position || null,
-        chatgptResponseSnippet: mention?.llmResponses.chatgpt?.snippet || null,
-        geminiMentioned: mention?.llmResponses.gemini?.mentioned || false,
-        geminiPosition: mention?.llmResponses.gemini?.position || null,
-        geminiResponseSnippet: mention?.llmResponses.gemini?.snippet || null,
-        aiOverviewMentioned: mention?.llmResponses.aiOverview?.mentioned || false,
-        aiOverviewPosition: mention?.llmResponses.aiOverview?.position || null,
-        aiOverviewResponseSnippet: mention?.llmResponses.aiOverview?.snippet || null,
-        sourcesCited: mention
-          ? [
-              ...(mention.llmResponses.chatgpt?.sourcesCited || []),
-              ...(mention.llmResponses.gemini?.sourcesCited || []),
-              ...(mention.llmResponses.aiOverview?.sourcesCited || []),
-            ]
-          : null,
+        chatgptMentioned,
+        chatgptPosition: mention.llmResponses.chatgpt?.position || null,
+        chatgptResponseSnippet: mention.llmResponses.chatgpt?.snippet || null,
+        geminiMentioned,
+        geminiPosition: mention.llmResponses.gemini?.position || null,
+        geminiResponseSnippet: mention.llmResponses.gemini?.snippet || null,
+        aiOverviewMentioned,
+        aiOverviewPosition: mention.llmResponses.aiOverview?.position || null,
+        aiOverviewResponseSnippet: mention.llmResponses.aiOverview?.snippet || null,
+        sourcesCited: null,
         checkType: "baseline",
         checkedAt: new Date(),
       });
 
       // Update the query-location with current rank status
-      const isMentioned =
-        mention?.llmResponses.chatgpt?.mentioned ||
-        mention?.llmResponses.gemini?.mentioned ||
-        mention?.llmResponses.aiOverview?.mentioned;
+      const isMentioned = chatgptMentioned || geminiMentioned || aiOverviewMentioned;
+      if (isMentioned) mentionsFound++;
 
       await updateQueryLocation(ql.id, {
-        currentRankChatGPT: mention?.llmResponses.chatgpt?.mentioned ? "mentioned" : "not_mentioned",
-        currentRankGemini: mention?.llmResponses.gemini?.mentioned ? "mentioned" : "not_mentioned",
-        currentRankAIOverview: mention?.llmResponses.aiOverview?.mentioned ? "mentioned" : "not_mentioned",
+        currentRankChatGPT: chatgptMentioned ? "mentioned" : "not_mentioned",
+        currentRankGemini: geminiMentioned ? "mentioned" : "not_mentioned",
+        currentRankAIOverview: aiOverviewMentioned ? "mentioned" : "not_mentioned",
         lastRankCheckAt: new Date(),
         ...(isMentioned ? { firstMentionedAt: new Date() } : {}),
       });
@@ -426,21 +434,20 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
     });
 
     console.log(
-      `[Pipeline] Baseline check complete for campaign ${campaignId}: ${mentions.length} total mentions, ${snapshotsCreated} snapshots created`
+      `[Pipeline] Baseline check complete for campaign ${campaignId}: ${mentionsFound} queries with mentions, ${snapshotsCreated} snapshots created`
     );
 
     // ── Separate queries into "not ranking" vs "already ranking" ──
-    const notRankingQls: typeof queryLocations = [];
-    const alreadyRankingQls: typeof queryLocations = [];
+    // Re-read the query locations to get the updated rank status we just wrote
+    const updatedQls = await getQueryLocationsByCampaignId(campaignId);
+    const notRankingQls: typeof updatedQls = [];
+    const alreadyRankingQls: typeof updatedQls = [];
 
-    for (const ql of queryLocations) {
-      const mention = mentions.find(
-        (m) => m.keyword.toLowerCase() === ql.searchQuery.toLowerCase()
-      );
+    for (const ql of updatedQls) {
       const isAlreadyRanking =
-        mention?.llmResponses.chatgpt?.mentioned ||
-        mention?.llmResponses.gemini?.mentioned ||
-        mention?.llmResponses.aiOverview?.mentioned;
+        ql.currentRankChatGPT === "mentioned" ||
+        ql.currentRankGemini === "mentioned" ||
+        ql.currentRankAIOverview === "mentioned";
 
       if (isAlreadyRanking) {
         alreadyRankingQls.push(ql);
@@ -484,7 +491,7 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
 
     return {
       success: true,
-      mentionsFound: mentions.length,
+      mentionsFound,
       snapshotsCreated,
     };
   } catch (err: any) {
