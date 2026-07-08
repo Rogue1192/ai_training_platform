@@ -198,15 +198,19 @@ function ScoreComparisonCard({
   current,
   baseline,
   icon: Icon,
+  platformColor,
 }: {
   title: string;
   current: number;
   baseline: number | null;
   icon: React.ElementType;
+  platformColor?: string;
 }) {
   const diff = baseline !== null ? current - baseline : current;
   const color = getScoreColor(current);
   const isPositive = diff > 0;
+  // Use platform color for icon/title when provided, otherwise fall back to score color
+  const accentColor = platformColor ?? color;
 
   return (
     <motion.div
@@ -218,12 +222,12 @@ function ScoreComparisonCard({
       {/* Glow effect */}
       <div
         className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-20"
-        style={{ background: color }}
+        style={{ background: accentColor }}
       />
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Icon className="w-4 h-4" style={{ color }} />
-          <span className="text-sm font-medium text-muted-foreground">{title}</span>
+          <Icon className="w-4 h-4" style={{ color: accentColor }} />
+          <span className="text-sm font-medium" style={{ color: accentColor }}>{title}</span>
         </div>
         {baseline !== null && (
           <span className={`flex items-center gap-1 text-xs font-bold ${isPositive ? "text-emerald-400" : diff < 0 ? "text-red-400" : "text-gray-500"}`}>
@@ -267,7 +271,13 @@ function WinCard({ win, index }: { win: any; index: number }) {
     gemini: Sparkles,
     aiOverview: Eye,
   };
+  const platformColors: Record<string, string> = {
+    chatgpt: "#22c55e",
+    gemini: "#a855f7",
+    aiOverview: "#f97316",
+  };
   const PlatformIcon = platformIcons[win.platform] || Sparkles;
+  const platformColor = platformColors[win.platform] || "#34d399";
   const firstSeenDate = win.firstMentionedAt
     ? new Date(win.firstMentionedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : win.detectedAt
@@ -287,9 +297,9 @@ function WinCard({ win, index }: { win: any; index: number }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <PlatformIcon className="w-3.5 h-3.5 text-emerald-300" />
-            <span className="text-xs font-bold text-emerald-300 uppercase">{platformLabels[win.platform] || win.platform}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+            <PlatformIcon className="w-3.5 h-3.5" style={{ color: platformColor }} />
+            <span className="text-xs font-bold uppercase" style={{ color: platformColor }}>{platformLabels[win.platform] || win.platform}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold" style={{ background: `${platformColor}22`, color: platformColor }}>
               NEW MENTION
             </span>
           </div>
@@ -669,9 +679,9 @@ export default function ClientDashboard() {
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <ScoreComparisonCard title="Overall" current={currentScore.overall} baseline={baselineScore.overall} icon={Target} />
-              <ScoreComparisonCard title="ChatGPT" current={currentScore.chatgpt} baseline={baselineScore.chatgpt} icon={Bot} />
-              <ScoreComparisonCard title="Gemini" current={currentScore.gemini} baseline={baselineScore.gemini} icon={Sparkles} />
-              <ScoreComparisonCard title="AI Overview" current={currentScore.aiOverview} baseline={baselineScore.aiOverview} icon={Eye} />
+              <ScoreComparisonCard title="ChatGPT" current={currentScore.chatgpt} baseline={baselineScore.chatgpt} icon={Bot} platformColor="#22c55e" />
+              <ScoreComparisonCard title="Gemini" current={currentScore.gemini} baseline={baselineScore.gemini} icon={Sparkles} platformColor="#a855f7" />
+              <ScoreComparisonCard title="AI Overview" current={currentScore.aiOverview} baseline={baselineScore.aiOverview} icon={Eye} platformColor="#f97316" />
             </div>
           </motion.section>
         )}
