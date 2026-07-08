@@ -214,7 +214,9 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
     const mention = await checkLLMVisibilityDirect(
       queryWithLocation,
       business.name,
-      (business as any).agencyId ?? null
+      (business as any).agencyId ?? null,
+      business.website ?? null,
+      business.phone ?? null
     );
     mentions.push(mention);
 

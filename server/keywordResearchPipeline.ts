@@ -413,7 +413,9 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
       const mention = await checkLLMVisibilityDirect(
         queryWithLocation,
         business.name,
-        business.agencyId ?? null
+        business.agencyId ?? null,
+        business.website ?? null,
+        business.phone ?? null
       );
 
       const chatgptMentioned = mention.llmResponses.chatgpt?.mentioned || false;

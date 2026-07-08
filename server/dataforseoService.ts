@@ -681,7 +681,9 @@ export interface DirectVisibilityResult {
 export async function checkLLMVisibilityDirect(
   query: string,
   businessName: string,
-  agencyId?: number | null
+  agencyId?: number | null,
+  businessWebsite?: string | null,
+  businessPhone?: string | null
 ): Promise<DirectVisibilityResult> {
   const { callAI } = await import("./aiProviders");
   const { getApiKeyByProvider } = await import("./db");
@@ -704,30 +706,72 @@ export async function checkLLMVisibilityDirect(
     try { return decrypt(record.encryptedKey); } catch { return null; }
   }
 
+  // ── Helper: extract domain stem from a URL ─────────────────────────────────
+  function domainStem(url: string): string {
+    try {
+      const host = new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
+      // Strip www. and TLD so "titancleaningcompany.com" → "titancleaningcompany"
+      return host.replace(/^www\./, "").replace(/\.[^.]+$/, "").toLowerCase();
+    } catch { return ""; }
+  }
+
+  // ── Helper: normalise a phone number to digits only ─────────────────────────
+  function normalizePhone(phone: string): string {
+    return phone.replace(/\D/g, "");
+  }
+
   // ── Helper: detect mention in LLM response ──────────────────────────────────
   // Handles variants like "Titan" / "Titan Cleaning" / "Titan Cleaning Company"
   // when the registered name is "Titan Cleaning Company".
+  // When businessWebsite or businessPhone are provided, a partial name match is
+  // only accepted if the snippet also contains a corroborating signal (domain
+  // stem or phone digits) — this prevents a "Titan Roofing" in another city
+  // from being counted as a match for "Titan Cleaning Company".
   function detectMention(responseText: string, name: string): boolean {
     const lower = responseText.toLowerCase();
     const nameLower = name.toLowerCase();
 
-    // 1. Exact full-name match
+    // 1. Exact full-name match — always trusted
     if (lower.includes(nameLower)) return true;
 
-    // 2. Prefix match — any leading word-sequence of the business name
-    //    e.g. "Titan" or "Titan Cleaning" both match "Titan Cleaning Company"
+    // Pre-compute corroborating signals from the business profile
+    const domain = businessWebsite ? domainStem(businessWebsite) : "";
+    const phone  = businessPhone   ? normalizePhone(businessPhone) : "";
+    // Strip non-digits from the response text for phone matching
+    const lowerDigits = responseText.replace(/\D/g, "");
+
+    function hasCorroboration(): boolean {
+      if (domain && domain.length > 4 && lower.includes(domain)) return true;
+      if (phone  && phone.length  >= 7 && lowerDigits.includes(phone)) return true;
+      return false;
+    }
+
+    // 2. Prefix match — require ≥2 words OR corroboration for single-word prefixes
+    //    e.g. "Titan Cleaning" always matches; bare "Titan" only matches if the
+    //    snippet also contains the website domain or phone number.
     const words = nameLower.split(/\s+/).filter(Boolean);
     for (let len = words.length - 1; len >= 1; len--) {
       const prefix = words.slice(0, len).join(" ");
-      if (prefix.length >= 4 && lower.includes(prefix)) return true;
+      if (prefix.length < 4) continue;
+      if (lower.includes(prefix)) {
+        // Multi-word prefix: trust it directly
+        if (len >= 2) return true;
+        // Single-word prefix: only trust with corroboration
+        if (hasCorroboration()) return true;
+      }
     }
 
     // 3. Partial match: ≥60% of significant (non-stop) words present
+    //    Always require corroboration here since it's the weakest signal.
     const stopWords = new Set(["the", "and", "inc", "llc", "corp", "company", "services", "group", "co"]);
     const sigWords = words.filter(w => w.length > 3 && !stopWords.has(w));
     if (sigWords.length === 0) return false;
     const matched = sigWords.filter(w => lower.includes(w));
-    return matched.length / sigWords.length >= 0.6;
+    if (matched.length / sigWords.length >= 0.6) {
+      return hasCorroboration();
+    }
+
+    return false;
   }
 
   const result: DirectVisibilityResult = { keyword: query, llmResponses: {} };
