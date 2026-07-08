@@ -927,7 +927,7 @@ export default function CampaignDetail() {
 // Separate component for content tab to keep things clean
 function ContentTab({ campaignId }: { campaignId: number }) {
   const utils = trpc.useUtils();
-  const { data: contentPages, isLoading, previousData } = trpc.campaign.getContentPages.useQuery(
+  const { data: contentPages, isLoading } = trpc.campaign.getContentPages.useQuery(
     { campaignId },
     {
       enabled: !!campaignId,
@@ -948,9 +948,8 @@ function ContentTab({ campaignId }: { campaignId: number }) {
   const [toastFired, setToastFired] = useState(false);
 
   // Fire a toast the first time generated pages arrive
-  const prevCount = previousData?.length ?? 0;
   const currentCount = contentPages?.length ?? 0;
-  if (!toastFired && prevCount === 0 && currentCount > 0) {
+  if (!toastFired && currentCount > 0) {
     const pageCount = contentPages!.filter((p: any) => p.pageType !== "llm_txt").length;
     toast.success(`📄 ${pageCount} content page${pageCount !== 1 ? "s" : ""} ready — go to the Content tab to copy them in.`, {
       duration: 8000,

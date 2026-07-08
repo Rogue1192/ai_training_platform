@@ -215,9 +215,9 @@ export default function LLMInsights() {
       {stats && (
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: "ChatGPT Mentions", count: stats.mentionedChatGPT, icon: <MessageSquare className="w-4 h-4 text-green-400" />, color: "green" },
-            { label: "Gemini Mentions", count: stats.mentionedGemini, icon: <Brain className="w-4 h-4 text-blue-400" />, color: "blue" },
-            { label: "AI Overview Mentions", count: stats.mentionedAIOverview, icon: <Globe className="w-4 h-4 text-purple-400" />, color: "purple" },
+            { label: "ChatGPT Mentions", count: stats.mentionedChatGPT, icon: <MessageSquare className="w-4 h-4 text-green-400" />, barCls: "bg-green-500" },
+            { label: "Gemini Mentions", count: stats.mentionedGemini, icon: <Brain className="w-4 h-4 text-blue-400" />, barCls: "bg-blue-500" },
+            { label: "AI Overview Mentions", count: stats.mentionedAIOverview, icon: <Globe className="w-4 h-4 text-purple-400" />, barCls: "bg-purple-500" },
           ].map((p) => (
             <Card key={p.label} className="bg-card border-border">
               <CardContent className="pt-4">
@@ -232,7 +232,7 @@ export default function LLMInsights() {
                   <div className="mt-2">
                     <div className="w-full bg-muted rounded-full h-1.5">
                       <div
-                        className={`h-1.5 rounded-full bg-${p.color}-500`}
+                        className={`h-1.5 rounded-full ${p.barCls}`}
                         style={{ width: `${Math.min(100, (p.count / stats.totalQueries) * 100).toFixed(1)}%` }}
                       />
                     </div>

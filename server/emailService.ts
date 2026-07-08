@@ -754,7 +754,7 @@ export async function sendAgencyWinNotificationEmail(data: AgencyWinEmailData): 
     const wl = await getWhiteLabel();
     const resend = await getResend();
     const { data: result, error } = await resend.emails.send({
-      from: `${wl.fromName} <${wl.fromEmail}>`,
+      from: `${wl.companyName} <${wl.fromEmail}>`,
       to: [data.agencyContactEmail],
       subject: `&#127942; Client Win: ${data.businessName} — ${data.totalWins} new AI mention${data.totalWins > 1 ? 's' : ''}`,
       html: buildAgencyWinEmailHtml(data, wl),
@@ -1577,7 +1577,7 @@ export async function sendDropOutAlertEmail(data: DropOutAlertEmailData): Promis
       ? `⚠️ Drop-Out Detected — ${data.businessName}`
       : `⚠️ AI Visibility Update for ${data.businessName}`;
     const { data: result, error } = await resend.emails.send({
-      from: `${wl.fromName} <${wl.fromEmail}>`,
+      from: `${wl.companyName} <${wl.fromEmail}>`,
       to: [data.contactEmail],
       subject,
       html: buildDropOutAlertEmailHtml(data, wl),
