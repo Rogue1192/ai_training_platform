@@ -1927,6 +1927,94 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           .orderBy(desc(rankSnapshots.checkedAt))
           .limit(200);
       }),
+
+    // Bonus query discovery results for a campaign
+    getBonusResults: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const { bonusQueryResults } = await import("../drizzle/schema");
+        const { eq, desc } = await import("drizzle-orm");
+        const db = await getDb();
+        if (!db) return [];
+        return db
+          .select()
+          .from(bonusQueryResults)
+          .where(eq(bonusQueryResults.campaignId, input.campaignId))
+          .orderBy(desc(bonusQueryResults.scanRunAt))
+          .limit(500);
+      }),
+
+    // Bonus query discovery results via client dashboard token (public)
+    getBonusResultsByToken: publicProcedure
+      .input(z.object({ token: z.string() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const { bonusQueryResults, clientDashboards } = await import("../drizzle/schema");
+        const { eq, desc, and } = await import("drizzle-orm");
+        const db = await getDb();
+        if (!db) return [];
+        const [dashboard] = await db
+          .select({ campaignId: clientDashboards.campaignId })
+          .from(clientDashboards)
+          .where(and(eq(clientDashboards.accessToken, input.token), eq(clientDashboards.isActive, true)))
+          .limit(1);
+        if (!dashboard?.campaignId) return [];
+        return db
+          .select()
+          .from(bonusQueryResults)
+          .where(eq(bonusQueryResults.campaignId, dashboard.campaignId))
+          .orderBy(desc(bonusQueryResults.scanRunAt))
+          .limit(500);
+      }),
+
+    // Drop-off events for a campaign (admin)
+    getDropoffEvents: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const { queryDropoffEvents } = await import("../drizzle/schema");
+        const { eq, desc } = await import("drizzle-orm");
+        const db = await getDb();
+        if (!db) return [];
+        return db
+          .select()
+          .from(queryDropoffEvents)
+          .where(eq(queryDropoffEvents.campaignId, input.campaignId))
+          .orderBy(desc(queryDropoffEvents.detectedAt))
+          .limit(200);
+      }),
+
+    // Drop-off events via client dashboard token (public)
+    getDropoffEventsByToken: publicProcedure
+      .input(z.object({ token: z.string() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import("./db");
+        const { queryDropoffEvents, clientDashboards } = await import("../drizzle/schema");
+        const { eq, desc, and } = await import("drizzle-orm");
+        const db = await getDb();
+        if (!db) return [];
+        const [dashboard] = await db
+          .select({ campaignId: clientDashboards.campaignId })
+          .from(clientDashboards)
+          .where(and(eq(clientDashboards.accessToken, input.token), eq(clientDashboards.isActive, true)))
+          .limit(1);
+        if (!dashboard?.campaignId) return [];
+        return db
+          .select()
+          .from(queryDropoffEvents)
+          .where(eq(queryDropoffEvents.campaignId, dashboard.campaignId))
+          .orderBy(desc(queryDropoffEvents.detectedAt))
+          .limit(200);
+      }),
+
+    // Trigger a bonus scan manually (admin)
+    runBonusScan: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { runBonusQueryScan } = await import("./bonusQueryScanner");
+        return runBonusQueryScan(input.campaignId);
+      }),
   }),
 
   // ============= AI ANSWER FORGE — Client Dashboard (Sprint 10) =============

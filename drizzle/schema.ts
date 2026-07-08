@@ -717,3 +717,70 @@ export const costLogs = pgTable("costLogs", {
 export type CostLog = typeof costLogs.$inferSelect;
 export type InsertCostLog = typeof costLogs.$inferInsert;
 
+
+// ─── Bonus Query Results ────────────────────────────────────────────────────────
+// Stores results of bi-weekly bonus query discovery scans.
+// Each row is one semantically adjacent query that was checked but is NOT in the
+// campaign's tracked campaignQueryLocations set.
+// If the business appears → it becomes a bonus win and optionally gets promoted
+// to a tracked query. If it doesn't appear → it's an opportunity gap.
+export const bonusQueryResults = pgTable("bonusQueryResults", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaignId")
+    .notNull()
+    .references(() => campaigns.id, { onDelete: "cascade" }),
+  businessId: integer("businessId")
+    .notNull()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  // The source tracked query this was derived from
+  sourceQueryLocationId: integer("sourceQueryLocationId")
+    .references(() => campaignQueryLocations.id, { onDelete: "set null" }),
+  sourceSearchQuery: text("sourceSearchQuery").notNull(), // Original tracked query
+  // The bonus/adjacent query that was actually checked
+  bonusSearchQuery: text("bonusSearchQuery").notNull(),
+  location: varchar("location", { length: 255 }).notNull(),
+  // Visibility results per platform
+  chatgptMentioned: boolean("chatgptMentioned").default(false).notNull(),
+  chatgptSnippet: text("chatgptSnippet"),
+  geminiMentioned: boolean("geminiMentioned").default(false).notNull(),
+  geminiSnippet: text("geminiSnippet"),
+  // Whether the business appeared on at least one platform
+  isBonusWin: boolean("isBonusWin").default(false).notNull(),
+  // Whether this bonus query has been promoted to a tracked query
+  promotedToTracked: boolean("promotedToTracked").default(false).notNull(),
+  promotedQueryLocationId: integer("promotedQueryLocationId")
+    .references(() => campaignQueryLocations.id, { onDelete: "set null" }),
+  // Scan metadata
+  scanRunAt: timestamp("scanRunAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type BonusQueryResult = typeof bonusQueryResults.$inferSelect;
+export type InsertBonusQueryResult = typeof bonusQueryResults.$inferInsert;
+
+// ─── Query Drop-off Events ──────────────────────────────────────────────────────
+// Records when a tracked query loses visibility on a platform, so the client
+// dashboard can show "lost" alerts and the system can trigger re-optimization.
+export const queryDropoffEvents = pgTable("queryDropoffEvents", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaignId")
+    .notNull()
+    .references(() => campaigns.id, { onDelete: "cascade" }),
+  queryLocationId: integer("queryLocationId")
+    .notNull()
+    .references(() => campaignQueryLocations.id, { onDelete: "cascade" }),
+  platform: varchar("platform", { length: 20 }).notNull(), // 'chatgpt' | 'gemini' | 'aiOverview'
+  searchQuery: text("searchQuery").notNull(),
+  location: varchar("location", { length: 255 }).notNull(),
+  // When it was lost
+  detectedAt: timestamp("detectedAt").defaultNow().notNull(),
+  // Re-optimization status
+  reoptimizationInitiated: boolean("reoptimizationInitiated").default(false).notNull(),
+  reoptimizationInitiatedAt: timestamp("reoptimizationInitiatedAt"),
+  // When visibility was recovered (null = still lost)
+  recoveredAt: timestamp("recoveredAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type QueryDropoffEvent = typeof queryDropoffEvents.$inferSelect;
+export type InsertQueryDropoffEvent = typeof queryDropoffEvents.$inferInsert;

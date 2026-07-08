@@ -16,6 +16,7 @@ import {
   campaignQueryLocations,
   rankSnapshots,
   businesses,
+  queryDropoffEvents,
 } from "../drizzle/schema";
 import { eq, and, desc, asc, gte, lte, sql } from "drizzle-orm";
 import { checkRankForQueries, searchLLMMentions, checkLLMVisibilityDirect } from "./dataforseoService";
@@ -302,6 +303,63 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
           detectedAt: new Date().toISOString(),
           firstMentionedAt: new Date().toISOString(),
         });
+      }
+
+      // ── Drop-off detection ──────────────────────────────────────────────────
+      // Only record a drop-off when the business WAS mentioned before and is
+      // no longer mentioned now. Never fire for queries that were never mentioned.
+      const db = await getDb();
+      if (!db) continue;
+      const dropoffPlatforms: Array<{ platform: string; wasMentioned: boolean; isMentioned: boolean }> = [
+        { platform: "chatgpt",    wasMentioned: !!prev.chatgptMentioned,    isMentioned: chatgptMentioned },
+        { platform: "gemini",     wasMentioned: !!prev.geminiMentioned,     isMentioned: geminiMentioned },
+        { platform: "aiOverview", wasMentioned: !!prev.aiOverviewMentioned, isMentioned: aiOverviewMentioned },
+      ];
+
+      for (const { platform, wasMentioned, isMentioned } of dropoffPlatforms) {
+        if (wasMentioned && !isMentioned) {
+          // Check if there's already an open (unrecovered) drop-off event for this combo
+          const existingDropoff = await db
+            .select({ id: queryDropoffEvents.id })
+            .from(queryDropoffEvents)
+            .where(
+              and(
+                eq(queryDropoffEvents.campaignId, campaignId),
+                eq(queryDropoffEvents.queryLocationId, ql.id),
+                eq(queryDropoffEvents.platform, platform),
+                sql`${queryDropoffEvents.recoveredAt} IS NULL`
+              )
+            )
+            .limit(1);
+
+          if (existingDropoff.length === 0) {
+            // Record new drop-off event and flag re-optimization as initiated
+            await db.insert(queryDropoffEvents).values({
+              campaignId,
+              queryLocationId: ql.id,
+              platform,
+              searchQuery: ql.searchQuery,
+              location: ql.location,
+              detectedAt: new Date(),
+              reoptimizationInitiated: true,
+              reoptimizationInitiatedAt: new Date(),
+            });
+            console.log(`[RankTracker] Drop-off detected: "${ql.searchQuery}" on ${platform} — re-optimization initiated`);
+          }
+        } else if (!wasMentioned && isMentioned) {
+          // Recovery — mark any open drop-off events for this combo as recovered
+          await db
+            .update(queryDropoffEvents)
+            .set({ recoveredAt: new Date() })
+            .where(
+              and(
+                eq(queryDropoffEvents.campaignId, campaignId),
+                eq(queryDropoffEvents.queryLocationId, ql.id),
+                eq(queryDropoffEvents.platform, platform),
+                sql`${queryDropoffEvents.recoveredAt} IS NULL`
+              )
+            );
+        }
       }
     }
 

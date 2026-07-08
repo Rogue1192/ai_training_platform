@@ -40,6 +40,9 @@ import {
   Bot,
   Video,
   Play,
+  Star,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 
 // ============= Score Color Utilities =============
@@ -540,6 +543,116 @@ function QueryDetailsTable({ queries }: { queries: any[] }) {
   );
 }
 
+// ============= Bonus Wins Banner =============
+
+function BonusWinsBanner({ bonusResults }: { bonusResults: any[] }) {
+  const wins = bonusResults.filter((r) => r.isBonusWin);
+  if (wins.length === 0) return null;
+
+  const bySource = wins.reduce((acc: Record<string, any[]>, r) => {
+    const key = r.sourceSearchQuery || "Other";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(r);
+    return acc;
+  }, {});
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.35 }}
+    >
+      <div className="rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/10 via-amber-500/5 to-transparent p-6 mb-4">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center">
+            <Star className="w-5 h-5 text-yellow-400" />
+          </div>
+          <div>
+            <h2 className="text-lg font-heading font-bold text-yellow-300">
+              Congratulations! You're appearing in {wins.length} bonus {wins.length === 1 ? "query" : "queries"}
+            </h2>
+            <p className="text-xs text-yellow-400/70">
+              These are additional searches where your business is showing up — beyond your core tracked queries.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {Object.entries(bySource).map(([sourceQuery, results]) => (
+          <div key={sourceQuery} className="rounded-xl border border-yellow-500/20 bg-yellow-500/[0.04] p-4">
+            <p className="text-[10px] font-bold text-yellow-500/60 uppercase tracking-widest mb-2">Related to: {sourceQuery}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {(results as any[]).map((r: any, i: number) => (
+                <div key={i} className="rounded-lg border border-yellow-500/15 bg-yellow-500/[0.04] p-3 flex items-start gap-2">
+                  <Star className="w-3.5 h-3.5 text-yellow-400 mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-yellow-100 truncate">{r.bonusSearchQuery}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      {r.chatgptMentioned && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-500/20 text-green-300">ChatGPT</span>
+                      )}
+                      {r.geminiMentioned && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300">Gemini</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </motion.section>
+  );
+}
+
+// ============= Drop-off Alert =============
+
+function DropoffAlert({ dropoffEvents }: { dropoffEvents: any[] }) {
+  const openDropoffs = dropoffEvents.filter((e) => !e.recoveredAt);
+  if (openDropoffs.length === 0) return null;
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.25 }}
+    >
+      <div className="rounded-2xl border border-red-500/30 bg-gradient-to-br from-red-500/10 via-red-900/5 to-transparent p-5">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-full bg-red-500/20 flex items-center justify-center shrink-0 mt-0.5">
+            <AlertTriangle className="w-4 h-4 text-red-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-red-300 mb-1">
+              Visibility Drop Detected — Re-optimization Initiated
+            </h3>
+            <p className="text-xs text-red-400/70 mb-3">
+              Your business stopped appearing for {openDropoffs.length} {openDropoffs.length === 1 ? "query" : "queries"}. Our team has already initiated a new optimization campaign to restore your visibility.
+            </p>
+            <div className="space-y-1.5">
+              {openDropoffs.slice(0, 5).map((e: any, i: number) => (
+                <div key={i} className="flex items-center gap-2 text-xs text-red-300/80">
+                  <RefreshCw className="w-3 h-3 text-red-400 shrink-0" />
+                  <span className="font-medium">{e.searchQuery}</span>
+                  <span className="text-red-500/50">·</span>
+                  <span className="capitalize" style={{ color: e.platform === 'chatgpt' ? '#22c55e' : e.platform === 'gemini' ? '#a855f7' : '#f97316' }}>
+                    {e.platform === 'chatgpt' ? 'ChatGPT' : e.platform === 'gemini' ? 'Gemini' : 'AI Overview'}
+                  </span>
+                </div>
+              ))}
+              {openDropoffs.length > 5 && (
+                <p className="text-xs text-red-500/50">+{openDropoffs.length - 5} more</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.section>
+  );
+}
+
 // ============= Main Dashboard Component =============
 
 export default function ClientDashboard() {
@@ -547,6 +660,16 @@ export default function ClientDashboard() {
   const token = params.token || "";
 
   const { data, isLoading, error } = trpc.clientDashboard.getByToken.useQuery(
+    { token },
+    { enabled: !!token, refetchOnWindowFocus: false }
+  );
+
+  const { data: bonusResults = [] } = trpc.rankTracking.getBonusResultsByToken.useQuery(
+    { token },
+    { enabled: !!token, refetchOnWindowFocus: false }
+  );
+
+  const { data: dropoffEvents = [] } = trpc.rankTracking.getDropoffEventsByToken.useQuery(
     { token },
     { enabled: !!token, refetchOnWindowFocus: false }
   );
@@ -686,10 +809,16 @@ export default function ClientDashboard() {
           </motion.section>
         )}
 
+        {/* Drop-off Alert — shown above wins if any open drop-offs exist */}
+        <DropoffAlert dropoffEvents={dropoffEvents} />
+
         {/* Wins Section */}
         {report.recentWins.length > 0 && (
           <WinsSection wins={report.recentWins} />
         )}
+
+        {/* Bonus Wins Banner */}
+        <BonusWinsBanner bonusResults={bonusResults} />
 
         {/* Visibility Trend */}
         <motion.section

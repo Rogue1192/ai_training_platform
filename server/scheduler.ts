@@ -811,6 +811,14 @@ export function startScheduler(): void {
     checkScheduledRankTracking().catch((err: Error) => console.error("[Scheduler] Rank tracking failed:", err));
   }, RANK_TRACK_TICK_MS);
 
+  // Bi-weekly bonus query discovery scan — checks semantically adjacent untracked
+  // queries to find new places the business is appearing organically.
+  // Runs every 6 hours but the per-campaign gap guard enforces the real 14-day cadence.
+  checkBonusQueryScans().catch((err: Error) => console.error("[Scheduler] Bonus query scan failed:", err));
+  setInterval(() => {
+    checkBonusQueryScans().catch((err: Error) => console.error("[Scheduler] Bonus query scan failed:", err));
+  }, 6 * 60 * 60 * 1000); // re-evaluate every 6 hours
+
   console.log("[Scheduler] Scheduler started successfully");
 }
 
@@ -1049,6 +1057,67 @@ async function checkScheduledRankTracking(): Promise<void> {
     if (checked > 0) console.log(`[Scheduler] Scheduled rank tracking checked ${checked} campaign(s)`);
   } catch (err: any) {
     console.error("[Scheduler] checkScheduledRankTracking error:", err.message);
+  }
+}
+
+// ─── Bonus Query Scan Scheduler ─────────────────────────────────────────────
+
+const BONUS_SCAN_MIN_GAP_MS = 13 * 24 * 60 * 60 * 1000; // 13 days (bi-weekly with buffer)
+
+/**
+ * Bi-weekly bonus query discovery scan.
+ *
+ * For each campaign that has tracked queries, generates semantically adjacent
+ * untracked queries and checks ChatGPT + Gemini to find new places the business
+ * is appearing organically. Skips campaigns scanned within the last 13 days.
+ */
+async function checkBonusQueryScans(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    const { runBonusQueryScan } = await import("./bonusQueryScanner");
+    const { campaignQueryLocations: cqlTable, bonusQueryResults: bqrTable } = await import("../drizzle/schema");
+
+    // Every campaign that has at least one query-location is a bonus scan target.
+    const targets = await db
+      .selectDistinct({ campaignId: cqlTable.campaignId })
+      .from(cqlTable);
+
+    if (targets.length === 0) return;
+
+    const now = Date.now();
+    let scanned = 0;
+
+    for (const { campaignId } of targets) {
+      if (campaignId == null) continue;
+      try {
+        // Gap guard: skip if we already ran a bonus scan for this campaign recently.
+        const [last] = await db
+          .select({ scanRunAt: bqrTable.scanRunAt })
+          .from(bqrTable)
+          .where(eq(bqrTable.campaignId, campaignId))
+          .orderBy(desc(bqrTable.scanRunAt))
+          .limit(1);
+
+        if (last && now - new Date(last.scanRunAt).getTime() < BONUS_SCAN_MIN_GAP_MS) {
+          continue;
+        }
+
+        const result = await runBonusQueryScan(campaignId);
+        scanned++;
+        console.log(
+          `[Scheduler] Bonus scan campaign ${campaignId}: ${result.queriesChecked} checked, ` +
+          `${result.bonusWinsFound} bonus win(s), ${result.promotedToTracked} promoted to tracked`
+        );
+      } catch (err: any) {
+        console.error(`[Scheduler] Bonus scan failed for campaign ${campaignId}:`, err.message);
+      }
+    }
+
+    if (scanned > 0) console.log(`[Scheduler] Bonus query scans completed for ${scanned} campaign(s)`);
+  } catch (err: any) {
+    console.error("[Scheduler] checkBonusQueryScans error:", err.message);
   }
 }
 
