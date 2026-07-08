@@ -20,9 +20,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import {
   Building2, User, Award, Share2,
   CheckCircle, Loader2, ChevronRight, ChevronLeft,
-  Globe, Phone, MapPin, Mail, Star,
+  Globe, Phone, MapPin, Mail, Star, AlertTriangle,
 } from "lucide-react";
 
 // ─── Step definitions ────────────────────────────────────────────────────────
@@ -92,6 +102,9 @@ export default function ClientIntakeForm() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Location warning modal state
+  const [showLocationWarning, setShowLocationWarning] = useState(false);
+
   // Load agency branding (public — no auth)
   const brandingQuery = trpc.agency.getIntakeBranding.useQuery(
     { token },
@@ -113,6 +126,18 @@ export default function ClientIntakeForm() {
     if (step === 1) return form.name.trim().length > 0;
     if (step === 2) return form.contactName.trim().length > 0 && form.contactEmail.trim().length > 0;
     return true;
+  };
+
+  // Count how many location slots are filled
+  const filledLocationCount = form.locations.filter((l) => l.trim().length > 0).length;
+
+  // Handle the Next button click — intercept on step 1 if only 1 location is filled
+  const handleNext = () => {
+    if (step === 1 && filledLocationCount < 2) {
+      setShowLocationWarning(true);
+      return;
+    }
+    setStep((s) => (s < 4 ? (s + 1) as StepId : s));
   };
 
   const handleSubmit = () => {
@@ -202,6 +227,48 @@ export default function ClientIntakeForm() {
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4">
       <div className="max-w-2xl mx-auto">
+
+        {/* ── Location warning lightbox ── */}
+        <AlertDialog open={showLocationWarning} onOpenChange={setShowLocationWarning}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+                Only {filledLocationCount === 0 ? "0 Locations" : "1 Location"} Entered
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-sm leading-relaxed space-y-2">
+                <span className="block">
+                  Your campaign is designed to train AI to recommend your business across{" "}
+                  <strong>multiple cities or service areas</strong>. You've only entered{" "}
+                  {filledLocationCount === 0 ? "no locations" : "1 location"} so far.
+                </span>
+                <span className="block">
+                  Adding more locations means the AI gets trained to recommend you in more cities —
+                  directly increasing the number of potential customers who see your business in
+                  AI-generated answers.
+                </span>
+                <span className="block font-medium text-foreground">
+                  Please go back and add as many service areas as your plan allows to get the most
+                  out of your campaign.
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setShowLocationWarning(false)}>
+                Go Back &amp; Add Locations
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-amber-500 hover:bg-amber-600 text-white"
+                onClick={() => {
+                  setShowLocationWarning(false);
+                  setStep((s) => (s < 4 ? (s + 1) as StepId : s));
+                }}
+              >
+                Continue Anyway
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Header / Branding */}
         <div className="text-center mb-8">
@@ -450,7 +517,7 @@ export default function ClientIntakeForm() {
 
               {step < 4 ? (
                 <Button
-                  onClick={() => setStep((s) => (s < 4 ? (s + 1) as StepId : s))}
+                  onClick={handleNext}
                   disabled={!canAdvance()}
                 >
                   Next <ChevronRight className="h-4 w-4 ml-1" />
