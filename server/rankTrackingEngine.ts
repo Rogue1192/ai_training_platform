@@ -78,6 +78,7 @@ export interface WinDetection {
   previousValue: string;
   currentValue: string;
   detectedAt: string;
+  firstMentionedAt: string | null; // When the business first appeared for this query-location
 }
 
 export interface CampaignRankReport {
@@ -246,7 +247,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
     // Detect wins by comparing to previous snapshot
     const prev = previousSnapshots.get(ql.id);
     if (prev) {
-      // ChatGPT wins
+            // ChatGPT wins
       if (chatgptMentioned && !prev.chatgptMentioned) {
         winsDetected.push({
           queryLocationId: ql.id,
@@ -257,9 +258,9 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
           previousValue: "Not mentioned",
           currentValue: "Mentioned",
           detectedAt: new Date().toISOString(),
+          firstMentionedAt: new Date().toISOString(),
         });
       }
-
       // Gemini wins
       if (geminiMentioned && !prev.geminiMentioned) {
         winsDetected.push({
@@ -271,9 +272,9 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
           previousValue: "Not mentioned",
           currentValue: "Mentioned",
           detectedAt: new Date().toISOString(),
+          firstMentionedAt: new Date().toISOString(),
         });
       }
-
       // AI Overview wins
       if (aiOverviewMentioned && !prev.aiOverviewMentioned) {
         winsDetected.push({
@@ -285,6 +286,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
           previousValue: "Not mentioned",
           currentValue: "Mentioned",
           detectedAt: new Date().toISOString(),
+          firstMentionedAt: new Date().toISOString(),
         });
       }
     }
@@ -375,6 +377,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
         previousValue: "Not tracked (bonus location)",
         currentValue: "Mentioned (bonus win)",
         detectedAt: new Date().toISOString(),
+        firstMentionedAt: new Date().toISOString(),
       });
       console.log(`[Rank Tracking] Bonus location detected: "${mention.keyword}" in ${detectedLocation} (not a target location)`);
     }
@@ -679,7 +682,8 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
         winType: "new_mention",
         previousValue: "Not mentioned",
         currentValue: "Mentioned",
-        detectedAt: new Date().toISOString(),
+        detectedAt: detail.firstMentionedAt || new Date().toISOString(),
+        firstMentionedAt: detail.firstMentionedAt,
       });
     }
     if (detail.geminiChange === "new") {
@@ -691,7 +695,8 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
         winType: "new_mention",
         previousValue: "Not mentioned",
         currentValue: "Mentioned",
-        detectedAt: new Date().toISOString(),
+        detectedAt: detail.firstMentionedAt || new Date().toISOString(),
+        firstMentionedAt: detail.firstMentionedAt,
       });
     }
     if (detail.aiOverviewChange === "new") {
@@ -703,7 +708,8 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
         winType: "new_mention",
         previousValue: "Not mentioned",
         currentValue: "Mentioned",
-        detectedAt: new Date().toISOString(),
+        detectedAt: detail.firstMentionedAt || new Date().toISOString(),
+        firstMentionedAt: detail.firstMentionedAt,
       });
     }
     // position_improvement win type removed — LLMs are generative, mention rate is what matters

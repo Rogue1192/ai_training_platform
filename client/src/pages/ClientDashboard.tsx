@@ -268,13 +268,18 @@ function WinCard({ win, index }: { win: any; index: number }) {
     aiOverview: Eye,
   };
   const PlatformIcon = platformIcons[win.platform] || Sparkles;
+  const firstSeenDate = win.firstMentionedAt
+    ? new Date(win.firstMentionedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : win.detectedAt
+    ? new Date(win.detectedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : null;
 
   return (
     <motion.div
       className="relative overflow-hidden rounded-lg border border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 to-transparent p-4"
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.1 }}
+      transition={{ duration: 0.4, delay: Math.min(index * 0.05, 0.4) }}
     >
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
@@ -289,12 +294,63 @@ function WinCard({ win, index }: { win: any; index: number }) {
             </span>
           </div>
           <p className="text-sm font-medium text-foreground truncate">{win.searchQuery}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {win.previousValue} → <span className="text-emerald-300 font-medium">{win.currentValue}</span>
-          </p>
+          <div className="flex items-center justify-between mt-0.5">
+            <p className="text-xs text-muted-foreground">
+              {win.previousValue} → <span className="text-emerald-300 font-medium">{win.currentValue}</span>
+            </p>
+            {firstSeenDate && (
+              <p className="text-[10px] text-muted-foreground/60 shrink-0 ml-2">
+                First seen {firstSeenDate}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </motion.div>
+  );
+}
+
+// ============= Wins Section =============
+
+function WinsSection({ wins }: { wins: any[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const INITIAL_COUNT = 8;
+  const visibleWins = showAll ? wins : wins.slice(0, INITIAL_COUNT);
+  const hasMore = wins.length > INITIAL_COUNT;
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.3 }}
+    >
+      <h2 className="text-lg font-heading font-bold text-white mb-4 flex items-center gap-2">
+        <Trophy className="w-5 h-5 text-emerald-400" />
+        Recent Wins
+        <span className="text-xs font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full">
+          {wins.length}
+        </span>
+      </h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {visibleWins.map((win: any, i: number) => (
+          <WinCard key={`${win.queryLocationId}-${win.platform}`} win={win} index={i} />
+        ))}
+      </div>
+      {hasMore && (
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-sm font-medium hover:bg-emerald-500/20 transition-colors"
+          >
+            {showAll ? (
+              <><ChevronUp className="w-4 h-4" /> Show Less</>
+            ) : (
+              <><ChevronDown className="w-4 h-4" /> See {wins.length - INITIAL_COUNT} More Wins</>
+            )}
+          </button>
+        </div>
+      )}
+    </motion.section>
   );
 }
 
@@ -622,24 +678,7 @@ export default function ClientDashboard() {
 
         {/* Wins Section */}
         {report.recentWins.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-          >
-            <h2 className="text-lg font-heading font-bold text-white mb-4 flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-emerald-400" />
-              Recent Wins
-              <span className="text-xs font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full">
-                {report.recentWins.length}
-              </span>
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {report.recentWins.slice(0, 8).map((win: any, i: number) => (
-                <WinCard key={`${win.queryLocationId}-${win.platform}`} win={win} index={i} />
-              ))}
-            </div>
-          </motion.section>
+          <WinsSection wins={report.recentWins} />
         )}
 
         {/* Visibility Trend */}
