@@ -465,12 +465,18 @@ async function getLatestSnapshots(campaignId: number): Promise<Map<number, typeo
 }
 
 /**
- * Get baseline snapshots for a campaign (first check)
+ * Get baseline snapshots for a campaign.
+ *
+ * Primary: snapshots with checkType = 'baseline' (set by runCampaignBaselineCheck).
+ * Fallback: if none exist (e.g. campaigns created before the baseline checkType was
+ * introduced, or where runScheduledRankCheck was called instead), use the earliest
+ * scheduled snapshot per query-location as the de-facto baseline.
  */
 async function getBaselineSnapshots(campaignId: number): Promise<Map<number, typeof rankSnapshots.$inferSelect>> {
   const db = await getDb();
   if (!db) return new Map();
 
+  // Try explicit baseline snapshots first
   const baselineSnaps = await db.select().from(rankSnapshots)
     .where(and(
       eq(rankSnapshots.campaignId, campaignId),
@@ -482,6 +488,18 @@ async function getBaselineSnapshots(campaignId: number): Promise<Map<number, typ
   for (const snap of baselineSnaps) {
     if (!baseline.has(snap.queryLocationId)) {
       baseline.set(snap.queryLocationId, snap);
+    }
+  }
+
+  // Fallback: use the earliest scheduled snapshot per query-location
+  if (baseline.size === 0) {
+    const allSnaps = await db.select().from(rankSnapshots)
+      .where(eq(rankSnapshots.campaignId, campaignId))
+      .orderBy(asc(rankSnapshots.checkedAt));
+    for (const snap of allSnaps) {
+      if (!baseline.has(snap.queryLocationId)) {
+        baseline.set(snap.queryLocationId, snap);
+      }
     }
   }
 

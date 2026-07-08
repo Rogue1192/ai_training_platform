@@ -121,7 +121,7 @@ export default function CampaignDetail() {
     { campaignId },
     { enabled: !!campaignId }
   );
-  const { data: rankReport } = trpc.rankTracking.getReport.useQuery(
+  const { data: rankReport, refetch: refetchRankReport } = trpc.rankTracking.getReport.useQuery(
     { campaignId },
     { enabled: !!campaignId }
   );
@@ -170,6 +170,20 @@ export default function CampaignDetail() {
     onSuccess: () => {
       toast.success("Campaign updated");
       refetchCampaign();
+    },
+  });
+
+  const [isRunningRankCheck, setIsRunningRankCheck] = useState(false);
+  const rankCheckMutation = trpc.rankTracking.runCheck.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Rank check complete — ${result.snapshotsCreated} snapshot(s) recorded`);
+      setIsRunningRankCheck(false);
+      refetchRankReport();
+      refetchCampaign();
+    },
+    onError: (error) => {
+      toast.error(`Rank check failed: ${error.message}`);
+      setIsRunningRankCheck(false);
     },
   });
 
@@ -780,6 +794,29 @@ export default function CampaignDetail() {
 
         {/* ─── RANKINGS TAB ─── */}
         <TabsContent value="rankings" className="space-y-4">
+          {/* Manual rank poll row */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {rankReport?.lastCheckAt
+                ? `Last checked ${new Date(rankReport.lastCheckAt).toLocaleString()}`
+                : "No rank data yet — run a check to get started"}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsRunningRankCheck(true);
+                rankCheckMutation.mutate({ campaignId });
+              }}
+              disabled={isRunningRankCheck || rankCheckMutation.isPending}
+            >
+              {isRunningRankCheck ? (
+                <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Running Check...</>
+              ) : (
+                <><RotateCcw className="w-3.5 h-3.5 mr-1.5" />Run Rank Check</>
+              )}
+            </Button>
+          </div>
           {rankReport ? (
             <>
               <div className="grid gap-4 md:grid-cols-3">
