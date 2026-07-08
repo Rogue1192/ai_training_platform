@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 import { appRouter, llmInsightsRouter, agencyRouter } from "../routers";
+import { costTrackingRouter } from "../costTrackingRouter";
 import { router } from "./trpc";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -14,11 +15,12 @@ import { startScheduler } from "../scheduler";
 import { createWebhookRouter } from "../webhookHandler";
 import { ensureMonkeyIndexerEnumValue, ensureIsTargetLocationColumn, ensureModelConfigEnumValue } from "../db";
 
-// Combined router with all sub-routers including llmInsights and agency
+// Combined router with all sub-routers including llmInsights, agency, and costTracking
 const combinedRouter = router({
   ...appRouter._def.procedures,
   llmInsights: llmInsightsRouter,
   agency: agencyRouter,
+  costTracking: costTrackingRouter,
 });
 export type CombinedRouter = typeof combinedRouter;
 

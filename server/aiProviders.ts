@@ -10,6 +10,8 @@ export interface AIMessage {
 export interface AIResponse {
   content: string;
   responseTime: number;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 // ============= Provider-specific callers =============
@@ -32,7 +34,9 @@ async function callOpenAI(apiKey: string, model: string, messages: AIMessage[]):
     );
     const responseTime = Date.now() - startTime;
     const content = response.data.choices[0]?.message?.content || "";
-    return { content, responseTime };
+    const inputTokens = response.data.usage?.prompt_tokens ?? 0;
+    const outputTokens = response.data.usage?.completion_tokens ?? 0;
+    return { content, responseTime, inputTokens, outputTokens };
   } catch (error: any) {
     throw new Error(`OpenAI API error: ${error.response?.data?.error?.message || error.message}`);
   }
@@ -68,7 +72,9 @@ async function callAnthropic(apiKey: string, model: string, messages: AIMessage[
     );
     const responseTime = Date.now() - startTime;
     const content = response.data.content[0]?.text || "";
-    return { content, responseTime };
+    const inputTokens = response.data.usage?.input_tokens ?? 0;
+    const outputTokens = response.data.usage?.output_tokens ?? 0;
+    return { content, responseTime, inputTokens, outputTokens };
   } catch (error: any) {
     throw new Error(`Anthropic API error: ${error.response?.data?.error?.message || error.message}`);
   }
@@ -105,7 +111,9 @@ async function callMiniMax(apiKey: string, model: string, messages: AIMessage[])
     );
     const responseTime = Date.now() - startTime;
     const content = response.data.content[0]?.text || "";
-    return { content, responseTime };
+    const inputTokens = response.data.usage?.input_tokens ?? 0;
+    const outputTokens = response.data.usage?.output_tokens ?? 0;
+    return { content, responseTime, inputTokens, outputTokens };
   } catch (error: any) {
     throw new Error(`MiniMax API error: ${error.response?.data?.error?.message || error.message}`);
   }
@@ -155,7 +163,9 @@ async function callGoogle(
     // (text + grounding metadata). Concatenate all text parts.
     const parts = response.data.candidates?.[0]?.content?.parts || [];
     const content = parts.map((p: any) => p.text || "").join("");
-    return { content, responseTime };
+    const inputTokens = response.data.usageMetadata?.promptTokenCount ?? 0;
+    const outputTokens = response.data.usageMetadata?.candidatesTokenCount ?? 0;
+    return { content, responseTime, inputTokens, outputTokens };
   } catch (error: any) {
     throw new Error(`Google AI API error: ${error.response?.data?.error?.message || error.message}`);
   }

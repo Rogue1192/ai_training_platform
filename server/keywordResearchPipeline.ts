@@ -20,6 +20,7 @@ import {
 import { getDb } from "./db";
 import { businesses } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { logDFSCost, DFS_COSTS } from "./costLogger";
 
 // ============= Types =============
 
@@ -236,6 +237,26 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
 
       topKeywords = research.topKeywords;
 
+      // Log DataForSEO keyword research costs
+      await logDFSCost({
+        campaignId,
+        businessId: campaign.businessId,
+        operationType: 'keyword_research',
+        endpoint: '/dataforseo_labs/google/keywords_for_site/live',
+        costUsd: DFS_COSTS.keywordsForSite,
+        campaignCreatedAt: campaign.createdAt,
+        metadata: { keywordsFound: research.topKeywords.length },
+      });
+      await logDFSCost({
+        campaignId,
+        businessId: campaign.businessId,
+        operationType: 'keyword_research',
+        endpoint: '/ai_optimization/ai_keyword_data/keywords_search_volume/live',
+        costUsd: DFS_COSTS.aiKeywordVolume * research.topKeywords.length,
+        campaignCreatedAt: campaign.createdAt,
+        metadata: { keywordCount: research.topKeywords.length },
+      });
+
       // Step 3: Contribute to industry cache
       await contributeToIndustryCache(
         industry,
@@ -410,6 +431,17 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
         sourcesCited: null,
         checkType: "baseline",
         checkedAt: new Date(),
+      });
+
+      // Log rank check LLM costs (3 LLM calls per query: ChatGPT + Gemini + AI Overview)
+      await logDFSCost({
+        campaignId,
+        businessId: campaign.businessId,
+        operationType: 'rank_check',
+        endpoint: 'direct_llm_check',
+        costUsd: DFS_COSTS.llmResponse * 3,
+        campaignCreatedAt: campaign.createdAt,
+        metadata: { query: ql.searchQuery, location: ql.location, checkType: 'baseline' },
       });
 
       // Update the query-location with current rank status

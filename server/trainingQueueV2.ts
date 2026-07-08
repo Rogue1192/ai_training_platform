@@ -42,6 +42,8 @@ import {
   toSearchQueryStyle,
 } from "./trainingContextEnricher";
 import { isModelDeprecatedError, buildDeprecationAlert, getModelConfig } from "./modelConfigService";
+import { logLLMCost } from "./costLogger";
+import { getCampaignById } from "./dbCampaigns";
 
 // Types for the new phase-based system
 export type TrainingPhase = 'pending' | 'baseline' | 'training' | 'evaluation' | 'completed';
@@ -278,6 +280,24 @@ async function executeBaselineTest(sessionId: number, userId: number): Promise<v
       messages
     );
     const responseTime = Date.now() - startTime;
+
+    // Log cost for baseline test
+    if (session.campaignId) {
+      const campaign = await getCampaignById(session.campaignId).catch(() => null);
+      if (campaign) {
+        await logLLMCost({
+          campaignId: campaign.id,
+          businessId: session.businessId ?? null,
+          operationType: 'training',
+          provider: session.targetAiProvider,
+          model: session.targetAiModel,
+          inputTokens: response.inputTokens,
+          outputTokens: response.outputTokens,
+          campaignCreatedAt: campaign.createdAt,
+          metadata: { phase: 'baseline', sessionId },
+        });
+      }
+    }
     
     // Check if business was mentioned (unprompted!)
     const { mentioned, confidence } = checkBusinessMention(response.content, businessName);
@@ -418,9 +438,8 @@ async function executeTrainingIteration(
       },
     ];
     
-    const startTime = Date.now();
+        const startTime = Date.now();
     const conversationHistory: Array<{ role: "user" | "assistant"; content: string; timestamp: number }> = [];
-    
     // Get initial response
     const response = await callAI(
       session.targetAiProvider as AIProvider,
@@ -428,6 +447,23 @@ async function executeTrainingIteration(
       session.targetAiModel,
       messages
     );
+    // Log cost for training iteration
+    if (session.campaignId) {
+      const campaign = await getCampaignById(session.campaignId).catch(() => null);
+      if (campaign) {
+        await logLLMCost({
+          campaignId: campaign.id,
+          businessId: session.businessId ?? null,
+          operationType: 'training',
+          provider: session.targetAiProvider,
+          model: session.targetAiModel,
+          inputTokens: response.inputTokens,
+          outputTokens: response.outputTokens,
+          campaignCreatedAt: campaign.createdAt,
+          metadata: { phase: 'training', iteration: iterationNumber, sessionId },
+        });
+      }
+    }
     
     conversationHistory.push({
       role: "user",
@@ -621,6 +657,24 @@ async function executeEvaluationTest(sessionId: number, userId: number): Promise
       messages
     );
     const responseTime = Date.now() - startTime;
+
+    // Log cost for evaluation test
+    if (session.campaignId) {
+      const campaign = await getCampaignById(session.campaignId).catch(() => null);
+      if (campaign) {
+        await logLLMCost({
+          campaignId: campaign.id,
+          businessId: session.businessId ?? null,
+          operationType: 'training',
+          provider: session.targetAiProvider,
+          model: session.targetAiModel,
+          inputTokens: response.inputTokens,
+          outputTokens: response.outputTokens,
+          campaignCreatedAt: campaign.createdAt,
+          metadata: { phase: 'evaluation', sessionId },
+        });
+      }
+    }
     
     // Check if business was mentioned (THIS IS THE REAL TEST!)
     const { mentioned, confidence } = checkBusinessMention(response.content, businessName);

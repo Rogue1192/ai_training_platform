@@ -27,6 +27,7 @@ import AgencySettings from "./pages/AgencySettings";
 import AgencyClientDetail from "./pages/AgencyClientDetail";
 import AgencyLLMInsights from "./pages/AgencyLLMInsights";
 import ClientIntakeForm from "./pages/ClientIntakeForm";
+import CostTracking from "./pages/CostTracking";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Redirect } from "wouter";
 import { useEffect, useRef } from "react";
@@ -45,6 +46,7 @@ import {
   Mail,
   BarChart3,
   Users,
+  DollarSign,
 } from "lucide-react";
 
 // Admin navigation — full platform access
@@ -64,6 +66,7 @@ const adminNavigationItems = [
   { href: "/emails", label: "Emails", icon: Mail },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
   { href: "/agencies", label: "Agencies", icon: Users },
+  { href: "/cost-tracking", label: "Cost Tracking", icon: DollarSign },
 ];
 
 // Agency navigation — limited to their portal
@@ -185,6 +188,11 @@ function Router() {
       <Route path="/agencies">
         <DashboardLayout navigationItems={navItems}>
           <AgencyManagement />
+        </DashboardLayout>
+      </Route>
+      <Route path="/cost-tracking">
+        <DashboardLayout navigationItems={navItems}>
+          <CostTracking />
         </DashboardLayout>
       </Route>
 

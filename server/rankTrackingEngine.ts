@@ -19,6 +19,7 @@ import {
 } from "../drizzle/schema";
 import { eq, and, desc, asc, gte, lte, sql } from "drizzle-orm";
 import { checkRankForQueries, searchLLMMentions, checkLLMVisibilityDirect } from "./dataforseoService";
+import { logDFSCost, DFS_COSTS } from "./costLogger";
 import {
   getCampaignById,
   getQueryLocationsByCampaignId,
@@ -243,6 +244,17 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
     });
 
     newSnapshots.push({ chatgptMentioned, chatgptPosition, geminiMentioned, geminiPosition, aiOverviewMentioned, aiOverviewPosition });
+
+    // Log rank check cost (3 LLM calls per query: ChatGPT + Gemini + AI Overview)
+    await logDFSCost({
+      campaignId,
+      businessId: (business as any).id,
+      operationType: 'rank_check',
+      endpoint: 'direct_llm_check',
+      costUsd: DFS_COSTS.llmResponse * 3,
+      campaignCreatedAt: campaign.createdAt,
+      metadata: { query: ql.searchQuery, location: ql.location, checkType: 'scheduled' },
+    }).catch(() => {});
 
     // Detect wins by comparing to previous snapshot
     const prev = previousSnapshots.get(ql.id);

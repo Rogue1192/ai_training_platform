@@ -1,4 +1,4 @@
-import { integer, pgEnum, pgTable, serial, text, timestamp, varchar, json, boolean, real } from "drizzle-orm/pg-core";
+import { integer, pgEnum, pgTable, serial, text, timestamp, varchar, json, boolean, real, decimal } from "drizzle-orm/pg-core";
 
 /**
  * Core user table backing auth flow.
@@ -422,6 +422,9 @@ export const campaigns = pgTable("campaigns", {
   stripePaymentLinkSentAt: timestamp("stripePaymentLinkSentAt"),
   stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
   stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
+  // Billing type — determines revenue rate for P&L calculation
+  // 'white_label' = agency wholesale ($99/$149/$179), 'direct' = retail ($199/$299/$349), 'legacy' = costs only
+  billingType: varchar("billingType", { length: 20 }).default("white_label").notNull(),
   // Metadata
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -680,3 +683,35 @@ export const schemaMarkupRecommendations = pgTable("schemaMarkupRecommendations"
 
 export type SchemaMarkupRecommendation = typeof schemaMarkupRecommendations.$inferSelect;
 export type InsertSchemaMarkupRecommendation = typeof schemaMarkupRecommendations.$inferInsert;
+
+// ─── Cost Logs ─────────────────────────────────────────────────────────────────
+// Tracks every LLM and DataForSEO API call cost per campaign.
+// Used by the super-admin Cost Tracking page to compute per-client P&L.
+export const costLogs = pgTable("costLogs", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaignId")
+    .notNull()
+    .references(() => campaigns.id, { onDelete: "cascade" }),
+  businessId: integer("businessId")
+    .references(() => businesses.id, { onDelete: "set null" }),
+  // Category of operation: 'training' | 'rank_check' | 'content_generation' |
+  //   'credibility_research' | 'keyword_research' | 'dfs_llm_mentions' |
+  //   'dfs_keyword_volume' | 'dfs_site_keywords'
+  operationType: varchar("operationType", { length: 50 }).notNull(),
+  // AI provider: 'openai' | 'anthropic' | 'google' | 'minimax' | 'dataforseo'
+  provider: varchar("provider", { length: 30 }).notNull(),
+  // Model name (null for DataForSEO calls)
+  model: varchar("model", { length: 100 }),
+  inputTokens: integer("inputTokens").default(0).notNull(),
+  outputTokens: integer("outputTokens").default(0).notNull(),
+  // Computed cost in USD (6 decimal places for sub-cent precision)
+  costUsd: decimal("costUsd", { precision: 10, scale: 6 }).default("0").notNull(),
+  // The billing cycle start date this cost belongs to (campaign createdAt day-of-month rolling)
+  billingCycleStart: timestamp("billingCycleStart").notNull(),
+  // Optional extra context (e.g. { queryCount: 5, endpoint: '/llm_mentions/search/live' })
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type CostLog = typeof costLogs.$inferSelect;
+export type InsertCostLog = typeof costLogs.$inferInsert;
+
