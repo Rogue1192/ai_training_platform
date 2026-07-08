@@ -585,10 +585,10 @@ function BonusWinsBanner({ bonusResults }: { bonusResults: any[] }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {(results as any[]).map((r: any, i: number) => (
                 <div key={i} className="rounded-lg border border-yellow-500/15 bg-yellow-500/[0.04] p-3 flex items-start gap-2">
-                  <Star className="w-3.5 h-3.5 text-yellow-400 mt-0.5 shrink-0" />
+                  <Star className="w-3.5 h-3.5 text-yellow-400 mt-1 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-yellow-100 truncate">{r.bonusSearchQuery}</p>
-                    <div className="flex items-center gap-2 mt-1">
+                    <p className="text-sm font-semibold text-yellow-100 leading-snug break-words">{r.bonusSearchQuery}</p>
+                    <div className="flex items-center gap-2 mt-1.5">
                       {r.chatgptMentioned && (
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-500/20 text-green-300">ChatGPT</span>
                       )}

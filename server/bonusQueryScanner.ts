@@ -102,7 +102,6 @@ Return ONLY a JSON array of ${BONUS_QUERIES_PER_TRACKED} query strings, no expla
 export async function runBonusQueryScan(campaignId: number): Promise<{
   bonusWinsFound: number;
   queriesChecked: number;
-  promotedToTracked: number;
 }> {
   console.log(`[BonusScanner] Starting scan for campaign ${campaignId}`);
 
@@ -165,7 +164,6 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
 
   let bonusWinsFound = 0;
   let queriesChecked = 0;
-  let promotedToTracked = 0;
   const scanRunAt = new Date();
 
   // Process each tracked query — generate and check adjacent queries
@@ -242,47 +240,12 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
 
       const isBonusWin = chatgptMentioned || geminiMentioned;
 
-      // Determine if we should promote this to a tracked query
-      // Only promote if it's a win AND the campaign has remaining query slot budget
-      let promotedQueryLocationId: number | null = null;
-      let promotedToTrackedFlag = false;
-
       if (isBonusWin) {
         bonusWinsFound++;
-
-        // Check if there's room in the query slot budget
-        const usedSlots = trackedQueryLocations.length;
-        const maxSlots = (campaign as any).maxQuerySlots || 15;
-
-        if (usedSlots < maxSlots) {
-          // Promote to tracked
-          const [newQl] = await db
-            .insert(campaignQueryLocations)
-            .values({
-              campaignId,
-              searchQuery: adjacentQuery,
-              location: ql.location,
-              isTargetLocation: true,
-              trainingStatus: "monitoring", // Already appearing — go straight to monitoring
-              currentRankChatGPT: chatgptMentioned ? "mentioned" : "not_mentioned",
-              currentRankGemini: geminiMentioned ? "mentioned" : "not_mentioned",
-              currentRankAIOverview: "not_mentioned",
-              firstMentionedAt: new Date(),
-              lastRankCheckAt: new Date(),
-            })
-            .returning();
-
-          if (newQl) {
-            promotedQueryLocationId = newQl.id;
-            promotedToTrackedFlag = true;
-            promotedToTracked++;
-            // Add to tracked set so we don't re-promote in this same scan
-            alreadyTrackedSet.add(adjacentQuery.toLowerCase().trim());
-          }
-        }
       }
 
-      // Record the bonus query result
+      // Record the bonus query result — bonus queries NEVER get promoted to tracked.
+      // They exist purely as bonus visibility data and never affect the ranking score.
       await db.insert(bonusQueryResults).values({
         campaignId,
         businessId: (business as any).id,
@@ -295,8 +258,8 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
         geminiMentioned,
         geminiSnippet,
         isBonusWin,
-        promotedToTracked: promotedToTrackedFlag,
-        promotedQueryLocationId,
+        promotedToTracked: false,
+        promotedQueryLocationId: null,
         scanRunAt,
       });
 
@@ -306,10 +269,10 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
   }
 
   console.log(
-    `[BonusScanner] Campaign ${campaignId} complete: ${queriesChecked} checked, ${bonusWinsFound} wins, ${promotedToTracked} promoted`
+    `[BonusScanner] Campaign ${campaignId} complete: ${queriesChecked} checked, ${bonusWinsFound} bonus wins found`
   );
 
-  return { bonusWinsFound, queriesChecked, promotedToTracked };
+  return { bonusWinsFound, queriesChecked };
 }
 
 /**
