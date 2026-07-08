@@ -108,7 +108,7 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
   const db = await getDb();
   if (!db) {
     console.warn(`[BonusScanner] DB not available`);
-    return { bonusWinsFound: 0, queriesChecked: 0, promotedToTracked: 0 };
+    return { bonusWinsFound: 0, queriesChecked: 0 };
   }
 
   // Load campaign + business
@@ -120,7 +120,7 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
 
   if (!campaign) {
     console.warn(`[BonusScanner] Campaign ${campaignId} not found`);
-    return { bonusWinsFound: 0, queriesChecked: 0, promotedToTracked: 0 };
+    return { bonusWinsFound: 0, queriesChecked: 0 };
   }
 
   const [business] = await db
@@ -131,7 +131,7 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
 
   if (!business) {
     console.warn(`[BonusScanner] Business not found for campaign ${campaignId}`);
-    return { bonusWinsFound: 0, queriesChecked: 0, promotedToTracked: 0 };
+    return { bonusWinsFound: 0, queriesChecked: 0 };
   }
 
   // Load all tracked query/location combos
@@ -142,7 +142,7 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
 
   if (trackedQueryLocations.length === 0) {
     console.log(`[BonusScanner] No tracked queries for campaign ${campaignId}`);
-    return { bonusWinsFound: 0, queriesChecked: 0, promotedToTracked: 0 };
+    return { bonusWinsFound: 0, queriesChecked: 0 };
   }
 
   // Build a set of all already-tracked query strings (for dedup)

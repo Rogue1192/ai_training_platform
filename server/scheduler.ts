@@ -1108,7 +1108,7 @@ async function checkBonusQueryScans(): Promise<void> {
         scanned++;
         console.log(
           `[Scheduler] Bonus scan campaign ${campaignId}: ${result.queriesChecked} checked, ` +
-          `${result.bonusWinsFound} bonus win(s), ${result.promotedToTracked} promoted to tracked`
+          `${result.bonusWinsFound} bonus win(s) found across ${result.queriesChecked} adjacent queries checked`
         );
       } catch (err: any) {
         console.error(`[Scheduler] Bonus scan failed for campaign ${campaignId}:`, err.message);
