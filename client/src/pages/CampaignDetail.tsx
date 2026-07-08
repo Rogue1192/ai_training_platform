@@ -1616,19 +1616,13 @@ function QueryRankRow({ qd, campaignId }: { qd: any; campaignId: number }) {
       {/* Main row */}
       <div className="flex items-center justify-between p-2">
         <div className="flex-1 min-w-0">
-          <p className="text-foreground truncate">{qd.query}</p>
+          <p className="text-foreground truncate">{qd.searchQuery}</p>
           <p className="text-xs text-muted-foreground">{qd.location}</p>
         </div>
         <div className="flex items-center gap-4 text-xs shrink-0">
-          {qd.chatgpt && (
-            <span className="text-blue-400">ChatGPT: {qd.chatgpt.mentioned ? "✓" : "—"}</span>
-          )}
-          {qd.gemini && (
-            <span className="text-purple-400">Gemini: {qd.gemini.mentioned ? "✓" : "—"}</span>
-          )}
-          {qd.aiOverview && (
-            <span className="text-green-400">AI Overview: {qd.aiOverview.mentioned ? "✓" : "—"}</span>
-          )}
+          <span className="text-blue-400">ChatGPT: {qd.chatgptMentioned ? "✓" : "—"}</span>
+          <span className="text-purple-400">Gemini: {qd.geminiMentioned ? "✓" : "—"}</span>
+          <span className="text-green-400">AI Overview: {qd.aiOverviewMentioned ? "✓" : "—"}</span>
           {qd.queryLocationId && (
             <Button
               variant="ghost"
