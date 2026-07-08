@@ -260,35 +260,28 @@ export const costTrackingRouter = router({
     const db = await getDb();
     if (!db) throw new Error("Database not available");
 
-    // Get all campaigns for billing cycle windows
-    const allCampaigns = await db
-      .select({
-        id: campaigns.id,
-        createdAt: campaigns.createdAt,
-        billingType: campaigns.billingType,
-        packageTierId: campaigns.packageTierId,
-      })
-      .from(campaigns);
-
-    // For each campaign, compute current cycle costs
-    let totalCostUsd = 0;
-    let totalRevenueUsd = 0;
-    let whiteLabelCount = 0;
-    let directCount = 0;
-    let legacyCount = 0;
-
-    const tierIds = [...new Set(allCampaigns.map((c) => c.packageTierId).filter(Boolean))] as number[];
-    const tierRows = tierIds.length > 0
-      ? await db.select().from(packageTiers).where(sql`${packageTiers.id} = ANY(${tierIds})`)
-      : [];
-    const tierMap = new Map(tierRows.map((t) => [t.id, t]));
-
-    // Aggregate costs by operation type and provider (across all campaigns, current cycles)
     const now = new Date();
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const [byOpType, byProvider] = await Promise.all([
+    // Single query: all campaigns + their package tier slug + lifetime cost aggregated
+    // We compute billing-cycle costs in one pass using a LEFT JOIN on costLogs.
+    // Revenue is computed in JS since it depends on billing-cycle start logic.
+    const [campaignRows, tierRows, byOpType, byProvider] = await Promise.all([
+      // All campaigns with their total lifetime cost (we filter to current cycle in JS)
+      db
+        .select({
+          id: campaigns.id,
+          createdAt: campaigns.createdAt,
+          billingType: campaigns.billingType,
+          packageTierId: campaigns.packageTierId,
+        })
+        .from(campaigns),
+
+      // All package tiers (small table, full fetch is fine)
+      db.select({ id: packageTiers.id, slug: packageTiers.slug }).from(packageTiers),
+
+      // Cost breakdown by operation type (last 30 days)
       db
         .select({
           operationType: costLogs.operationType,
@@ -298,6 +291,8 @@ export const costTrackingRouter = router({
         .where(gte(costLogs.createdAt, thirtyDaysAgo))
         .groupBy(costLogs.operationType)
         .orderBy(sql`SUM(${costLogs.costUsd}::numeric) DESC`),
+
+      // Cost breakdown by provider (last 30 days)
       db
         .select({
           provider: costLogs.provider,
@@ -309,31 +304,61 @@ export const costTrackingRouter = router({
         .orderBy(sql`SUM(${costLogs.costUsd}::numeric) DESC`),
     ]);
 
-    // Sum up per-campaign current cycle costs and revenue
-    for (const campaign of allCampaigns) {
-      const tier = campaign.packageTierId ? tierMap.get(campaign.packageTierId) : null;
-      const tierSlug = tier?.slug ?? "starter";
+    // Build tier map
+    const tierMap = new Map(tierRows.map((t) => [t.id, t.slug]));
+
+    // Determine the date range we need to cover: earliest billing cycle start across all campaigns
+    const cycleWindows = campaignRows.map((c) => {
+      const start = getCurrentBillingCycleStart(c.createdAt);
+      const end = getBillingCycleEnd(start);
+      return { campaignId: c.id, start, end };
+    });
+
+    // Fetch all current-cycle cost logs in ONE query using a UNION-style approach:
+    // We get all logs for the earliest possible cycle start up to now, then filter per-campaign in JS.
+    const earliestCycleStart = cycleWindows.reduce(
+      (min, w) => (w.start < min ? w.start : min),
+      cycleWindows[0]?.start ?? now
+    );
+
+    const currentCycleLogs = campaignRows.length > 0
+      ? await db
+          .select({
+            campaignId: costLogs.campaignId,
+            costUsd: costLogs.costUsd,
+            createdAt: costLogs.createdAt,
+          })
+          .from(costLogs)
+          .where(gte(costLogs.createdAt, earliestCycleStart))
+      : [];
+
+    // Group logs by campaignId for fast lookup
+    const logsByCampaign = new Map<number, { costUsd: string | number; createdAt: Date }[]>();
+    for (const log of currentCycleLogs) {
+      if (!log.campaignId) continue;
+      if (!logsByCampaign.has(log.campaignId)) logsByCampaign.set(log.campaignId, []);
+      logsByCampaign.get(log.campaignId)!.push(log);
+    }
+
+    // Aggregate per campaign
+    let totalCostUsd = 0;
+    let totalRevenueUsd = 0;
+    let whiteLabelCount = 0;
+    let directCount = 0;
+    let legacyCount = 0;
+
+    for (const campaign of campaignRows) {
+      const tierSlug = campaign.packageTierId ? (tierMap.get(campaign.packageTierId) ?? "starter") : "starter";
       const billingType = campaign.billingType ?? "white_label";
+      const window = cycleWindows.find((w) => w.campaignId === campaign.id);
+      const logs = logsByCampaign.get(campaign.id) ?? [];
 
-      const cycleStart = getCurrentBillingCycleStart(campaign.createdAt);
-      const cycleEnd = getBillingCycleEnd(cycleStart);
+      const campaignCycleCost = logs
+        .filter((l) => window && l.createdAt >= window.start && l.createdAt <= window.end)
+        .reduce((sum, l) => sum + parseFloat(String(l.costUsd ?? 0)), 0);
 
-      const costAgg = await db
-        .select({ total: sql<string>`COALESCE(SUM(${costLogs.costUsd}::numeric), 0)` })
-        .from(costLogs)
-        .where(
-          and(
-            eq(costLogs.campaignId, campaign.id),
-            gte(costLogs.createdAt, cycleStart),
-            lte(costLogs.createdAt, cycleEnd)
-          )
-        );
-
-      const campaignCost = parseFloat(costAgg[0]?.total ?? "0");
-      const campaignRevenue = getMonthlyRevenue(billingType, tierSlug);
-
-      totalCostUsd += campaignCost;
-      totalRevenueUsd += campaignRevenue;
+      totalCostUsd += campaignCycleCost;
+      totalRevenueUsd += getMonthlyRevenue(billingType, tierSlug);
 
       if (billingType === "white_label") whiteLabelCount++;
       else if (billingType === "direct") directCount++;
@@ -350,7 +375,7 @@ export const costTrackingRouter = router({
       totalRevenueUsd: Math.round(totalRevenueUsd * 100) / 100,
       totalNetProfitUsd: Math.round(totalNetProfitUsd * 100) / 100,
       avgMarginPct,
-      campaignCount: allCampaigns.length,
+      campaignCount: campaignRows.length,
       whiteLabelCount,
       directCount,
       legacyCount,

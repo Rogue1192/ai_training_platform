@@ -105,7 +105,9 @@ function statusBadge(status: string) {
 // ─── Aggregate Summary Cards ──────────────────────────────────────────────────
 
 function AggregateSummary() {
-  const { data, isLoading, refetch, isFetching } = trpc.costTracking.getAggregateSummary.useQuery();
+  const { data, isLoading, isError, refetch, isFetching } = trpc.costTracking.getAggregateSummary.useQuery({
+    retry: 1,
+  } as any);
 
   if (isLoading) {
     return (
@@ -115,7 +117,18 @@ function AggregateSummary() {
     );
   }
 
-  const d = data!;
+  if (isError || !data) {
+    return (
+      <div className="flex items-center justify-center h-32 gap-3">
+        <p className="text-sm text-muted-foreground">Failed to load summary.</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="w-3 h-3 mr-1" /> Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const d = data;
 
   return (
     <div className="space-y-4">
