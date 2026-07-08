@@ -76,6 +76,19 @@ For each fact found, assess your confidence level:
 - "medium": Inferred from multiple signals but not explicitly stated
 - "low": Possible but not confirmed
 
+For verificationUrl, you MUST actively try to find a real, publicly accessible URL that proves or verifies the fact. Examples:
+- BBB accreditation → their BBB profile URL (e.g. https://www.bbb.org/us/tx/dallas/profile/hvac/...)
+- NATE certification → https://www.natex.org/find-a-nate-certified-contractor/ or the business's listing
+- EPA 608 license → state licensing board lookup URL
+- Angi/HomeAdvisor listing → their Angi profile URL
+- Manufacturer dealer/partner status → the manufacturer's dealer locator page or the business's profile on that site
+- Award or best-of list → the publication's page featuring the award
+- BBB rating → their BBB profile URL
+- State contractor license → the state licensing board's public lookup URL
+- Google Business Profile → their Google Maps URL
+- Industry association membership → the association's member directory URL
+If you cannot find a real URL, set verificationUrl to null. Do NOT make up URLs.
+
 Return JSON in this exact format:
 {
   "overallScore": <number 0-100>,
@@ -86,7 +99,7 @@ Return JSON in this exact format:
       "details": "<expanded details>",
       "source": "<where found>",
       "confidence": "<high|medium|low>",
-      "verificationUrl": "<url or null>"
+      "verificationUrl": "<real public url or null>"
     }
   ],
   "suggestedPages": [

@@ -1038,26 +1038,7 @@ function ContentTab({ campaignId }: { campaignId: number }) {
     <div className="space-y-4">
       {/* Credibility Data Summary */}
       {credData && (
-        <Card className="bg-card border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
-              <Shield className="w-4 h-4 text-purple-400" />
-              Credibility Research
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
-              <div className="text-center p-3 rounded-lg bg-purple-500/10 min-w-[80px]">
-                <p className="text-2xl font-bold text-purple-400">{credData.credibilityScore || "—"}</p>
-                <p className="text-xs text-muted-foreground">Score</p>
-              </div>
-              <div className="flex-1 text-sm text-muted-foreground">
-                <p>Research completed {credData.createdAt ? new Date(credData.createdAt).toLocaleDateString() : "N/A"}</p>
-                {credData.researchResults ? <p className="text-green-400 text-xs mt-1">✓ llm.txt generated</p> : null}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <CredibilityResearchCard credData={credData} />
       )}
 
       {/* Workflow banner — shown when pages exist but not all URLs are saved */}
@@ -1321,6 +1302,124 @@ function ContentTab({ campaignId }: { campaignId: number }) {
         </Card>
       ) : null}
     </div>
+  );
+}
+
+// ─── Credibility Research Card ──────────────────────────────────────────────────
+
+const CATEGORY_ICONS: Record<string, string> = {
+  certification: "🏅",
+  award: "🏆",
+  bbb: "🔒",
+  warranty: "✅",
+  team: "👥",
+  review: "⭐",
+  years_in_business: "📅",
+  insurance: "🛡️",
+  community: "🏡",
+  other: "ℹ️",
+};
+
+function CredibilityResearchCard({ credData }: { credData: any }) {
+  const [showAll, setShowAll] = useState(false);
+
+  const research = credData.researchResults as any;
+  const facts: any[] = research?.facts ?? [];
+  // Facts that have a verificationUrl get surfaced first
+  const sortedFacts = [...facts].sort((a, b) => {
+    if (a.verificationUrl && !b.verificationUrl) return -1;
+    if (!a.verificationUrl && b.verificationUrl) return 1;
+    return 0;
+  });
+  const visibleFacts = showAll ? sortedFacts : sortedFacts.slice(0, 6);
+  const verifiableCount = facts.filter((f) => !!f.verificationUrl).length;
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+          <Shield className="w-4 h-4 text-purple-400" />
+          Credibility Research
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Score row */}
+        <div className="flex items-center gap-4">
+          <div className="text-center p-3 rounded-lg bg-purple-500/10 min-w-[80px]">
+            <p className="text-2xl font-bold text-purple-400">{credData.credibilityScore || "—"}</p>
+            <p className="text-xs text-muted-foreground">Score</p>
+          </div>
+          <div className="flex-1 text-sm text-muted-foreground space-y-1">
+            <p>Research completed {credData.createdAt ? new Date(credData.createdAt).toLocaleDateString() : "N/A"}</p>
+            {research ? <p className="text-green-400 text-xs">✓ llm.txt generated</p> : null}
+            {verifiableCount > 0 && (
+              <p className="text-blue-400 text-xs">
+                🔗 {verifiableCount} fact{verifiableCount !== 1 ? "s" : ""} with external verification links
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Facts list */}
+        {facts.length > 0 && (
+          <div className="space-y-1.5">
+            {visibleFacts.map((fact: any, idx: number) => (
+              <div
+                key={idx}
+                className={`flex items-start gap-2 rounded p-2 text-xs ${
+                  fact.verificationUrl
+                    ? "bg-blue-500/10 border border-blue-500/20"
+                    : "bg-muted/30"
+                }`}
+              >
+                <span className="shrink-0 mt-0.5">
+                  {CATEGORY_ICONS[fact.category] ?? "ℹ️"}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-foreground font-medium leading-snug">{fact.fact}</p>
+                  {fact.details && (
+                    <p className="text-muted-foreground mt-0.5 leading-snug">{fact.details}</p>
+                  )}
+                  {fact.verificationUrl && (
+                    <a
+                      href={fact.verificationUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 mt-1 text-blue-400 hover:text-blue-300 underline underline-offset-2"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Verify externally
+                    </a>
+                  )}
+                </div>
+                <Badge
+                  variant="outline"
+                  className={`shrink-0 text-xs capitalize ${
+                    fact.confidence === "high"
+                      ? "bg-green-500/10 text-green-400 border-green-500/30"
+                      : fact.confidence === "medium"
+                      ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/30"
+                      : "bg-muted/30 text-muted-foreground"
+                  }`}
+                >
+                  {fact.confidence}
+                </Badge>
+              </div>
+            ))}
+            {facts.length > 6 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs text-muted-foreground w-full"
+                onClick={() => setShowAll((v) => !v)}
+              >
+                {showAll ? "Show less" : `Show ${facts.length - 6} more facts`}
+              </Button>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

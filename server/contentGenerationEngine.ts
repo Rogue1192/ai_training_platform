@@ -248,6 +248,14 @@ function buildPagePrompt(
   
   const otherPages = allPageTypes.filter(t => t !== config.type);
   
+  // Format facts — include verificationUrl so the LLM can create hyperlinks
+  const factLines = relevantFacts.map(f => {
+    const urlNote = f.verificationUrl ? ` [VERIFICATION URL: ${f.verificationUrl}]` : "";
+    return `- [${f.category}] ${f.fact} (${f.details}) — Confidence: ${f.confidence}${urlNote}`;
+  }).join("\n");
+
+  const hasVerifiableLinks = relevantFacts.some(f => !!f.verificationUrl);
+
   return `Generate ${config.promptContext}
 
 Business Details:
@@ -257,10 +265,14 @@ Business Details:
 - Location: ${location}
 
 Available Credibility Data (use ONLY these facts, do not invent):
-${relevantFacts.map(f => `- [${f.category}] ${f.fact} (${f.details}) — Confidence: ${f.confidence}`).join("\n")}
+${factLines}
 
 ${relevantFacts.length === 0 ? `\nNote: Limited specific data available. Write based on general industry knowledge for ${industry} businesses in ${location}, but keep claims general and avoid specific numbers you don't have.` : ""}
 
+${hasVerifiableLinks ? `IMPORTANT — EXTERNAL VERIFICATION LINKS:
+Some facts above include a [VERIFICATION URL]. When you write about those facts in the HTML content, you MUST include a hyperlink to that URL using this exact pattern:
+<a href="[VERIFICATION URL]" target="_blank" rel="noopener noreferrer">Verify [certification/award/profile name]</a>
+Place the link naturally inline — for example: "...is NATE-certified (<a href=\"https://natex.org/...\" target=\"_blank\" rel=\"noopener noreferrer\">verify certification</a>)" or as a standalone "View our BBB profile" link. This is critical for trust signals — do NOT omit these links.\n` : ""}
 Other pages on this site that you can interlink to: ${otherPages.join(", ")}
 
 Remember: Follow the exact content structure (H1 → Summary → Bullets → Detailed Content → FAQ → Interlinks). Return ONLY valid JSON.`;
