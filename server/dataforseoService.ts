@@ -705,13 +705,26 @@ export async function checkLLMVisibilityDirect(
   }
 
   // ── Helper: detect mention in LLM response ──────────────────────────────────
+  // Handles variants like "Titan" / "Titan Cleaning" / "Titan Cleaning Company"
+  // when the registered name is "Titan Cleaning Company".
   function detectMention(responseText: string, name: string): boolean {
     const lower = responseText.toLowerCase();
     const nameLower = name.toLowerCase();
+
+    // 1. Exact full-name match
     if (lower.includes(nameLower)) return true;
-    // Partial match: ≥60% of significant words present
-    const stopWords = new Set(["the", "and", "inc", "llc", "corp", "company", "services", "group"]);
-    const sigWords = nameLower.split(/\s+/).filter(w => w.length > 3 && !stopWords.has(w));
+
+    // 2. Prefix match — any leading word-sequence of the business name
+    //    e.g. "Titan" or "Titan Cleaning" both match "Titan Cleaning Company"
+    const words = nameLower.split(/\s+/).filter(Boolean);
+    for (let len = words.length - 1; len >= 1; len--) {
+      const prefix = words.slice(0, len).join(" ");
+      if (prefix.length >= 4 && lower.includes(prefix)) return true;
+    }
+
+    // 3. Partial match: ≥60% of significant (non-stop) words present
+    const stopWords = new Set(["the", "and", "inc", "llc", "corp", "company", "services", "group", "co"]);
+    const sigWords = words.filter(w => w.length > 3 && !stopWords.has(w));
     if (sigWords.length === 0) return false;
     const matched = sigWords.filter(w => lower.includes(w));
     return matched.length / sigWords.length >= 0.6;
@@ -719,24 +732,77 @@ export async function checkLLMVisibilityDirect(
 
   const result: DirectVisibilityResult = { keyword: query, llmResponses: {} };
 
-  // ── ChatGPT check ────────────────────────────────────────────────────────────
+  // ── ChatGPT check (Responses API + web_search_preview) ──────────────────────
+  // Uses the OpenAI Responses API with the web_search_preview built-in tool,
+  // which mirrors real ChatGPT behaviour (both free and paid tiers now use
+  // web search by default for local business queries).
   const openaiKey = await resolveKey("openai");
   if (openaiKey) {
     try {
-      const resp = await callAI("openai", openaiKey, "gpt-4.1", [
-        { role: "system", content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge." },
-        { role: "user", content: query },
-      ]);
-      const mentioned = detectMention(resp.content, businessName);
+      // POST to the Responses API endpoint
+      const responsesResp = await axios.post(
+        "https://api.openai.com/v1/responses",
+        {
+          model: "gpt-4o",
+          tools: [{ type: "web_search_preview" }],
+          input: query,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${openaiKey}`,
+          },
+          timeout: 30000,
+        }
+      );
+
+      // Extract text content from the output array
+      const outputItems: any[] = responsesResp.data?.output ?? [];
+      const textContent = outputItems
+        .filter((item: any) => item.type === "message")
+        .flatMap((item: any) => item.content ?? [])
+        .filter((c: any) => c.type === "output_text")
+        .map((c: any) => c.text ?? "")
+        .join("\n");
+
+      // Extract cited URLs from web_search_call annotations
+      const sourcesCited: string[] = outputItems
+        .filter((item: any) => item.type === "message")
+        .flatMap((item: any) => item.content ?? [])
+        .filter((c: any) => c.type === "output_text")
+        .flatMap((c: any) => c.annotations ?? [])
+        .filter((a: any) => a.type === "url_citation")
+        .map((a: any) => a.url as string)
+        .filter(Boolean);
+
+      const mentioned = detectMention(textContent, businessName);
       result.llmResponses.chatgpt = {
         mentioned,
         position: null,
-        snippet: resp.content.substring(0, 500),
-        sourcesCited: [],
+        snippet: textContent.substring(0, 500),
+        sourcesCited,
       };
-      console.log(`[DirectCheck] ChatGPT for "${query}": mentioned=${mentioned}`);
+      console.log(`[DirectCheck] ChatGPT (web search) for "${query}": mentioned=${mentioned}, sources=${sourcesCited.length}`);
     } catch (err: any) {
-      console.error(`[DirectCheck] ChatGPT check failed for "${query}":`, err.message);
+      // If Responses API fails (e.g. key doesn't have access), fall back to Chat Completions
+      console.warn(`[DirectCheck] ChatGPT Responses API failed for "${query}", falling back to Chat Completions: ${err.message}`);
+      try {
+        const { callAI } = await import("./aiProviders");
+        const resp = await callAI("openai", openaiKey, "gpt-4o", [
+          { role: "system", content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge." },
+          { role: "user", content: query },
+        ]);
+        const mentioned = detectMention(resp.content, businessName);
+        result.llmResponses.chatgpt = {
+          mentioned,
+          position: null,
+          snippet: resp.content.substring(0, 500),
+          sourcesCited: [],
+        };
+        console.log(`[DirectCheck] ChatGPT (fallback) for "${query}": mentioned=${mentioned}`);
+      } catch (fallbackErr: any) {
+        console.error(`[DirectCheck] ChatGPT fallback also failed for "${query}":`, fallbackErr.message);
+      }
     }
   } else {
     console.warn(`[DirectCheck] No OpenAI API key — skipping ChatGPT check for "${query}"`);
