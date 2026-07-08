@@ -746,10 +746,12 @@ export async function checkLLMVisibilityDirect(
   const googleKey = await resolveKey("google");
   if (googleKey) {
     try {
+      // webSearch:true enables Google Search grounding — Gemini retrieves live
+      // web results, matching how real users experience Gemini with web access on.
       const resp = await callAI("google", googleKey, "gemini-2.5-flash", [
         { role: "system", content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge." },
         { role: "user", content: query },
-      ]);
+      ], { webSearch: true });
       const mentioned = detectMention(resp.content, businessName);
       result.llmResponses.gemini = {
         mentioned,
@@ -769,10 +771,11 @@ export async function checkLLMVisibilityDirect(
         .replace(/^(can you |please |could you |i('m| am) looking for |who (are|is) |what (are|is) )/i, "")
         .replace(/\?$/, "")
         .trim();
+      // webSearch:true mirrors Google AI Overview which always uses live web results.
       const resp = await callAI("google", googleKey, "gemini-2.5-flash", [
         { role: "system", content: "You are a Google Search AI assistant that generates AI Overview summaries for local business queries. Provide concise, factual summaries highlighting relevant local options." },
         { role: "user", content: searchQuery },
-      ]);
+      ], { webSearch: true });
       const mentioned = detectMention(resp.content, businessName);
       result.llmResponses.aiOverview = {
         mentioned,
