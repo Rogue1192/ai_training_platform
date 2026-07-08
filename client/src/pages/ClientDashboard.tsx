@@ -285,7 +285,7 @@ function WinCard({ win, index }: { win: any; index: number }) {
             <PlatformIcon className="w-3.5 h-3.5 text-emerald-300" />
             <span className="text-xs font-bold text-emerald-300 uppercase">{platformLabels[win.platform] || win.platform}</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
-              {win.winType === "new_mention" ? "NEW" : "IMPROVED"}
+              NEW MENTION
             </span>
           </div>
           <p className="text-sm font-medium text-foreground truncate">{win.searchQuery}</p>

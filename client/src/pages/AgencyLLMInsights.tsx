@@ -23,16 +23,9 @@ function RankBadge({ rank }: { rank: string | null | undefined }) {
   if (!rank || rank === "not_mentioned") {
     return <span className="text-muted-foreground text-xs">—</span>;
   }
-  const colorMap: Record<string, string> = {
-    mentioned: "bg-green-500/15 text-green-400 border-green-500/30",
-    top_3: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-    top_5: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-    top_10: "bg-indigo-500/15 text-indigo-400 border-indigo-500/30",
-  };
-  const cls = colorMap[rank] || "bg-slate-500/15 text-slate-400 border-slate-500/30";
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}>
-      {rank.replace("_", " ")}
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-green-500/15 text-green-400 border-green-500/30">
+      Mentioned
     </span>
   );
 }

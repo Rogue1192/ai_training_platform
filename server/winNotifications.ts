@@ -20,7 +20,7 @@ import { eq, desc, and, lt, sql } from "drizzle-orm";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type WinType = "new_mention" | "position_improvement" | "multi_platform" | "first_position";
+export type WinType = "new_mention" | "multi_platform";
 
 export interface Win {
   campaignId: number;
@@ -30,8 +30,6 @@ export interface Win {
   platform: string; // 'chatgpt' | 'gemini' | 'ai_overview' | 'multiple'
   query: string;
   location: string;
-  previousPosition: number | null;
-  newPosition: number | null;
   description: string;
   significance: "minor" | "moderate" | "major" | "breakthrough";
   detectedAt: Date;
@@ -124,44 +122,16 @@ export async function detectWins(campaignId: number): Promise<Win[]> {
     for (const platform of platforms) {
       // Win: New mention (wasn't mentioned before, now is)
       if (platform.curMentioned && !platform.prevMentioned) {
-        const isFirstPosition = platform.curPosition === 1;
         wins.push({
           campaignId,
           businessName: business.name,
           queryLocationId: ql.id,
-          winType: isFirstPosition ? "first_position" : "new_mention",
+          winType: "new_mention",
           platform: platform.key,
           query: ql.searchQuery,
           location: ql.location,
-          previousPosition: null,
-          newPosition: platform.curPosition,
-          description: isFirstPosition
-            ? `${business.name} is now the #1 recommendation on ${platform.name} for "${ql.searchQuery}" in ${ql.location}!`
-            : `${business.name} is now mentioned by ${platform.name} for "${ql.searchQuery}" in ${ql.location}!`,
-          significance: isFirstPosition ? "breakthrough" : "major",
-          detectedAt: new Date(),
-        });
-      }
-      
-      // Win: Position improvement (was mentioned, now in better position)
-      if (platform.curMentioned && platform.prevMentioned && 
-          platform.curPosition && platform.prevPosition &&
-          platform.curPosition < platform.prevPosition) {
-        const isFirstPosition = platform.curPosition === 1;
-        wins.push({
-          campaignId,
-          businessName: business.name,
-          queryLocationId: ql.id,
-          winType: isFirstPosition ? "first_position" : "position_improvement",
-          platform: platform.key,
-          query: ql.searchQuery,
-          location: ql.location,
-          previousPosition: platform.prevPosition,
-          newPosition: platform.curPosition,
-          description: isFirstPosition
-            ? `${business.name} moved to #1 on ${platform.name} for "${ql.searchQuery}" (was #${platform.prevPosition})!`
-            : `${business.name} improved from #${platform.prevPosition} to #${platform.curPosition} on ${platform.name} for "${ql.searchQuery}"`,
-          significance: isFirstPosition ? "breakthrough" : (platform.curPosition <= 3 ? "major" : "moderate"),
+          description: `${business.name} is now mentioned by ${platform.name} for "${ql.searchQuery}" in ${ql.location}!`,
+          significance: "major",
           detectedAt: new Date(),
         });
       }
@@ -178,19 +148,17 @@ export async function detectWins(campaignId: number): Promise<Win[]> {
       if (current.aiOverviewMentioned) platformNames.push("AI Overview");
       
       wins.push({
-        campaignId,
-        businessName: business.name,
-        queryLocationId: ql.id,
-        winType: "multi_platform",
-        platform: "multiple",
-        query: ql.searchQuery,
-        location: ql.location,
-        previousPosition: null,
-        newPosition: null,
-        description: `${business.name} is now recommended on ${platformNames.join(" + ")} for "${ql.searchQuery}" in ${ql.location}!`,
-        significance: currentPlatformCount === 3 ? "breakthrough" : "major",
-        detectedAt: new Date(),
-      });
+          campaignId,
+          businessName: business.name,
+          queryLocationId: ql.id,
+          winType: "multi_platform",
+          platform: "multiple",
+          query: ql.searchQuery,
+          location: ql.location,
+          description: `${business.name} is now recommended on ${platformNames.join(" + ")} for "${ql.searchQuery}" in ${ql.location}!`,
+          significance: currentPlatformCount === 3 ? "breakthrough" : "major",
+          detectedAt: new Date(),
+        });
     }
   }
   

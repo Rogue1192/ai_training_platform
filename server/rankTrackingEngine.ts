@@ -37,7 +37,6 @@ export interface VisibilityScore {
   aiOverview: number;        // 0-100 Google AI Overview visibility
   totalQueries: number;
   mentionedQueries: number;
-  averagePosition: number | null;
 }
 
 export interface RankTrend {
@@ -68,7 +67,6 @@ export interface QueryRankDetail {
   // Metadata
   firstMentionedAt: string | null;
   lastCheckedAt: string | null;
-  // Before/after scan videos
 }
 
 export interface WinDetection {
@@ -76,7 +74,7 @@ export interface WinDetection {
   searchQuery: string;
   location: string;
   platform: "chatgpt" | "gemini" | "aiOverview";
-  winType: "new_mention" | "position_improvement" | "new_source_cited";
+  winType: "new_mention" | "new_source_cited";
   previousValue: string;
   currentValue: string;
   detectedAt: string;
@@ -106,12 +104,16 @@ export interface CampaignRankReport {
 
 /**
  * Calculate a visibility score from rank snapshots.
- * 
- * Scoring logic:
+ *
+ * Scoring logic (mention-rate based — no position bonuses):
  * - Each query-location combo is worth equal weight
- * - Per platform: mentioned = base points, position 1-3 = bonus
+ * - Per platform: mentioned = 100 points, not mentioned = 0
  * - Platforms weighted: ChatGPT 40%, Gemini 30%, AI Overview 30%
  * - Score normalized to 0-100
+ *
+ * Rationale: LLMs are generative engines — the same query can yield different
+ * results on each run. What matters is the probability of consistently appearing
+ * (mention rate), not a hard position number.
  */
 export function calculateVisibilityScore(
   snapshots: Array<{
@@ -125,81 +127,27 @@ export function calculateVisibilityScore(
   totalQueries: number
 ): VisibilityScore {
   if (totalQueries === 0) {
-    return { overall: 0, chatgpt: 0, gemini: 0, aiOverview: 0, totalQueries: 0, mentionedQueries: 0, averagePosition: null };
+    return { overall: 0, chatgpt: 0, gemini: 0, aiOverview: 0, totalQueries: 0, mentionedQueries: 0 };
   }
 
-  let chatgptScore = 0;
-  let geminiScore = 0;
-  let aiOverviewScore = 0;
+  let chatgptMentionCount = 0;
+  let geminiMentionCount = 0;
+  let aiOverviewMentionCount = 0;
   let mentionedQueries = 0;
-  let positionSum = 0;
-  let positionCount = 0;
-
   for (const snap of snapshots) {
     let queryMentioned = false;
-
-    // ChatGPT scoring (0-100 per query)
-    if (snap.chatgptMentioned) {
-      queryMentioned = true;
-      let score = 60; // Base for being mentioned
-      if (snap.chatgptPosition !== null) {
-        if (snap.chatgptPosition <= 1) score = 100;
-        else if (snap.chatgptPosition <= 3) score = 85;
-        else if (snap.chatgptPosition <= 5) score = 70;
-        positionSum += snap.chatgptPosition;
-        positionCount++;
-      }
-      chatgptScore += score;
-    }
-
-    // Gemini scoring
-    if (snap.geminiMentioned) {
-      queryMentioned = true;
-      let score = 60;
-      if (snap.geminiPosition !== null) {
-        if (snap.geminiPosition <= 1) score = 100;
-        else if (snap.geminiPosition <= 3) score = 85;
-        else if (snap.geminiPosition <= 5) score = 70;
-        positionSum += snap.geminiPosition;
-        positionCount++;
-      }
-      geminiScore += score;
-    }
-
-    // AI Overview scoring
-    if (snap.aiOverviewMentioned) {
-      queryMentioned = true;
-      let score = 60;
-      if (snap.aiOverviewPosition !== null) {
-        if (snap.aiOverviewPosition <= 1) score = 100;
-        else if (snap.aiOverviewPosition <= 3) score = 85;
-        else if (snap.aiOverviewPosition <= 5) score = 70;
-        positionSum += snap.aiOverviewPosition;
-        positionCount++;
-      }
-      aiOverviewScore += score;
-    }
-
+    if (snap.chatgptMentioned) { chatgptMentionCount++; queryMentioned = true; }
+    if (snap.geminiMentioned)  { geminiMentionCount++;  queryMentioned = true; }
+    if (snap.aiOverviewMentioned) { aiOverviewMentionCount++; queryMentioned = true; }
     if (queryMentioned) mentionedQueries++;
   }
-
-  // Normalize per-platform scores to 0-100
-  const chatgptNorm = Math.round(chatgptScore / totalQueries);
-  const geminiNorm = Math.round(geminiScore / totalQueries);
-  const aiOverviewNorm = Math.round(aiOverviewScore / totalQueries);
-
+  // Mention rate per platform (0-100)
+  const chatgptNorm = Math.round((chatgptMentionCount / totalQueries) * 100);
+  const geminiNorm  = Math.round((geminiMentionCount  / totalQueries) * 100);
+  const aiOverviewNorm = Math.round((aiOverviewMentionCount / totalQueries) * 100);
   // Weighted overall: ChatGPT 40%, Gemini 30%, AI Overview 30%
   const overall = Math.round(chatgptNorm * 0.4 + geminiNorm * 0.3 + aiOverviewNorm * 0.3);
-
-  return {
-    overall,
-    chatgpt: chatgptNorm,
-    gemini: geminiNorm,
-    aiOverview: aiOverviewNorm,
-    totalQueries,
-    mentionedQueries,
-    averagePosition: positionCount > 0 ? Math.round((positionSum / positionCount) * 10) / 10 : null,
-  };
+  return { overall, chatgpt: chatgptNorm, gemini: geminiNorm, aiOverview: aiOverviewNorm, totalQueries, mentionedQueries };
 }
 
 // ============= Rank Check Execution =============
@@ -307,18 +255,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
           platform: "chatgpt",
           winType: "new_mention",
           previousValue: "Not mentioned",
-          currentValue: chatgptPosition ? `Position ${chatgptPosition}` : "Mentioned",
-          detectedAt: new Date().toISOString(),
-        });
-      } else if (chatgptMentioned && prev.chatgptMentioned && chatgptPosition && prev.chatgptPosition && chatgptPosition < prev.chatgptPosition) {
-        winsDetected.push({
-          queryLocationId: ql.id,
-          searchQuery: ql.searchQuery,
-          location: ql.location,
-          platform: "chatgpt",
-          winType: "position_improvement",
-          previousValue: `Position ${prev.chatgptPosition}`,
-          currentValue: `Position ${chatgptPosition}`,
+          currentValue: "Mentioned",
           detectedAt: new Date().toISOString(),
         });
       }
@@ -332,18 +269,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
           platform: "gemini",
           winType: "new_mention",
           previousValue: "Not mentioned",
-          currentValue: geminiPosition ? `Position ${geminiPosition}` : "Mentioned",
-          detectedAt: new Date().toISOString(),
-        });
-      } else if (geminiMentioned && prev.geminiMentioned && geminiPosition && prev.geminiPosition && geminiPosition < prev.geminiPosition) {
-        winsDetected.push({
-          queryLocationId: ql.id,
-          searchQuery: ql.searchQuery,
-          location: ql.location,
-          platform: "gemini",
-          winType: "position_improvement",
-          previousValue: `Position ${prev.geminiPosition}`,
-          currentValue: `Position ${geminiPosition}`,
+          currentValue: "Mentioned",
           detectedAt: new Date().toISOString(),
         });
       }
@@ -357,18 +283,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
           platform: "aiOverview",
           winType: "new_mention",
           previousValue: "Not mentioned",
-          currentValue: aiOverviewPosition ? `Position ${aiOverviewPosition}` : "Mentioned",
-          detectedAt: new Date().toISOString(),
-        });
-      } else if (aiOverviewMentioned && prev.aiOverviewMentioned && aiOverviewPosition && prev.aiOverviewPosition && aiOverviewPosition < prev.aiOverviewPosition) {
-        winsDetected.push({
-          queryLocationId: ql.id,
-          searchQuery: ql.searchQuery,
-          location: ql.location,
-          platform: "aiOverview",
-          winType: "position_improvement",
-          previousValue: `Position ${prev.aiOverviewPosition}`,
-          currentValue: `Position ${aiOverviewPosition}`,
+          currentValue: "Mentioned",
           detectedAt: new Date().toISOString(),
         });
       }
@@ -377,9 +292,9 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
     // Update query-location with latest rank
     const isMentioned = chatgptMentioned || geminiMentioned || aiOverviewMentioned;
     await updateQueryLocation(ql.id, {
-      currentRankChatGPT: chatgptMentioned ? (chatgptPosition ? `position_${chatgptPosition}` : "mentioned") : "not_mentioned",
-      currentRankGemini: geminiMentioned ? (geminiPosition ? `position_${geminiPosition}` : "mentioned") : "not_mentioned",
-      currentRankAIOverview: aiOverviewMentioned ? (aiOverviewPosition ? `position_${aiOverviewPosition}` : "mentioned") : "not_mentioned",
+      currentRankChatGPT: chatgptMentioned ? "mentioned" : "not_mentioned",
+      currentRankGemini: geminiMentioned ? "mentioned" : "not_mentioned",
+      currentRankAIOverview: aiOverviewMentioned ? "mentioned" : "not_mentioned",
       lastRankCheckAt: new Date(),
       ...(isMentioned && !ql.firstMentionedAt ? { firstMentionedAt: new Date() } : {}),
     });
@@ -444,15 +359,9 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
         trainingSessions: 0,
         isTargetLocation: false,
         firstMentionedAt: new Date(),
-        currentRankChatGPT: mention.llmResponses.chatgpt?.mentioned
-          ? (mention.llmResponses.chatgpt.position ? `position_${mention.llmResponses.chatgpt.position}` : "mentioned")
-          : null,
-        currentRankGemini: mention.llmResponses.gemini?.mentioned
-          ? (mention.llmResponses.gemini.position ? `position_${mention.llmResponses.gemini.position}` : "mentioned")
-          : null,
-        currentRankAIOverview: mention.llmResponses.aiOverview?.mentioned
-          ? (mention.llmResponses.aiOverview.position ? `position_${mention.llmResponses.aiOverview.position}` : "mentioned")
-          : null,
+        currentRankChatGPT: mention.llmResponses.chatgpt?.mentioned ? "mentioned" : null,
+        currentRankGemini: mention.llmResponses.gemini?.mentioned ? "mentioned" : null,
+        currentRankAIOverview: mention.llmResponses.aiOverview?.mentioned ? "mentioned" : null,
         lastRankCheckAt: new Date(),
       });
       // Also record as a win
@@ -507,20 +416,14 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
       await createRankSnapshot({
         campaignId,
         queryLocationId: row.id,
-        chatgptMentioned: src.currentRankChatGPT ? src.currentRankChatGPT !== "not_mentioned" : false,
-        chatgptPosition: src.currentRankChatGPT?.startsWith("position_")
-          ? parseInt(src.currentRankChatGPT.replace("position_", ""), 10)
-          : null,
+        chatgptMentioned: src.currentRankChatGPT === "mentioned",
+        chatgptPosition: null,
         chatgptResponseSnippet: null,
-        geminiMentioned: src.currentRankGemini ? src.currentRankGemini !== "not_mentioned" : false,
-        geminiPosition: src.currentRankGemini?.startsWith("position_")
-          ? parseInt(src.currentRankGemini.replace("position_", ""), 10)
-          : null,
+        geminiMentioned: src.currentRankGemini === "mentioned",
+        geminiPosition: null,
         geminiResponseSnippet: null,
-        aiOverviewMentioned: src.currentRankAIOverview ? src.currentRankAIOverview !== "not_mentioned" : false,
-        aiOverviewPosition: src.currentRankAIOverview?.startsWith("position_")
-          ? parseInt(src.currentRankAIOverview.replace("position_", ""), 10)
-          : null,
+        aiOverviewMentioned: src.currentRankAIOverview === "mentioned",
+        aiOverviewPosition: null,
         aiOverviewResponseSnippet: null,
         sourcesCited: null,
         checkType: "scheduled",
@@ -693,7 +596,6 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
       aiOverview: prevTrend.aiOverview,
       totalQueries,
       mentionedQueries: prevTrend.mentionedQueries,
-      averagePosition: null,
     };
   }
 
@@ -758,7 +660,7 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
         platform: "chatgpt",
         winType: "new_mention",
         previousValue: "Not mentioned",
-        currentValue: detail.chatgptPosition ? `Position ${detail.chatgptPosition}` : "Mentioned",
+        currentValue: "Mentioned",
         detectedAt: new Date().toISOString(),
       });
     }
@@ -770,7 +672,7 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
         platform: "gemini",
         winType: "new_mention",
         previousValue: "Not mentioned",
-        currentValue: detail.geminiPosition ? `Position ${detail.geminiPosition}` : "Mentioned",
+        currentValue: "Mentioned",
         detectedAt: new Date().toISOString(),
       });
     }
@@ -782,22 +684,11 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
         platform: "aiOverview",
         winType: "new_mention",
         previousValue: "Not mentioned",
-        currentValue: detail.aiOverviewPosition ? `Position ${detail.aiOverviewPosition}` : "Mentioned",
+        currentValue: "Mentioned",
         detectedAt: new Date().toISOString(),
       });
     }
-    if (detail.chatgptChange === "improved") {
-      recentWins.push({
-        queryLocationId: detail.queryLocationId,
-        searchQuery: detail.searchQuery,
-        location: detail.location,
-        platform: "chatgpt",
-        winType: "position_improvement",
-        previousValue: "Lower position",
-        currentValue: detail.chatgptPosition ? `Position ${detail.chatgptPosition}` : "Improved",
-        detectedAt: new Date().toISOString(),
-      });
-    }
+    // position_improvement win type removed — LLMs are generative, mention rate is what matters
   }
 
   // Count total checks

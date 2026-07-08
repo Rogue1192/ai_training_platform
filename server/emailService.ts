@@ -141,7 +141,6 @@ export interface VisibilityReportEmailData {
   topWins: Array<{
     query: string;
     platform: string;
-    position: number | null;
   }>;
   dashboardUrl?: string;
   reportPeriod: string;
@@ -936,7 +935,7 @@ function buildVisibilityReportHtml(data: VisibilityReportEmailData, wl: WhiteLab
     ? `<h2>Top Performing Queries</h2>` + data.topWins.slice(0, 5).map((w) => `
         <div class="win-card">
           <p class="win-text" style="font-weight: 600;">"${w.query}"</p>
-          <p class="win-meta">${w.platform} ${w.position ? `&bull; Position #${w.position}` : "&bull; Mentioned"}</p>
+          <p class="win-meta">${w.platform} &bull; Mentioned in AI search</p>
         </div>
       `).join("")
     : "";

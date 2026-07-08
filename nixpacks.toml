@@ -1,12 +1,33 @@
 [phases.setup]
 nixPkgs = [
   "nodejs_22",
-  "nodePackages.pnpm"
+  "nodePackages.pnpm",
+  "chromium",
+  "nss",
+  "nspr",
+  "atk",
+  "cups",
+  "libdrm",
+  "xorg.libX11",
+  "xorg.libXcomposite",
+  "xorg.libXdamage",
+  "xorg.libXext",
+  "xorg.libXfixes",
+  "xorg.libXrandr",
+  "xorg.libxcb",
+  "mesa",
+  "expat",
+  "libxkbcommon",
+  "alsa-lib",
+  "pango",
+  "cairo",
+  "glib"
 ]
 
 [phases.install]
 cmds = [
-  "pnpm install"
+  "pnpm install",
+  "pnpm exec playwright install chromium --with-deps"
 ]
 
 [phases.build]
