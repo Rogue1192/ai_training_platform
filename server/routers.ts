@@ -3489,6 +3489,8 @@ export const agencyRouter = router({
           if (!packageTier) { console.error(`[assignClientTier] Package tier '${input.packageTier}' not found`); return; }
           const business = await getBusinessById(input.businessId);
           if (!business) { console.error(`[assignClientTier] Business ${input.businessId} not found`); return; }
+          // Resolve query-slot budget from tier (new model)
+          const resolvedMaxQuerySlots = packageTier.maxQuerySlots || (packageTier.maxQueries * packageTier.maxLocations);
           // Create campaign
           const campaign = await createCampaign({
             userId: ownerId,
@@ -3503,6 +3505,8 @@ export const agencyRouter = router({
             trialStatus: 'trial',
             maxQueries: packageTier.maxQueries,
             maxLocations: packageTier.maxLocations,
+            maxQuerySlots: resolvedMaxQuerySlots,
+            billingType: 'white_label',
             selectedPackage: input.packageTier,
           });
           // Initialize trial
