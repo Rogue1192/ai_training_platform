@@ -177,6 +177,14 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
   const business = businessResult[0];
   if (!business?.website) throw new Error("Business has no website URL");
 
+  // Defense-in-depth: never run rank checks for archived clients.
+  // The scheduler selector already filters them out, but this guard catches
+  // any direct calls or race conditions.
+  if (business.isArchived) {
+    console.log(`[Rank Tracking] Business ${business.id} ("${business.name}") is archived — skipping rank check for campaign ${campaignId}`);
+    return { success: true, snapshotsCreated: 0, winsDetected: [], currentScore: calculateVisibilityScore([], 0) };
+  }
+
   console.log(`[Rank Tracking] Running scheduled check for campaign ${campaignId} (${business.name})`);
 
   // Get all query-locations

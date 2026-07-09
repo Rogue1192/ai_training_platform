@@ -947,8 +947,8 @@ async function checkTrainingCycleAdvances(): Promise<void> {
 
   try {
     const { advanceCampaignCycle } = await import('./trainingCycleOrchestrator');
-    const { campaignQueryLocations: cqlTable } = await import('../drizzle/schema');
-    const { lte: lteOp, or: orOp, eq: eqOp } = await import('drizzle-orm');
+    const { campaignQueryLocations: cqlTable, campaigns: campaignsTable, businesses: businessesTable } = await import('../drizzle/schema');
+    const { lte: lteOp, or: orOp, eq: eqOp, ne: neOp } = await import('drizzle-orm');
 
     // Get admin user for system-triggered sessions
     const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
@@ -956,10 +956,14 @@ async function checkTrainingCycleAdvances(): Promise<void> {
 
     const now = new Date();
 
-    // Find distinct campaignIds that have combos with a due poll
+    // Find distinct campaignIds that have combos with a due poll.
+    // Join to campaigns + businesses to exclude archived clients — archiving a business
+    // must immediately stop all training cycles.
     const dueCombos = await db
       .selectDistinct({ campaignId: cqlTable.campaignId })
       .from(cqlTable)
+      .innerJoin(campaignsTable, eqOp(cqlTable.campaignId, campaignsTable.id))
+      .innerJoin(businessesTable, eqOp(campaignsTable.businessId, businessesTable.id))
       .where(
         and(
           lteOp(cqlTable.nextPollAt, now),
@@ -968,6 +972,8 @@ async function checkTrainingCycleAdvances(): Promise<void> {
             eqOp(cqlTable.trainingStatus, 'monitoring'),
             eqOp(cqlTable.trainingStatus, 'recovering'),
           ),
+          eqOp(businessesTable.isArchived, false),  // skip archived clients
+          neOp(campaignsTable.status, 'paused'),     // skip manually paused campaigns
         ),
       );
 
@@ -1015,12 +1021,18 @@ async function checkScheduledRankTracking(): Promise<void> {
 
   try {
     const { runScheduledRankCheck } = await import("./rankTrackingEngine");
-    const { campaignQueryLocations: cqlTable, rankSnapshots: rsTable } = await import("../drizzle/schema");
+    const { campaignQueryLocations: cqlTable, rankSnapshots: rsTable, campaigns: campaignsTable, businesses: businessesTable } = await import("../drizzle/schema");
+    const { eq: eqRank } = await import('drizzle-orm');
 
-    // Every campaign that has at least one query-location is a rank-tracking target.
+    // Every campaign that has at least one query-location is a rank-tracking target,
+    // UNLESS the parent business is archived — archived clients must not incur
+    // DataForSEO rank-check costs or produce new snapshots.
     const targets = await db
       .selectDistinct({ campaignId: cqlTable.campaignId })
-      .from(cqlTable);
+      .from(cqlTable)
+      .innerJoin(campaignsTable, eqRank(cqlTable.campaignId, campaignsTable.id))
+      .innerJoin(businessesTable, eqRank(campaignsTable.businessId, businessesTable.id))
+      .where(eqRank(businessesTable.isArchived, false));
 
     if (targets.length === 0) return;
 
@@ -1077,12 +1089,17 @@ async function checkBonusQueryScans(): Promise<void> {
 
   try {
     const { runBonusQueryScan } = await import("./bonusQueryScanner");
-    const { campaignQueryLocations: cqlTable, bonusQueryResults: bqrTable } = await import("../drizzle/schema");
+    const { campaignQueryLocations: cqlTable, bonusQueryResults: bqrTable, campaigns: campaignsTable, businesses: businessesTable } = await import("../drizzle/schema");
+    const { eq: eqBonus } = await import('drizzle-orm');
 
-    // Every campaign that has at least one query-location is a bonus scan target.
+    // Every campaign that has at least one query-location is a bonus scan target,
+    // UNLESS the parent business is archived.
     const targets = await db
       .selectDistinct({ campaignId: cqlTable.campaignId })
-      .from(cqlTable);
+      .from(cqlTable)
+      .innerJoin(campaignsTable, eqBonus(cqlTable.campaignId, campaignsTable.id))
+      .innerJoin(businessesTable, eqBonus(campaignsTable.businessId, businessesTable.id))
+      .where(eqBonus(businessesTable.isArchived, false));
 
     if (targets.length === 0) return;
 

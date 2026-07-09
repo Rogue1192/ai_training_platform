@@ -315,8 +315,20 @@ export async function advanceCampaignCycle(
   const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
   if (!campaign) { result.errors.push("Campaign not found"); return result; }
 
+  // Defense-in-depth: skip archived or paused campaigns even if the scheduler
+  // somehow selected them (e.g., race condition between archive and next tick).
+  if (campaign.status === 'paused') {
+    console.log(`[CycleOrchestrator] Campaign ${campaignId} is paused — skipping cycle advance`);
+    return result;
+  }
+
   const [business] = await db.select().from(businesses).where(eq(businesses.id, campaign.businessId)).limit(1);
   if (!business?.website) { result.errors.push("Business has no website"); return result; }
+
+  if (business.isArchived) {
+    console.log(`[CycleOrchestrator] Business ${business.id} ("${business.name}") is archived — skipping cycle advance for campaign ${campaignId}`);
+    return result;
+  }
 
   const now = new Date();
 
