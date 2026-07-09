@@ -669,9 +669,9 @@ export default function Businesses() {
                           <SelectValue placeholder="Select package" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="starter">Starter — $99/mo (5 queries, 3 locations)</SelectItem>
-                          <SelectItem value="growth">Growth — $149/mo (5 queries, 5 locations)</SelectItem>
-                          <SelectItem value="pro">Pro — $179/mo (10 queries, 5 locations)</SelectItem>
+                          <SelectItem value="starter">Starter — $99/mo (15 slots: 5 keywords × 3 cities)</SelectItem>
+                          <SelectItem value="growth">Growth — $149/mo (25 slots: 5 keywords × 5 cities)</SelectItem>
+                          <SelectItem value="pro">Pro — $179/mo (50 slots: 10 keywords × 5 cities)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
