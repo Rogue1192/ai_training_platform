@@ -60,11 +60,13 @@ function billingTypeBadge(bt: string) {
     return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs">White Label</Badge>;
   if (bt === "direct")
     return <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30 text-xs">Direct</Badge>;
+  if (bt === "external")
+    return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs">External</Badge>;
   return <Badge className="bg-zinc-500/20 text-zinc-400 border-zinc-500/30 text-xs">Legacy</Badge>;
 }
 
 function profitBadge(net: number, billingType: string) {
-  if (billingType === "legacy") {
+  if (billingType === "legacy" || billingType === "external") {
     return <span className="text-zinc-400 text-sm">—</span>;
   }
   if (net >= 0) {
@@ -84,7 +86,7 @@ function profitBadge(net: number, billingType: string) {
 }
 
 function marginColor(pct: number, billingType: string): string {
-  if (billingType === "legacy") return "text-zinc-400";
+  if (billingType === "legacy" || billingType === "external") return "text-zinc-400";
   if (pct >= 70) return "text-emerald-400";
   if (pct >= 40) return "text-yellow-400";
   return "text-red-400";
@@ -206,6 +208,12 @@ function AggregateSummary() {
               <span className="text-muted-foreground">Legacy (costs only)</span>
               <span className="text-zinc-400 font-medium">{d.legacyCount}</span>
             </div>
+            {(d as any).externalCount > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">External (billed outside)</span>
+                <span className="text-orange-400 font-medium">{(d as any).externalCount}</span>
+              </div>
+            )}
             <div className="flex justify-between text-sm border-t border-border pt-2">
               <span className="text-muted-foreground">Total Campaigns</span>
               <span className="text-foreground font-semibold">{d.campaignCount}</span>
@@ -283,7 +291,7 @@ function CostLogDialog({
 }) {
   const [currentCycleOnly, setCurrentCycleOnly] = useState(true);
 
-  const { data, isLoading } = trpc.costTracking.getCampaignCostLogs.useQuery(
+  const { data, isLoading, isError } = trpc.costTracking.getCampaignCostLogs.useQuery(
     { campaignId, currentCycleOnly },
     { enabled: open }
   );
@@ -325,6 +333,12 @@ function CostLogDialog({
         {isLoading && (
           <div className="flex items-center justify-center h-32">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          </div>
+        )}
+
+        {isError && (
+          <div className="flex items-center justify-center h-32">
+            <p className="text-sm text-muted-foreground">Failed to load cost logs. Try refreshing.</p>
           </div>
         )}
 
@@ -381,7 +395,7 @@ function CostLogDialog({
 // ─── Per-Campaign Table ───────────────────────────────────────────────────────
 
 function CampaignCostTable() {
-  const [billingFilter, setBillingFilter] = useState<"all" | "white_label" | "direct" | "legacy">("all");
+  const [billingFilter, setBillingFilter] = useState<"all" | "white_label" | "direct" | "legacy" | "external">("all");
   const [selectedCampaign, setSelectedCampaign] = useState<{ id: number; name: string } | null>(null);
   const updateBillingType = trpc.costTracking.updateCampaignBillingType.useMutation();
   const utils = trpc.useUtils();
@@ -395,7 +409,7 @@ function CampaignCostTable() {
   const handleBillingTypeChange = async (campaignId: number, newType: string) => {
     await updateBillingType.mutateAsync({
       campaignId,
-      billingType: newType as "white_label" | "direct" | "legacy",
+      billingType: newType as "white_label" | "direct" | "legacy" | "external",
     });
     utils.costTracking.getCampaignCosts.invalidate();
     utils.costTracking.getAggregateSummary.invalidate();
@@ -414,6 +428,7 @@ function CampaignCostTable() {
             <SelectItem value="white_label">White Label</SelectItem>
             <SelectItem value="direct">Direct</SelectItem>
             <SelectItem value="legacy">Legacy</SelectItem>
+            <SelectItem value="external">External</SelectItem>
           </SelectContent>
         </Select>
         {isFetching && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
@@ -490,6 +505,7 @@ function CampaignCostTable() {
                         <SelectItem value="white_label">White Label</SelectItem>
                         <SelectItem value="direct">Direct</SelectItem>
                         <SelectItem value="legacy">Legacy</SelectItem>
+                        <SelectItem value="external">External (billed outside)</SelectItem>
                       </SelectContent>
                     </Select>
                   </TableCell>
@@ -499,7 +515,7 @@ function CampaignCostTable() {
                     {new Date(c.billingCycleEnd).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right text-sm">
-                    {c.billingType === "legacy" ? (
+                    {(c.billingType === "legacy" || c.billingType === "external") ? (
                       <span className="text-zinc-400">—</span>
                     ) : (
                       <span className="text-emerald-400 font-medium">{fmt$(c.monthlyRevenueUsd)}</span>
@@ -516,7 +532,7 @@ function CampaignCostTable() {
                     {profitBadge(c.netProfitUsd, c.billingType)}
                   </TableCell>
                   <TableCell className={`text-right text-sm font-semibold ${marginColor(c.marginPct, c.billingType)}`}>
-                    {c.billingType === "legacy" ? "—" : fmtPct(c.marginPct)}
+                    {(c.billingType === "legacy" || c.billingType === "external") ? "—" : fmtPct(c.marginPct)}
                   </TableCell>
                   <TableCell className="text-right text-xs text-muted-foreground">
                     {c.lifetimeCostUsd === 0 ? "—" : fmt$(c.lifetimeCostUsd, 4)}

@@ -61,6 +61,7 @@ export interface AggregateCostSummary {
   whiteLabelCount: number;
   directCount: number;
   legacyCount: number;
+  externalCount: number;
   byOperationType: Array<{ operationType: string; costUsd: number }>;
   byProvider: Array<{ provider: string; costUsd: number }>;
 }
@@ -85,7 +86,7 @@ export const costTrackingRouter = router({
   getCampaignCosts: protectedProcedure
     .input(
       z.object({
-        billingType: z.enum(["all", "white_label", "direct", "legacy"]).default("all"),
+        billingType: z.enum(["all", "white_label", "direct", "legacy", "external"]).default("all"),
         agencyId: z.number().optional(),
         limit: z.number().min(1).max(200).default(100),
         offset: z.number().min(0).default(0),
@@ -346,6 +347,7 @@ export const costTrackingRouter = router({
     let whiteLabelCount = 0;
     let directCount = 0;
     let legacyCount = 0;
+    let externalCount = 0;
 
     for (const campaign of campaignRows) {
       const tierSlug = campaign.packageTierId ? (tierMap.get(campaign.packageTierId) ?? "starter") : "starter";
@@ -362,6 +364,7 @@ export const costTrackingRouter = router({
 
       if (billingType === "white_label") whiteLabelCount++;
       else if (billingType === "direct") directCount++;
+      else if (billingType === "external") externalCount++;
       else legacyCount++;
     }
 
@@ -379,6 +382,7 @@ export const costTrackingRouter = router({
       whiteLabelCount,
       directCount,
       legacyCount,
+      externalCount,
       byOperationType: byOpType.map((r) => ({
         operationType: r.operationType,
         costUsd: Math.round(parseFloat(r.totalCost) * 10000) / 10000,
@@ -469,7 +473,7 @@ export const costTrackingRouter = router({
     .input(
       z.object({
         campaignId: z.number(),
-        billingType: z.enum(["white_label", "direct", "legacy"]),
+        billingType: z.enum(["white_label", "direct", "legacy", "external"]),
       })
     )
     .mutation(async ({ ctx, input }) => {

@@ -68,13 +68,14 @@ export const DFS_COSTS = {
 
 // ─── Revenue rates per billing type and package tier ─────────────────────────
 
-type BillingType = "white_label" | "direct" | "legacy";
+type BillingType = "white_label" | "direct" | "legacy" | "external";
 type PackageTier = "starter" | "growth" | "pro";
 
 const REVENUE_RATES: Record<BillingType, Record<PackageTier, number>> = {
   white_label: { starter: 99,  growth: 149, pro: 179 },
   direct:      { starter: 199, growth: 299, pro: 349 },
   legacy:      { starter: 0,   growth: 0,   pro: 0   },
+  external:    { starter: 0,   growth: 0,   pro: 0   }, // billed outside platform — revenue not tracked here
 };
 
 export function getMonthlyRevenue(billingType: string, packageTier: string): number {
