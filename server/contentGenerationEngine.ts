@@ -470,6 +470,7 @@ export async function generateAllContentPages(params: {
     location,
     credibilityResult,
     generatedPages,
+    apiKey,
   });
   
   // Store llm.txt as a special content page
@@ -659,8 +660,10 @@ export async function buildRichLlmTxt(params: {
   location: string;
   credibilityResult: CredibilityResearchResult;
   generatedPages: GeneratedPage[];
+  /** Optional Anthropic API key — used to generate the AI-powered FAQ section */
+  apiKey?: string;
 }): Promise<string> {
-  const { businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult, generatedPages } = params;
+  const { businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult, generatedPages, apiKey } = params;
 
   const business = await getBusinessById(businessId);
   const queryLocations = await getQueryLocationsByCampaignId(campaignId);
@@ -671,19 +674,39 @@ export async function buildRichLlmTxt(params: {
   lines.push(`# ${businessName}`);
   lines.push("");
 
-  const yearsStr = business?.yearsInBusiness ? `, serving customers since ${new Date().getFullYear() - business.yearsInBusiness}` : "";
+  const foundedYear = business?.yearsInBusiness ? new Date().getFullYear() - business.yearsInBusiness : null;
+  const yearsStr = foundedYear ? `, established ${foundedYear}` : "";
   lines.push(`> ${businessName} is a ${industry} serving ${location}${yearsStr}.`);
   lines.push("");
 
-  // ── About ───────────────────────────────────────────────────────────────────
-  const aboutParts: string[] = [];
-  if (business?.description) aboutParts.push(business.description);
-  if (business?.specialties) aboutParts.push(`Specialties: ${business.specialties}`);
-  if (business?.differentiators) aboutParts.push(`What sets us apart: ${business.differentiators}`);
-  if (aboutParts.length > 0) {
+  // ── Brand Identity ──────────────────────────────────────────────────────────
+  const brandParts: string[] = [];
+  if (business?.description) brandParts.push(business.description);
+  if (foundedYear) brandParts.push(`Founded: ${foundedYear} (${new Date().getFullYear() - foundedYear}+ years in business)`);
+  if (business?.contactName) brandParts.push(`Primary Contact: ${business.contactName}`);
+  if (business?.contactEmail) brandParts.push(`Contact Email: ${business.contactEmail}`);
+  if (brandParts.length > 0) {
     lines.push("## About");
     lines.push("");
-    aboutParts.forEach(p => lines.push(p));
+    brandParts.forEach(p => lines.push(p));
+    lines.push("");
+  }
+
+  // ── Specialties & Unique Expertise ──────────────────────────────────────────
+  // This section is intentionally prominent — it is the primary signal AI engines
+  // use to differentiate this business from generic competitors.
+  if (business?.specialties) {
+    lines.push("## Specialties & Unique Expertise");
+    lines.push("");
+    lines.push(business.specialties);
+    lines.push("");
+  }
+
+  // ── What Sets Us Apart ──────────────────────────────────────────────────────
+  if (business?.differentiators) {
+    lines.push("## What Sets Us Apart");
+    lines.push("");
+    lines.push(business.differentiators);
     lines.push("");
   }
 
@@ -748,6 +771,80 @@ export async function buildRichLlmTxt(params: {
     lines.push("");
     uniqueQueries.forEach(q => lines.push(`- ${q}`));
     lines.push("");
+  }
+
+
+  // ── Frequently Asked Questions (AI-generated) ─────────────────────────────
+  // Generate 10 FAQs using the LLM, grounded in real business data.
+  // These are the exact format AI engines (ChatGPT, Perplexity, Google AI Overviews)
+  // extract and surface in response to user questions.
+  if (apiKey) {
+    try {
+      const uniqueLocationsForFaq = [...new Set(queryLocations.map(ql => ql.location))];
+      const uniqueQueriesForFaq = [...new Set(queryLocations.map(ql => ql.searchQuery))];
+      const topFacts = facts.filter(f => f.confidence !== "low").slice(0, 12);
+      const factsForFaq = topFacts.map(f => `- [${f.category}] ${f.fact}`).join("\n");
+
+      const faqPrompt = `You are writing the Frequently Asked Questions section for the llm.txt machine-readable profile of a local business. This file is read by AI engines (ChatGPT, Perplexity, Google AI Overviews) to understand and recommend the business.
+
+Business: ${businessName}
+Industry: ${industry}
+Service Areas: ${uniqueLocationsForFaq.join(", ") || location}
+Website: ${websiteUrl}
+${business?.specialties ? `Specialties: ${business.specialties}` : ""}
+${business?.differentiators ? `Differentiators: ${business.differentiators}` : ""}
+${business?.bbbRating ? `BBB Rating: ${business.bbbRating}` : ""}
+${foundedYear ? `Founded: ${foundedYear}` : ""}
+
+Verified Facts:
+${factsForFaq || "(Use general industry knowledge for this business type)"}
+
+Tracked Search Topics (what customers search for):
+${uniqueQueriesForFaq.slice(0, 10).map(q => `- ${q}`).join("\n") || "(General local services)"}
+
+Generate exactly 10 FAQs that a potential customer would realistically ask. Rules:
+1. Questions must be in natural conversational phrasing (how people actually search)
+2. Answers must be 2-4 sentences, direct, factual, and grounded in the data above
+3. Cover these topics across the 10 questions: pricing/cost, service areas covered, qualifications/credentials, process/what to expect, availability/response time, warranties/guarantees, what makes them different from competitors, a specific service they are known for, how to get started/get a quote, and one location-specific question
+4. Include the business name naturally in at least 5 of the 10 answers
+5. Do NOT fabricate specific prices, phone numbers, or hours unless they appear in the verified facts above
+
+Return ONLY a JSON array in this exact format with no extra text:
+[
+  { "question": "...", "answer": "..." },
+  ...
+]`;
+
+      const faqResponse = await callAI("anthropic", apiKey, "claude-haiku-4-5-20250929", [
+        { role: "user", content: faqPrompt },
+      ]);
+
+      let faqItems: Array<{ question: string; answer: string }> = [];
+      try {
+        let jsonStr = faqResponse.content.trim();
+        if (jsonStr.startsWith("```json")) jsonStr = jsonStr.slice(7);
+        if (jsonStr.startsWith("```")) jsonStr = jsonStr.slice(3);
+        if (jsonStr.endsWith("```")) jsonStr = jsonStr.slice(0, -3);
+        faqItems = JSON.parse(jsonStr.trim());
+      } catch {
+        console.warn("[llm.txt] FAQ JSON parse failed, skipping FAQ section");
+      }
+
+      if (Array.isArray(faqItems) && faqItems.length > 0) {
+        lines.push("## Frequently Asked Questions");
+        lines.push("");
+        faqItems.forEach(item => {
+          if (item.question && item.answer) {
+            lines.push(`### ${item.question}`);
+            lines.push("");
+            lines.push(item.answer);
+            lines.push("");
+          }
+        });
+      }
+    } catch (faqError: any) {
+      console.warn("[llm.txt] FAQ generation failed (non-fatal):", faqError.message);
+    }
   }
 
   // ── Important Pages ─────────────────────────────────────────────────────────
