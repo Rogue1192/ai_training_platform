@@ -312,7 +312,28 @@ function ContentPublishPanel({ campaignId }: { campaignId: number }) {
       )}
       {pages.map((page: any) => {
         const isExpanded = expandedPages[page.id] ?? false;
-        const isNewPage = page.deliveryType === "new_page" || !page.deliveryType;
+        // Determine display type for badge and URL placeholder
+        const isLlmTxt = page.pageType === "llm_txt";
+        const isSchemaPackage = page.pageType === "schema_package";
+        const isSchemaDelivery = page.pageType === "schema_delivery";
+        const isSpecialType = isLlmTxt || isSchemaPackage || isSchemaDelivery;
+        const isNewPage = !isSpecialType && (page.deliveryType === "new_page" || !page.deliveryType);
+        // Badge config per type
+        const typeBadge = isLlmTxt
+          ? { label: "llm.txt — root file", cls: "bg-purple-500/10 text-purple-400 border-purple-500/30" }
+          : isSchemaPackage
+          ? { label: "Schema markup — inject in <head>", cls: "bg-teal-500/10 text-teal-400 border-teal-500/30" }
+          : isSchemaDelivery
+          ? { label: "Schema delivery plan", cls: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30" }
+          : isNewPage
+          ? { label: "New page", cls: "bg-blue-500/10 text-blue-400 border-blue-500/30" }
+          : { label: "Add to existing", cls: "bg-orange-500/10 text-orange-400 border-orange-500/30" };
+        // URL placeholder per type
+        const urlPlaceholder = isLlmTxt
+          ? "https://clientsite.com/llm.txt"
+          : isSchemaPackage || isSchemaDelivery
+          ? "https://clientsite.com/ (homepage URL is fine)"
+          : "https://client-site.com/page-slug";
         return (
           <div key={page.id} className="rounded-lg border border-border bg-muted/20">
             {/* Header row */}
@@ -321,17 +342,10 @@ function ContentPublishPanel({ campaignId }: { campaignId: number }) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{page.pageTitle}</p>
                 <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                  <Badge
-                    variant="outline"
-                    className={`text-xs ${
-                      isNewPage
-                        ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                        : "bg-orange-500/10 text-orange-400 border-orange-500/30"
-                    }`}
-                  >
-                    {isNewPage ? "New page" : "Add to existing"}
+                  <Badge variant="outline" className={`text-xs ${typeBadge.cls}`}>
+                    {typeBadge.label}
                   </Badge>
-                  {page.pageSlug && (
+                  {!isSpecialType && page.pageSlug && (
                     <span className="text-xs text-muted-foreground">/{page.pageSlug}</span>
                   )}
                 </div>
@@ -404,7 +418,7 @@ function ContentPublishPanel({ campaignId }: { campaignId: number }) {
             {!page.publishedUrl && (
               <div className="flex items-center gap-2 px-3 pb-3">
                 <Input
-                  placeholder="https://client-site.com/page-slug"
+                  placeholder={urlPlaceholder}
                   value={urlInputs[page.id] ?? ""}
                   onChange={(e) => setUrlInputs(prev => ({ ...prev, [page.id]: e.target.value }))}
                   className="h-8 text-xs"

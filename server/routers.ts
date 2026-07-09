@@ -3551,14 +3551,33 @@ export const agencyRouter = router({
         .where(and(eq(campaigns.id, input.campaignId), eq(businesses.agencyId, agencyId)))
         .limit(1);
       if (!campaign) throw new Error('Campaign not found or not accessible');
-      const INTERNAL_TYPES = new Set(['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery']);
+      // schema_audit is raw JSON for internal use only — hide it from agencies.
+      // llm_txt, schema_package, schema_delivery are all actionable and surfaced.
+      const HIDDEN_TYPES = new Set(['schema_audit']);
       const pages = await db
         .select()
         .from(contentPages)
         .where(eq(contentPages.campaignId, input.campaignId));
+      const visiblePages = pages.filter(p => !HIDDEN_TYPES.has(p.pageType));
+      // Enrich llm_txt and schema pages with canonical placement instructions if missing
+      const enriched = visiblePages.map(p => {
+        if (p.pageType === 'llm_txt' && !p.placementInstructions) {
+          return {
+            ...p,
+            placementInstructions: 'Upload this file to the root of the client\'s domain at /llm.txt (e.g., https://clientsite.com/llm.txt). In WordPress, use a plugin like "Add Any Extension to Pages" or upload via FTP/cPanel to the public_html folder.',
+          };
+        }
+        if (p.pageType === 'schema_delivery' && !p.placementInstructions) {
+          return {
+            ...p,
+            placementInstructions: 'Follow the delivery plan below. For each block marked "inject", paste the JSON-LD into the <head> of the corresponding page. In WordPress, use the "Insert Headers and Footers" plugin or the page\'s Yoast/RankMath schema tab.',
+          };
+        }
+        return p;
+      });
       return {
         campaignStatus: campaign.status,
-        pages: pages.filter(p => !INTERNAL_TYPES.has(p.pageType)),
+        pages: enriched,
       };
     }),
 
@@ -3611,13 +3630,15 @@ export const agencyRouter = router({
           updatedAt: new Date(),
         })
         .where(eq(contentPages.id, input.pageId));
-      // Check if ALL visible pages for this campaign now have a URL
-      const INTERNAL_TYPES = new Set(['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery']);
+      // Check if ALL visible pages for this campaign now have a URL.
+      // schema_audit is internal only; all other types (including llm_txt, schema_package,
+      // schema_delivery) require a URL from the agency before indexing can proceed.
+      const HIDDEN_TYPES_URL = new Set(['schema_audit']);
       const allPages = await db
         .select({ id: contentPages.id, publishedUrl: contentPages.publishedUrl, pageType: contentPages.pageType })
         .from(contentPages)
         .where(eq(contentPages.campaignId, page.campaignId));
-      const visiblePages = allPages.filter(p => !INTERNAL_TYPES.has(p.pageType));
+      const visiblePages = allPages.filter(p => !HIDDEN_TYPES_URL.has(p.pageType));
       const allHaveUrls = visiblePages.length > 0 && visiblePages.every(p => !!p.publishedUrl);
       if (allHaveUrls) {
         // Mark publishing complete and auto-kick indexing
