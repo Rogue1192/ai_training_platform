@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import NewCampaignModal from "@/components/NewCampaignModal";
 import { Button } from "@/components/ui/button";
 import {
   Rocket,
@@ -69,6 +70,7 @@ export default function Campaigns() {
   const [, navigate] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [showNewCampaignModal, setShowNewCampaignModal] = useState(false);
 
   const { data: campaigns, isLoading } = trpc.campaign.list.useQuery();
   const { data: stats } = trpc.campaign.stats.useQuery();
@@ -97,6 +99,11 @@ export default function Campaigns() {
 
   return (
     <div className="space-y-6">
+      <NewCampaignModal
+        open={showNewCampaignModal}
+        onClose={() => setShowNewCampaignModal(false)}
+        onSuccess={(campaignId) => navigate(`/campaigns/${campaignId}`)}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1
@@ -109,13 +116,7 @@ export default function Campaigns() {
             Manage automated AI visibility campaigns
           </p>
         </div>
-        <Button
-          onClick={() =>
-            toast.info(
-              "Campaigns are auto-created from webhook intake. Configure your GHL webhook to start."
-            )
-          }
-        >
+        <Button onClick={() => setShowNewCampaignModal(true)}>
           <Plus className="h-4 w-4 mr-2" />
           New Campaign
         </Button>
@@ -315,9 +316,8 @@ export default function Campaigns() {
               No campaigns yet
             </h3>
             <p className="text-sm text-muted-foreground max-w-md mb-6">
-              Campaigns are automatically created when a client completes the
-              onboarding form and the webhook fires into AI Answer Forge.
-              Configure your GHL webhook endpoint to get started.
+              Create a campaign manually using the <strong>New Campaign</strong> button above,
+              or configure your GHL webhook to auto-create campaigns from client intake forms.
             </p>
             <div className="bg-muted rounded-lg p-4 text-left max-w-lg w-full">
               <p className="text-xs font-medium text-muted-foreground mb-2">

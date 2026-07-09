@@ -1239,6 +1239,252 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
 
   // ============= AI ANSWER FORGE — Campaigns =============
   campaign: router({
+    createManual: protectedProcedure
+      .input(z.object({
+        businessName: z.string().min(1, "Business name is required"),
+        websiteUrl: z.string().url("Valid website URL is required"),
+        industry: z.string().optional(),
+        contactEmail: z.string().email("Valid contact email is required"),
+        contactName: z.string().optional(),
+        contactPhone: z.string().optional(),
+        locations: z.array(z.string().min(1)).optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        packageTierSlug: z.string().optional(),
+        packageTierId: z.number().optional(),
+        clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).default("ai_only"),
+        siteAdminUrl: z.string().optional(),
+        siteUsername: z.string().optional(),
+        sitePassword: z.string().optional(),
+        searchQueries: z.array(z.string()).optional(),
+        locationQueryMap: z.array(z.object({
+          location: z.string().min(1),
+          queries: z.array(z.string().min(1)),
+        })).optional(),
+        billingType: z.enum(["white_label", "direct", "legacy"]).optional(),
+        yearsFounded: z.number().optional(),
+        certifications: z.array(z.string()).optional(),
+        awards: z.array(z.string()).optional(),
+        bbbRating: z.string().optional(),
+        googleReviewCount: z.number().optional(),
+        googleRating: z.number().optional(),
+        selectedPackage: z.string().optional(),
+        agencyId: z.number().int().positive().optional(),
+        agencyPackageTier: z.enum(['starter', 'growth', 'pro']).optional(),
+        source: z.enum(["rogue", "ranklocal"]).optional(),
+        specialties: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { getDb } = await import("./db");
+        const { businesses } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const { serializeLocations } = await import("@shared/location");
+        const { encrypt } = await import("./encryption");
+        const {
+          createCampaign,
+          getPackageTierBySlug,
+          getPackageTierById,
+          createCampaignQueryLocations,
+          createClientDashboard,
+          seedDefaultPackageTiers,
+          getCampaignsByBusinessId
+        } = await import("./dbCampaigns");
+        const crypto = await import("crypto");
+
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        // Ensure default package tiers exist
+        await seedDefaultPackageTiers();
+
+        // Resolve package tier
+        let packageTier;
+        if (input.packageTierId) {
+          packageTier = await getPackageTierById(input.packageTierId);
+        } else if (input.packageTierSlug) {
+          packageTier = await getPackageTierBySlug(input.packageTierSlug);
+        }
+        if (!packageTier) {
+          packageTier = await getPackageTierBySlug("starter");
+        }
+        if (!packageTier) {
+          throw new Error("Package tier not found");
+        }
+
+        // Compose locations
+        const sanitizeLoc = (s: string) => s.replace(/;/g, ",").replace(/\s+/g, " ").trim().slice(0, 140);
+        const finalLocations = (input.locations ?? []).map((l) => sanitizeLoc(l)).filter(Boolean);
+        if (finalLocations.length === 0 && input.city?.trim() && input.state?.trim()) {
+          const city = sanitizeLoc(input.city).slice(0, 100);
+          const state = sanitizeLoc(input.state).slice(0, 40);
+          if (city && state) finalLocations.push(`${city}, ${state}`);
+        }
+        if (finalLocations.length === 0) {
+          throw new Error("At least one location is required");
+        }
+
+        const industry = input.industry?.trim() || "general";
+
+        // Check if business already exists
+        const existingBusinesses = await db
+          .select()
+          .from(businesses)
+          .where(eq(businesses.website, input.websiteUrl))
+          .limit(1);
+
+        let businessId;
+
+        if (existingBusinesses.length > 0) {
+          businessId = existingBusinesses[0].id;
+          const updateFields: Record<string, any> = {
+            businessType: industry,
+            contactEmail: input.contactEmail,
+            updatedAt: new Date(),
+            location: serializeLocations(finalLocations),
+          };
+          if (input.contactName) updateFields.contactName = input.contactName;
+          if (input.contactPhone) updateFields.phone = input.contactPhone;
+          if (input.yearsFounded) updateFields.yearsInBusiness = input.yearsFounded;
+          if (input.certifications) updateFields.certifications = input.certifications.join(", ");
+          if (input.awards) updateFields.awards = input.awards.join(", ");
+          if (input.bbbRating) updateFields.bbbRating = input.bbbRating;
+          if (input.clientType) updateFields.clientType = input.clientType;
+          if (input.siteAdminUrl) updateFields.siteAdminUrl = input.siteAdminUrl;
+          if (input.siteUsername) updateFields.siteUsername = input.siteUsername;
+          if (input.sitePassword) updateFields.sitePasswordEncrypted = encrypt(input.sitePassword);
+          if (input.source) updateFields.internalSource = input.source;
+          if (input.specialties) updateFields.specialties = input.specialties;
+
+          await db.update(businesses).set(updateFields).where(eq(businesses.id, businessId));
+        } else {
+          const newBusiness = await db
+            .insert(businesses)
+            .values({
+              userId: ctx.user.id,
+              name: input.businessName,
+              website: input.websiteUrl,
+              businessType: industry,
+              contactEmail: input.contactEmail,
+              contactName: input.contactName || null,
+              phone: input.contactPhone || null,
+              location: serializeLocations(finalLocations),
+              description: null,
+              clientType: input.clientType,
+              yearsInBusiness: input.yearsFounded || null,
+              certifications: input.certifications?.join(", ") || null,
+              awards: input.awards?.join(", ") || null,
+              bbbRating: input.bbbRating || null,
+              siteAdminUrl: input.siteAdminUrl || null,
+              siteUsername: input.siteUsername || null,
+              sitePasswordEncrypted: input.sitePassword ? encrypt(input.sitePassword) : null,
+              internalSource: input.source || null,
+              specialties: input.specialties || null,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .returning();
+          businessId = newBusiness[0].id;
+        }
+
+        // Check for existing active campaign
+        const existingCampaigns = await getCampaignsByBusinessId(businessId);
+        const activeCampaign = existingCampaigns.find(
+          (c) => c.status !== "monitoring" && c.status !== "error" && c.status !== "paused"
+        );
+
+        if (activeCampaign) {
+          const { getClientDashboardsByCampaignId } = await import("./dbCampaigns");
+          const dashboards = await getClientDashboardsByCampaignId(activeCampaign.id);
+          const existingToken = dashboards.find((d) => d.isActive)?.accessToken || "";
+          return {
+            success: true,
+            campaignId: activeCampaign.id,
+            businessId,
+            dashboardToken: existingToken,
+            message: `Active campaign already exists: "${activeCampaign.campaignName}". No duplicate created.`,
+            existing: true,
+          };
+        }
+
+        const resolvedMaxQuerySlots = packageTier.maxQuerySlots || (packageTier.maxQueries * packageTier.maxLocations);
+
+        const campaign = await createCampaign({
+          userId: ctx.user.id,
+          businessId,
+          packageTierId: packageTier.id,
+          campaignName: `${input.businessName} - AI Visibility`,
+          status: "pending",
+          clientType: input.clientType,
+          trainingAggressiveness: "aggressive",
+          rankCheckFrequency: "weekly",
+          errorCount: 0,
+          trialStatus: "trial",
+          maxQueries: packageTier.maxQueries,
+          maxLocations: packageTier.maxLocations,
+          maxQuerySlots: resolvedMaxQuerySlots,
+          selectedPackage: input.selectedPackage || null,
+          billingType: input.billingType || (input.agencyId ? "white_label" : "direct"),
+        });
+
+        const { initializeTrial } = await import("./trialManager");
+        await initializeTrial(campaign.id, input.selectedPackage);
+
+        const entries = [];
+        let slotsUsed = 0;
+
+        if (input.locationQueryMap && input.locationQueryMap.length > 0) {
+          for (const lqEntry of input.locationQueryMap) {
+            for (const q of lqEntry.queries) {
+              if (slotsUsed >= resolvedMaxQuerySlots) break;
+              entries.push({ campaignId: campaign.id, searchQuery: q, location: lqEntry.location, trainingStatus: "pending", trainingSessions: 0 });
+              slotsUsed++;
+            }
+            if (slotsUsed >= resolvedMaxQuerySlots) break;
+          }
+        } else if (input.searchQueries && input.searchQueries.length > 0 && finalLocations.length > 0) {
+          for (const query of input.searchQueries) {
+            for (const location of finalLocations) {
+              if (slotsUsed >= resolvedMaxQuerySlots) break;
+              entries.push({ campaignId: campaign.id, searchQuery: query, location, trainingStatus: "pending", trainingSessions: 0 });
+              slotsUsed++;
+            }
+            if (slotsUsed >= resolvedMaxQuerySlots) break;
+          }
+        }
+
+        if (entries.length > 0) {
+          await createCampaignQueryLocations(entries);
+        }
+
+        const accessToken = crypto.randomBytes(32).toString("hex");
+        await createClientDashboard({
+          businessId,
+          campaignId: campaign.id,
+          accessToken,
+          isActive: true,
+          dashboardTitle: `${input.businessName} - AI Visibility Report`,
+          accessCount: 0,
+        });
+
+        // Auto-start pipeline
+        setImmediate(async () => {
+          try {
+            const { runFullPipeline } = await import("./pipelineOrchestrator");
+            await runFullPipeline(campaign.id, ctx.user.id);
+          } catch (err) {
+            console.error(`[ManualCreate] Pipeline auto-run failed for campaign ${campaign.id}:`, err);
+          }
+        });
+
+        return {
+          success: true,
+          campaignId: campaign.id,
+          businessId,
+          dashboardToken: accessToken,
+          message: `Campaign "${campaign.campaignName}" created successfully.`,
+        };
+      }),
+
     list: protectedProcedure.query(async () => {
       const { getAllCampaignsWithBusinessInfo } = await import("./dbCampaigns");
       return getAllCampaignsWithBusinessInfo();
