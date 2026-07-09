@@ -3522,6 +3522,122 @@ export const agencyRouter = router({
       return { url };
     }),
 
+  // Agency: get content pages for a client campaign (for self-publishing workflow)
+  getClientContentPages: protectedProcedure
+    .input(z.object({ campaignId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getDb } = await import('./db');
+      const { contentPages, campaigns, businesses } = await import('../drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+      // Resolve the agency — either impersonated or the caller's own
+      const impersonatedAgencyId = (ctx as any).impersonatedAgencyId as number | undefined;
+      let agencyId: number;
+      if (impersonatedAgencyId) {
+        if (ctx.user.role !== 'admin') throw new Error('Forbidden');
+        agencyId = impersonatedAgencyId;
+      } else {
+        const agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency) throw new Error('Agency not found');
+        agencyId = agency.id;
+      }
+      // Verify the campaign belongs to a business owned by this agency
+      const [campaign] = await db
+        .select({ id: campaigns.id, businessId: campaigns.businessId, status: campaigns.status })
+        .from(campaigns)
+        .innerJoin(businesses, eq(businesses.id, campaigns.businessId))
+        .where(and(eq(campaigns.id, input.campaignId), eq(businesses.agencyId, agencyId)))
+        .limit(1);
+      if (!campaign) throw new Error('Campaign not found or not accessible');
+      const INTERNAL_TYPES = new Set(['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery']);
+      const pages = await db
+        .select()
+        .from(contentPages)
+        .where(eq(contentPages.campaignId, input.campaignId));
+      return {
+        campaignStatus: campaign.status,
+        pages: pages.filter(p => !INTERNAL_TYPES.has(p.pageType)),
+      };
+    }),
+
+  // Agency: save a published URL for a content page (triggers indexing when all pages have URLs)
+  setClientContentPageUrl: protectedProcedure
+    .input(z.object({
+      pageId: z.number(),
+      publishedUrl: z.string().url('Must be a valid URL'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getDb } = await import('./db');
+      const { contentPages, campaigns, businesses } = await import('../drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+      // Resolve agency
+      const impersonatedAgencyId = (ctx as any).impersonatedAgencyId as number | undefined;
+      let agencyId: number;
+      if (impersonatedAgencyId) {
+        if (ctx.user.role !== 'admin') throw new Error('Forbidden');
+        agencyId = impersonatedAgencyId;
+      } else {
+        const agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency) throw new Error('Agency not found');
+        agencyId = agency.id;
+      }
+      // Verify the page belongs to a campaign under this agency
+      const [page] = await db
+        .select({ id: contentPages.id, campaignId: contentPages.campaignId })
+        .from(contentPages)
+        .where(eq(contentPages.id, input.pageId))
+        .limit(1);
+      if (!page || !page.campaignId) throw new Error('Content page not found');
+      const [campaign] = await db
+        .select({ id: campaigns.id })
+        .from(campaigns)
+        .innerJoin(businesses, eq(businesses.id, campaigns.businessId))
+        .where(and(eq(campaigns.id, page.campaignId), eq(businesses.agencyId, agencyId)))
+        .limit(1);
+      if (!campaign) throw new Error('Not authorized to update this page');
+      // Save the URL and mark page as published
+      await db
+        .update(contentPages)
+        .set({
+          publishedUrl: input.publishedUrl,
+          status: 'published',
+          publishedAt: new Date(),
+          publishError: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(contentPages.id, input.pageId));
+      // Check if ALL visible pages for this campaign now have a URL
+      const INTERNAL_TYPES = new Set(['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery']);
+      const allPages = await db
+        .select({ id: contentPages.id, publishedUrl: contentPages.publishedUrl, pageType: contentPages.pageType })
+        .from(contentPages)
+        .where(eq(contentPages.campaignId, page.campaignId));
+      const visiblePages = allPages.filter(p => !INTERNAL_TYPES.has(p.pageType));
+      const allHaveUrls = visiblePages.length > 0 && visiblePages.every(p => !!p.publishedUrl);
+      if (allHaveUrls) {
+        // Mark publishing complete and auto-kick indexing
+        const { campaigns: campaignsTable } = await import('../drizzle/schema');
+        await db.update(campaignsTable)
+          .set({ publishingCompletedAt: new Date(), updatedAt: new Date() })
+          .where(eq(campaignsTable.id, page.campaignId));
+        setImmediate(async () => {
+          try {
+            const { runPipelineStep } = await import('./pipelineOrchestrator');
+            await runPipelineStep(page.campaignId!, 'indexing', ctx.user.id);
+            console.log(`[agency.setClientContentPageUrl] Auto-triggered indexing for campaign ${page.campaignId}`);
+          } catch (err: any) {
+            console.error(`[agency.setClientContentPageUrl] Auto-indexing failed:`, err.message);
+          }
+        });
+      }
+      return { success: true, allUrlsEntered: allHaveUrls };
+    }),
+
   // Super admin: start impersonating an agency (returns the agency user id for context switching)
   startImpersonation: protectedProcedure
     .input(z.object({ agencyId: z.number() }))

@@ -819,6 +819,13 @@ export function startScheduler(): void {
     checkBonusQueryScans().catch((err: Error) => console.error("[Scheduler] Bonus query scan failed:", err));
   }, 6 * 60 * 60 * 1000); // re-evaluate every 6 hours
 
+  // Agency self-publishing reminder emails — checks once per day for campaigns
+  // stuck in 'publishing' status for 3 or 7 days without all URLs submitted.
+  checkPublishingReminders().catch((err: Error) => console.error("[Scheduler] Publishing reminder check failed:", err));
+  setInterval(() => {
+    checkPublishingReminders().catch((err: Error) => console.error("[Scheduler] Publishing reminder check failed:", err));
+  }, 24 * 60 * 60 * 1000); // once per day
+
   console.log("[Scheduler] Scheduler started successfully");
 }
 
@@ -1135,6 +1142,97 @@ async function checkBonusQueryScans(): Promise<void> {
     if (scanned > 0) console.log(`[Scheduler] Bonus query scans completed for ${scanned} campaign(s)`);
   } catch (err: any) {
     console.error("[Scheduler] checkBonusQueryScans error:", err.message);
+  }
+}
+
+/**
+ * Send reminder emails to agencies whose campaigns have been stuck in 'publishing'
+ * status for 3 or 7 days without all content page URLs being submitted.
+ */
+async function checkPublishingReminders(): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const { campaigns: cpCampaigns, contentPages: cpContentPages, businesses: cpBusinesses, agencies: cpAgencies } = await import("../drizzle/schema");
+    const { eq, and, isNull, lt, or, inArray } = await import("drizzle-orm");
+    const now = new Date();
+    const THREE_DAYS_AGO = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const SEVEN_DAYS_AGO = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    // Find campaigns stuck in 'publishing' status for 3+ days
+    const stuckCampaigns = await db
+      .select({
+        campaignId: cpCampaigns.id,
+        campaignName: cpCampaigns.campaignName,
+        businessId: cpCampaigns.businessId,
+        updatedAt: cpCampaigns.updatedAt,
+        businessName: cpBusinesses.name,
+        agencyId: cpBusinesses.agencyId,
+        agencyEmail: cpAgencies.contactEmail,
+        agencyName: cpAgencies.name,
+        agencyBrandName: cpAgencies.brandName,
+      })
+      .from(cpCampaigns)
+      .innerJoin(cpBusinesses, eq(cpBusinesses.id, cpCampaigns.businessId))
+      .innerJoin(cpAgencies, eq(cpAgencies.id, cpBusinesses.agencyId))
+      .where(
+        and(
+          eq(cpCampaigns.status, "publishing"),
+          lt(cpCampaigns.updatedAt, THREE_DAYS_AGO),
+          isNull(cpCampaigns.publishingCompletedAt)
+        )
+      );
+    if (!stuckCampaigns.length) return;
+    // For each stuck campaign, check if any pages still lack URLs
+    const INTERNAL_TYPES = new Set(["llm_txt", "schema_package", "schema_audit", "schema_delivery"]);
+    for (const c of stuckCampaigns) {
+      const pages = await db
+        .select({ id: cpContentPages.id, publishedUrl: cpContentPages.publishedUrl, pageType: cpContentPages.pageType })
+        .from(cpContentPages)
+        .where(eq(cpContentPages.campaignId, c.campaignId));
+      const visiblePages = pages.filter(p => !INTERNAL_TYPES.has(p.pageType));
+      const missingUrls = visiblePages.filter(p => !p.publishedUrl).length;
+      if (missingUrls === 0) continue; // all URLs already submitted, skip
+      const daysStuck = Math.floor((now.getTime() - c.updatedAt.getTime()) / (24 * 60 * 60 * 1000));
+      const isSevenDay = daysStuck >= 7;
+      const isThreeDay = daysStuck >= 3 && daysStuck < 7;
+      if (!isThreeDay && !isSevenDay) continue;
+      // Only send on the exact day milestone (3 or 7), not every day after
+      const exactDay = isSevenDay
+        ? daysStuck >= 7 && daysStuck < 8
+        : daysStuck >= 3 && daysStuck < 4;
+      if (!exactDay) continue;
+      const recipientEmail = c.agencyEmail;
+      if (!recipientEmail) continue;
+      const agencyLabel = c.agencyBrandName || c.agencyName || "Your Agency";
+      const urgency = isSevenDay ? "⚠️ Urgent: " : "Reminder: ";
+      try {
+        const resendKey = process.env.RESEND_API_KEY;
+        if (!resendKey) continue;
+        const { Resend } = await import("resend");
+        const resend = new Resend(resendKey);
+        await resend.emails.send({
+          from: `${agencyLabel} <noreply@${process.env.EMAIL_FROM_DOMAIN ?? "roguebusinessmarketing.com"}`,
+          to: recipientEmail,
+          subject: `${urgency}Content pages need URLs for ${c.businessName}`,
+          html: `
+            <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+              <h2 style="color:#1e293b">${urgency}Content pages awaiting URL submission</h2>
+              <p>The campaign <strong>${c.campaignName || `Campaign #${c.campaignId}`}</strong> for <strong>${c.businessName}</strong> has been waiting for ${daysStuck} day${daysStuck !== 1 ? "s" : ""} for live URLs to be submitted.</p>
+              <p><strong>${missingUrls} page${missingUrls !== 1 ? "s" : ""}</strong> still need${missingUrls === 1 ? "s" : ""} a live URL before indexing and AI training can begin.</p>
+              <p style="margin-top:24px">
+                <a href="${process.env.APP_BASE_URL ?? ""}/agency/client/${c.businessId}" style="background:#4f46e5;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">Submit URLs Now</a>
+              </p>
+              <p style="color:#64748b;font-size:13px;margin-top:24px">Once all URLs are submitted, indexing and training will start automatically.</p>
+            </div>
+          `,
+        });
+        console.log(`[Scheduler] Publishing reminder sent to ${recipientEmail} for campaign ${c.campaignId} (${daysStuck} days stuck)`);
+      } catch (emailErr: any) {
+        console.error(`[Scheduler] Failed to send publishing reminder for campaign ${c.campaignId}:`, emailErr.message);
+      }
+    }
+  } catch (err: any) {
+    console.error("[Scheduler] checkPublishingReminders error:", err.message);
   }
 }
 
