@@ -1177,16 +1177,7 @@ function ContentTab({ campaignId }: { campaignId: number }) {
   const [expandedPages, setExpandedPages] = useState<Record<number, boolean>>({});
   const [toastFired, setToastFired] = useState(false);
 
-  // Fire a toast the first time generated pages arrive
   const currentCount = contentPages?.length ?? 0;
-  if (!toastFired && currentCount > 0) {
-    const INTERNAL_TYPES = new Set(["llm_txt", "schema_package", "schema_audit", "schema_delivery"]);
-    const pageCount = contentPages!.filter((p: any) => !INTERNAL_TYPES.has(p.pageType)).length;
-    toast.success(`📄 ${pageCount} content page${pageCount !== 1 ? "s" : ""} ready — go to the Content tab to copy them in.`, {
-      duration: 8000,
-    });
-    setToastFired(true);
-  }
 
   const setContentPageUrl = trpc.campaign.setContentPageUrl.useMutation({
     onSuccess: (data) => {
@@ -1200,6 +1191,27 @@ function ContentTab({ campaignId }: { campaignId: number }) {
     onError: (err) => toast.error(err.message),
   });
 
+  // Parse the schema delivery plan from the DB content page.
+  // NOTE: every hook must run before the early return below, or the hook
+  // count changes between the loading/loaded renders (React error #310).
+  const deliveryPlan = useMemo(() => {
+    const schemaDeliveryPage = contentPages?.find((p: any) => p.pageType === "schema_delivery");
+    if (!schemaDeliveryPage?.pageContent) return null;
+    try { return JSON.parse(schemaDeliveryPage.pageContent); } catch { return null; }
+  }, [contentPages]);
+
+  // Fire a toast the first time generated pages arrive (side effect, not render-phase)
+  useEffect(() => {
+    if (!toastFired && currentCount > 0) {
+      const INTERNAL_TYPES = new Set(["llm_txt", "schema_package", "schema_audit", "schema_delivery"]);
+      const pageCount = (contentPages ?? []).filter((p: any) => !INTERNAL_TYPES.has(p.pageType)).length;
+      toast.success(`📄 ${pageCount} content page${pageCount !== 1 ? "s" : ""} ready — go to the Content tab to copy them in.`, {
+        duration: 8000,
+      });
+      setToastFired(true);
+    }
+  }, [toastFired, currentCount, contentPages]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1212,14 +1224,7 @@ function ContentTab({ campaignId }: { campaignId: number }) {
   const visiblePages = contentPages?.filter((p: any) => !INTERNAL_PAGE_TYPES.has(p.pageType)) ?? [];
   const llmTxtPage = contentPages?.find((p: any) => p.pageType === "llm_txt");
   const schemaPackagePage = contentPages?.find((p: any) => p.pageType === "schema_package");
-  const schemaDeliveryPage = contentPages?.find((p: any) => p.pageType === "schema_delivery");
   const allUrlsEntered = visiblePages.length > 0 && visiblePages.every((p: any) => !!p.publishedUrl);
-
-  // Parse the schema delivery plan from the DB content page
-  const deliveryPlan = useMemo(() => {
-    if (!schemaDeliveryPage?.pageContent) return null;
-    try { return JSON.parse(schemaDeliveryPage.pageContent); } catch { return null; }
-  }, [schemaDeliveryPage?.pageContent]);
 
   return (
     <div className="space-y-4">
