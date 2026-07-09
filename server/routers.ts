@@ -1910,6 +1910,152 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
 
         return { success: true, updatedFields: input.gapFields.length };
       }),
+
+    /**
+     * Regenerate only the schema markup (audit + package + delivery plan)
+     * for a campaign without touching existing content pages.
+     * Safe to run on campaigns that already have published content.
+     */
+    regenerateSchema: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") throw new Error("Admin access required");
+
+        const { getDb, getBusinessById } = await import("./db");
+        const { getCampaignById } = await import("./dbCampaigns");
+        const { buildSchemaPackageForBusiness, schemaPackageToString } = await import("./schemaMarkupEngine");
+        const { auditSiteSchema } = await import("./siteSchemaAuditor");
+        const { buildSchemaDeliveryPlan, serializeDeliveryPlan } = await import("./schemaDeliveryEngine");
+        const { contentPages: cpTable } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+
+        const business = await getBusinessById(campaign.businessId);
+        if (!business) throw new Error("Business not found");
+
+        const websiteUrl = business.website ?? "";
+        const businessName = business.name;
+
+        // ── Step 1: Audit existing schema on the client's site ────────────────
+        let auditResult = null;
+        if (websiteUrl) {
+          try {
+            auditResult = await auditSiteSchema(websiteUrl);
+          } catch (e: any) {
+            console.warn(`[regenerateSchema] Audit failed (non-fatal): ${e.message}`);
+          }
+        }
+
+        // ── Step 2: Build the schema package from business + credibility data ─
+        const schemaPkg = await buildSchemaPackageForBusiness(business.id, input.campaignId);
+        if (!schemaPkg) throw new Error("Schema package could not be built — check business data");
+
+        const schemaContent = schemaPackageToString(schemaPkg);
+
+        // Upsert schema_package
+        const [existingPkg] = await db.select({ id: cpTable.id })
+          .from(cpTable)
+          .where(and(eq(cpTable.campaignId, input.campaignId), eq(cpTable.pageType, "schema_package")))
+          .limit(1);
+
+        if (existingPkg) {
+          await db.update(cpTable)
+            .set({ pageContent: schemaContent, schemaMarkup: JSON.stringify(schemaPkg.siteWideSchema), updatedAt: new Date() })
+            .where(eq(cpTable.id, existingPkg.id));
+        } else {
+          await db.insert(cpTable).values({
+            businessId: business.id,
+            campaignId: input.campaignId,
+            pageType: "schema_package",
+            pageTitle: "Schema Markup Package",
+            pageSlug: "schema",
+            pageContent: schemaContent,
+            schemaMarkup: JSON.stringify(schemaPkg.siteWideSchema),
+            status: "draft",
+            deliveryType: "inject_existing",
+            placementInstructions: `Paste the SITE-WIDE SCHEMA block into the <head> of every page on the client's site (or use Insert Headers and Footers plugin in WordPress). Paste each per-page schema block into the corresponding page. Summary: ${schemaPkg.summary}`,
+            generationModel: "system",
+            generationPrompt: `Schema package for ${businessName}`,
+          });
+        }
+
+        // ── Step 3: Build delivery plan (requires audit) ──────────────────────
+        if (auditResult) {
+          const deliveryPlan = buildSchemaDeliveryPlan(
+            auditResult,
+            schemaPkg,
+            {
+              name: businessName,
+              phone: business.phone ?? null,
+              address: business.address ?? null,
+              website: websiteUrl,
+              description: business.description ?? null,
+            }
+          );
+
+          // Upsert schema_audit
+          const [existingAudit] = await db.select({ id: cpTable.id })
+            .from(cpTable)
+            .where(and(eq(cpTable.campaignId, input.campaignId), eq(cpTable.pageType, "schema_audit")))
+            .limit(1);
+          const auditJson = JSON.stringify(auditResult, null, 2);
+          if (existingAudit) {
+            await db.update(cpTable).set({ pageContent: auditJson, updatedAt: new Date() }).where(eq(cpTable.id, existingAudit.id));
+          } else {
+            await db.insert(cpTable).values({
+              businessId: business.id,
+              campaignId: input.campaignId,
+              pageType: "schema_audit",
+              pageTitle: "Schema Site Audit",
+              pageSlug: "schema-audit",
+              pageContent: auditJson,
+              status: "draft",
+              deliveryType: "inject_existing",
+              placementInstructions: `Audit of existing schema on ${websiteUrl}. Delivery mode: ${auditResult.deliveryMode}.`,
+              generationModel: "system",
+            });
+          }
+
+          // Upsert schema_delivery
+          const [existingDelivery] = await db.select({ id: cpTable.id })
+            .from(cpTable)
+            .where(and(eq(cpTable.campaignId, input.campaignId), eq(cpTable.pageType, "schema_delivery")))
+            .limit(1);
+          const deliveryJson = serializeDeliveryPlan(deliveryPlan);
+          if (existingDelivery) {
+            await db.update(cpTable).set({ pageContent: deliveryJson, updatedAt: new Date() }).where(eq(cpTable.id, existingDelivery.id));
+          } else {
+            await db.insert(cpTable).values({
+              businessId: business.id,
+              campaignId: input.campaignId,
+              pageType: "schema_delivery",
+              pageTitle: "Schema Delivery Plan",
+              pageSlug: "schema-delivery",
+              pageContent: deliveryJson,
+              status: "draft",
+              deliveryType: "inject_existing",
+              placementInstructions: deliveryPlan.auditSummary,
+              generationModel: "system",
+            });
+          }
+
+          return {
+            success: true,
+            mode: "full",
+            deliveryMode: auditResult.deliveryMode,
+            blockCount: deliveryPlan.actionCount,
+            gapFieldCount: deliveryPlan.gapFields.length,
+          };
+        }
+
+        // No audit result — schema_package only
+        return { success: true, mode: "package_only", deliveryMode: "full_replace", blockCount: 0, gapFieldCount: 0 };
+      }),
   }),
 
   // ============= AI ANSWER FORGE — Webhook Logs =============
@@ -2978,7 +3124,9 @@ export const llmInsightsRouter = router({
         mentionedChatGPT: sql<number>`sum(case when ${campaignQueryLocations.currentRankChatGPT} = 'mentioned' then 1 else 0 end)`,
         mentionedGemini: sql<number>`sum(case when ${campaignQueryLocations.currentRankGemini} = 'mentioned' then 1 else 0 end)`,
         mentionedAIOverview: sql<number>`sum(case when ${campaignQueryLocations.currentRankAIOverview} = 'mentioned' then 1 else 0 end)`,
-        achievedCount: sql<number>`sum(case when ${campaignQueryLocations.trainingStatus} = 'achieved' then 1 else 0 end)`,
+        // 'monitoring' = achieved + in weekly maintenance; 'achieved' = just hit the target.
+        // Both count as "achieved" for the dashboard counter.
+        achievedCount: sql<number>`sum(case when ${campaignQueryLocations.trainingStatus} in ('achieved', 'monitoring') then 1 else 0 end)`,
       })
       .from(campaignQueryLocations);
 
@@ -2993,6 +3141,55 @@ export const llmInsightsRouter = router({
       achievedCount: Number(stats?.achievedCount ?? 0),
     };
   }),
+
+  /**
+   * Trigger a manual LLM rank check for a specific campaign.
+   * Runs the same logic as the scheduled check but on demand.
+   * Returns the number of snapshots created and any new wins detected.
+   */
+  manualScan: protectedProcedure
+    .input(z.object({ campaignId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new Error("Admin access required");
+      const { runScheduledRankCheck } = await import("./rankTrackingEngine");
+      const result = await runScheduledRankCheck(input.campaignId);
+      return {
+        success: result.success,
+        snapshotsCreated: result.snapshotsCreated,
+        winsDetected: result.winsDetected.length,
+        error: result.error,
+      };
+    }),
+
+  /**
+   * Get the scan history (rank snapshots) for a single query-location.
+   * Used by the history drawer in LLM Insights.
+   */
+  queryHistory: protectedProcedure
+    .input(z.object({ queryLocationId: z.number(), limit: z.number().min(1).max(100).default(30) }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { rankSnapshots } = await import("../drizzle/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return [];
+      return db
+        .select({
+          id: rankSnapshots.id,
+          checkedAt: rankSnapshots.checkedAt,
+          checkType: rankSnapshots.checkType,
+          chatgptMentioned: rankSnapshots.chatgptMentioned,
+          geminiMentioned: rankSnapshots.geminiMentioned,
+          aiOverviewMentioned: rankSnapshots.aiOverviewMentioned,
+          chatgptPosition: rankSnapshots.chatgptPosition,
+          geminiPosition: rankSnapshots.geminiPosition,
+          aiOverviewPosition: rankSnapshots.aiOverviewPosition,
+        })
+        .from(rankSnapshots)
+        .where(eq(rankSnapshots.queryLocationId, input.queryLocationId))
+        .orderBy(desc(rankSnapshots.checkedAt))
+        .limit(input.limit);
+    }),
 });
 
 // ─── Agency Router ───────────────────────────────────────────────────────────

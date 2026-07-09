@@ -1187,6 +1187,21 @@ function ContentTab({ campaignId }: { campaignId: number }) {
     onError: (err) => toast.error(err.message),
   });
 
+  const regenerateSchema = trpc.campaign.regenerateSchema.useMutation({
+    onSuccess: (data) => {
+      utils.campaign.getContentPages.invalidate({ campaignId });
+      if (data.mode === "full") {
+        toast.success(
+          `Schema regenerated — ${data.blockCount} block${data.blockCount !== 1 ? "s" : ""} ready, ${data.gapFieldCount} gap field${data.gapFieldCount !== 1 ? "s" : ""} found. Delivery mode: ${data.deliveryMode}.`,
+          { duration: 6000 }
+        );
+      } else {
+        toast.success("Schema package regenerated (no site audit — full replace mode).");
+      }
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const setContentPageUrl = trpc.campaign.setContentPageUrl.useMutation({
     onSuccess: (data) => {
       utils.campaign.getContentPages.invalidate({ campaignId });
@@ -1455,7 +1470,22 @@ function ContentTab({ campaignId }: { campaignId: number }) {
 
       {/* Schema Delivery Plan — Smart delivery with audit results */}
       {deliveryPlan ? (
-        <SchemaDeliveryPanel campaignId={campaignId} plan={deliveryPlan} />
+        <>
+          <SchemaDeliveryPanel campaignId={campaignId} plan={deliveryPlan} />
+          {/* Regenerate button shown below the delivery plan */}
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1.5 text-orange-400 border-orange-500/40 hover:bg-orange-500/10"
+              onClick={() => regenerateSchema.mutate({ campaignId })}
+              disabled={regenerateSchema.isPending}
+            >
+              <RefreshCw className={`w-3 h-3 ${regenerateSchema.isPending ? "animate-spin" : ""}`} />
+              {regenerateSchema.isPending ? "Regenerating schema..." : "Regenerate Schema"}
+            </Button>
+          </div>
+        </>
       ) : schemaPackagePage ? (
         // Fallback: show the old schema package if no delivery plan yet
         <Card className="bg-card border-border">
