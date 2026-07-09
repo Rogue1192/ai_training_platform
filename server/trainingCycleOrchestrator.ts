@@ -188,33 +188,50 @@ interface PollResult {
 
 async function pollCombo(
   ql: typeof campaignQueryLocations.$inferSelect,
-  websiteUrl: string,
+  business: { name: string; website?: string | null; phone?: string | null; agencyId?: number | null },
+  campaignId: number,
+  businessId: number,
+  campaignCreatedAt: Date,
 ): Promise<PollResult> {
   try {
-    const { searchLLMMentions } = await import("./dataforseoService");
-    // Fetch a full mention set (matching rankTrackingEngine's limit) — the API
-    // returns keywords the domain is mentioned for, and we then look up this
-    // combo's exact query. A small limit (was 10) silently drops the combo's
-    // keyword once the domain is mentioned for more keywords than the limit,
-    // making the win undetectable and burning all 4 runs.
-    const mentions = await searchLLMMentions(websiteUrl, {
-      limit: 500,
-      targetType: "domain",
-    });
-    const match = mentions.find(
-      (m) => m.keyword.toLowerCase() === ql.searchQuery.toLowerCase(),
+    const { checkLLMVisibilityDirect } = await import("./dataforseoService");
+    const { logDFSCost, DFS_COSTS } = await import("./costLogger");
+
+    // Use the same direct LLM check method as the rank tracking engine and
+    // baseline check — consistent measurement across the entire platform.
+    const queryWithLocation = ql.location
+      ? `${ql.searchQuery} in ${ql.location}`
+      : ql.searchQuery;
+
+    const mention = await checkLLMVisibilityDirect(
+      queryWithLocation,
+      business.name,
+      business.agencyId ?? null,
+      business.website ?? null,
+      business.phone ?? null,
     );
+
+    // Log cost: 3 direct LLM calls (ChatGPT + Gemini + AI Overview)
+    await logDFSCost({
+      campaignId,
+      businessId,
+      operationType: 'rank_check',
+      endpoint: 'direct_llm_check',
+      costUsd: DFS_COSTS.llmResponse * 3,
+      campaignCreatedAt,
+      metadata: { query: ql.searchQuery, location: ql.location, checkType: 'training_poll' },
+    });
+
+    const chatgptMentioned = mention.llmResponses.chatgpt?.mentioned ?? false;
+    const geminiMentioned = mention.llmResponses.gemini?.mentioned ?? false;
+    const aiOverviewMentioned = mention.llmResponses.aiOverview?.mentioned ?? false;
+
     return {
-      chatgptMentioned: match?.llmResponses?.chatgpt?.mentioned ?? false,
-      // A Gemini "win" counts either a Gemini-proper mention OR a Google AI
-      // Overview mention — matching how rankTrackingEngine / keywordResearchPipeline
-      // define a win everywhere else in the app. Checking only .gemini here made
-      // AI-Overview-only wins invisible, so those combos burned all 4 runs.
-      geminiMentioned:
-        (match?.llmResponses?.gemini?.mentioned || match?.llmResponses?.aiOverview?.mentioned) ?? false,
-      // AI Overview is also tracked separately so the dedicated AI Overview
-      // training sessions can be evaluated and won independently.
-      aiOverviewMentioned: match?.llmResponses?.aiOverview?.mentioned ?? false,
+      chatgptMentioned,
+      // A Gemini "win" counts either Gemini-proper OR AI Overview — matching
+      // how rankTrackingEngine and keywordResearchPipeline define a win.
+      geminiMentioned: geminiMentioned || aiOverviewMentioned,
+      aiOverviewMentioned,
     };
   } catch (e: any) {
     console.warn(`[CycleOrchestrator] Poll failed for ql#${ql.id}: ${e.message}`);
@@ -350,7 +367,7 @@ export async function advanceCampaignCycle(
   for (const ql of duePollCombos) {
     try {
       result.combosPolled++;
-      const poll = await pollCombo(ql, business.website);
+      const poll = await pollCombo(ql, business, campaignId, campaign.businessId, campaign.createdAt);
 
       // Determine new wins per provider
       const chatgptWon = poll.chatgptMentioned && ql.currentRankChatGPT !== "mentioned";
@@ -442,7 +459,7 @@ export async function advanceCampaignCycle(
   for (const ql of dueMonitoringCombos) {
     try {
       result.combosPolled++;
-      const poll = await pollCombo(ql, business.website);
+      const poll = await pollCombo(ql, business, campaignId, campaign.businessId, campaign.createdAt);
 
       // Check for new wins (non-won combos that now appear)
       const chatgptWon = poll.chatgptMentioned && ql.currentRankChatGPT !== "mentioned";
