@@ -142,9 +142,9 @@ export default function Campaigns() {
         </Button>
       </div>
 
-      {/* Pipeline Status Overview */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        {Object.entries(statusLabels).map(([key, label]) => {
+      {/* Pipeline Status Overview — only show meaningful top-level states */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {Object.entries(statusLabels).filter(([key]) => ["pending", "training", "monitoring", "paused", "error"].includes(key)).map(([key, label]) => {
           const count = stats?.[key] ?? 0;
           const isActive = statusFilter === key;
           return (
