@@ -232,6 +232,7 @@ function MissingDataModal({
 
 export default function Businesses() {
   const { data: businesses, isLoading, refetch } = trpc.business.list.useQuery();
+  const { data: agencies = [] } = trpc.agency.list.useQuery();
   const createBusiness = trpc.business.create.useMutation();
   const onboardClient = trpc.business.onboardClient.useMutation();
   const updateBusiness = trpc.business.update.useMutation();
@@ -281,6 +282,9 @@ export default function Businesses() {
     siteUsername: "",
     sitePassword: "",
     useWebhookForContent: false,
+    // Agency assignment
+    agencyId: null as number | null,
+    billingType: "direct" as string,
   });
 
   const resetForm = () => {
@@ -310,6 +314,8 @@ export default function Businesses() {
       siteUsername: "",
       sitePassword: "",
       useWebhookForContent: false,
+      agencyId: null,
+      billingType: "direct",
     });
     setEditingBusiness(null);
     setActiveTab("basic");
@@ -413,6 +419,8 @@ export default function Businesses() {
       siteUsername: business.siteUsername || "",
       sitePassword: "",
       useWebhookForContent: business.useWebhookForContent ?? false,
+      agencyId: business.agencyId ?? null,
+      billingType: business.billingType || "direct",
     });
     setEditingBusiness(business.id);
     setActiveTab("basic");
@@ -442,6 +450,9 @@ export default function Businesses() {
     }
     if (!payload.sitePassword) delete payload.sitePassword;
     if (!payload.internalSource || payload.internalSource === 'none') delete payload.internalSource;
+    // Agency assignment — pass through agencyId (null = unassign) and billingType
+    if (payload.agencyId === null) payload.agencyId = null; // explicit null to unassign
+    if (!payload.billingType) delete payload.billingType;
     const packageTier = payload.packageTier || "starter";
     delete payload.packageTier;
     try {
@@ -563,10 +574,10 @@ export default function Businesses() {
               </DialogHeader>
 
               <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className={`grid w-full ${editingBusiness ? 'grid-cols-3' : 'grid-cols-2'}`}>
                   <TabsTrigger value="basic">Basic Info</TabsTrigger>
                   <TabsTrigger value="credibility">Credibility Data</TabsTrigger>
-
+                  {editingBusiness && <TabsTrigger value="agency">Agency</TabsTrigger>}
                 </TabsList>
 
                 <TabsContent value="basic" className="space-y-4 py-4">
@@ -754,6 +765,50 @@ export default function Businesses() {
                   </div>
                 </TabsContent>
 
+                {/* Agency Assignment tab — only shown when editing an existing business */}
+                {editingBusiness && (
+                  <TabsContent value="agency" className="space-y-4 py-4">
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-400">
+                      Assigning a business to an agency makes it visible in that agency's portal. Set billing to <strong>Legacy / External</strong> for clients already billed outside the platform.
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Assign to Agency</Label>
+                      <Select
+                        value={formData.agencyId ? String(formData.agencyId) : "none"}
+                        onValueChange={(val) => setFormData({ ...formData, agencyId: val === "none" ? null : Number(val) })}
+                      >
+                        <SelectTrigger className="bg-background border-input">
+                          <SelectValue placeholder="No agency (direct client)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No agency (direct client)</SelectItem>
+                          {(agencies as any[]).map((a: any) => (
+                            <SelectItem key={a.id} value={String(a.id)}>
+                              {a.brandName || a.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Billing Type</Label>
+                      <Select
+                        value={formData.billingType}
+                        onValueChange={(val) => setFormData({ ...formData, billingType: val })}
+                      >
+                        <SelectTrigger className="bg-background border-input">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="direct">Direct — billed through platform</SelectItem>
+                          <SelectItem value="white_label">White Label — billed by agency</SelectItem>
+                          <SelectItem value="legacy">Legacy — pre-existing client</SelectItem>
+                          <SelectItem value="external">External — billed outside platform (no charge)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </TabsContent>
+                )}
 
               </Tabs>
 

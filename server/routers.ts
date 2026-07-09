@@ -146,6 +146,9 @@ export const appRouter = router({
           siteUsername: z.string().optional(),
           sitePassword: z.string().optional(),
           useWebhookForContent: z.boolean().optional(),
+          // Agency assignment
+          agencyId: z.number().nullable().optional(),
+          billingType: z.enum(["white_label", "direct", "legacy", "external"]).optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -2616,7 +2619,11 @@ export const agencyRouter = router({
 
   // Agency user: get their own agency record
   myAgency: protectedProcedure.query(async ({ ctx }) => {
-    const { getAgencyByUserId } = await import('./dbAgencies');
+    const { getAgencyByUserId, getAgencyById } = await import('./dbAgencies');
+    // If a super-admin is impersonating an agency, return that agency's record
+    if (ctx.impersonatedAgencyId && ctx.user?.role === 'admin') {
+      return getAgencyById(ctx.impersonatedAgencyId);
+    }
     return getAgencyByUserId(ctx.user.id);
   }),
 
@@ -2705,15 +2712,22 @@ export const agencyRouter = router({
 
   // Agency user: get their own clients (businesses linked to their agency)
   myClients: protectedProcedure.query(async ({ ctx }) => {
-    const { getAgencyByUserId } = await import('./dbAgencies');
+    const { getAgencyByUserId, getAgencyById } = await import('./dbAgencies');
     const { businesses } = await import('../drizzle/schema');
     const { eq } = await import('drizzle-orm');
-    const agency = await getAgencyByUserId(ctx.user.id);
-    if (!agency) return [];
     const { getDb } = await import('./db');
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(businesses).where(eq(businesses.agencyId, agency.id));
+    // Impersonation: super-admin viewing as an agency
+    let agencyId: number | null = null;
+    if (ctx.impersonatedAgencyId && ctx.user?.role === 'admin') {
+      agencyId = ctx.impersonatedAgencyId;
+    } else {
+      const agency = await getAgencyByUserId(ctx.user.id);
+      if (!agency) return [];
+      agencyId = agency.id;
+    }
+    return db.select().from(businesses).where(eq(businesses.agencyId, agencyId));
   }),
 
   // Admin: get clients for a specific agency
@@ -3311,6 +3325,136 @@ export const agencyRouter = router({
       }
       await db.update(clientDashboards).set({ isActive: false }).where(eq(clientDashboards.id, input.dashboardId));
       return { success: true };
+    }),
+
+  // Agency user: send a report link to a client via email
+  sendReportEmail: protectedProcedure
+    .input(z.object({
+      dashboardId: z.number(),
+      toEmail: z.string().email(),
+      clientName: z.string().optional(),
+      businessName: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getDb } = await import('./db');
+      const { clientDashboards, campaigns, businesses } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+      // Fetch the dashboard/link record
+      const [dash] = await db.select().from(clientDashboards).where(eq(clientDashboards.id, input.dashboardId)).limit(1);
+      if (!dash || !dash.isActive) throw new Error('Report link not found or inactive');
+      // Authorization check for non-admins
+      let agencyRecord: any = null;
+      if (ctx.user.role !== 'admin') {
+        agencyRecord = await getAgencyByUserId(ctx.user.id);
+        if (!agencyRecord) throw new Error('Forbidden');
+        const [camp] = dash.campaignId
+          ? await db.select().from(campaigns).where(eq(campaigns.id, dash.campaignId)).limit(1)
+          : [undefined];
+        const [biz] = camp
+          ? await db.select().from(businesses).where(eq(businesses.id, camp.businessId)).limit(1)
+          : [undefined];
+        if (!biz || biz.agencyId !== agencyRecord.id) throw new Error('Forbidden');
+      } else {
+        // Admin: get agency from campaign if available
+        if (dash.campaignId) {
+          const [camp] = await db.select().from(campaigns).where(eq(campaigns.id, dash.campaignId)).limit(1);
+          if (camp) {
+            const [biz] = await db.select().from(businesses).where(eq(businesses.id, camp.businessId)).limit(1);
+            if (biz?.agencyId) {
+              const { getAgencyById } = await import('./dbAgencies');
+              agencyRecord = await getAgencyById(biz.agencyId);
+            }
+          }
+        }
+      }
+      const appUrl = process.env.APP_URL || 'https://app.aianswerforge.com';
+      const reportUrl = `${appUrl}/report/${dash.accessToken}`;
+      const agencyName = agencyRecord?.brandName || agencyRecord?.name || 'AI Answer Forge';
+      const agencyLogoUrl = agencyRecord?.brandLogoUrl || null;
+      const fromEmail = process.env.INTAKE_FROM_EMAIL || 'noreply@aianswerforge.com';
+      const { Resend } = await import('resend');
+      const { getServiceKey } = await import('./db');
+      const { decrypt } = await import('./encryption');
+      const resendRecord = await getServiceKey('resend').catch(() => null);
+      const resendApiKey = resendRecord?.encryptedValue ? decrypt(resendRecord.encryptedValue) : process.env.RESEND_API_KEY;
+      if (!resendApiKey) throw new Error('Resend API key not configured. Please add it in Settings → Service Keys.');
+      const resend = new Resend(resendApiKey);
+      const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+        <tr>
+          <td style="background:#1d1d1f;padding:24px 32px;">
+            ${agencyLogoUrl ? `<img src="${agencyLogoUrl}" alt="${agencyName}" style="height:36px;margin-bottom:8px;" />` : ''}
+            <p style="margin:0;color:#ffffff;font-size:18px;font-weight:700;">${agencyName}</p>
+            <p style="margin:4px 0 0;color:#a1a1aa;font-size:13px;">AI Visibility Report</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px;">
+            <h2 style="margin:0 0 8px;font-size:20px;color:#111827;">Your AI Visibility Report is Ready</h2>
+            ${input.clientName ? `<p style="margin:0 0 4px;color:#374151;font-size:14px;">Hi ${input.clientName},</p>` : ''}
+            <p style="margin:0 0 24px;color:#6b7280;font-size:14px;line-height:1.6;">
+              Your latest AI visibility report for <strong>${input.businessName || 'your business'}</strong> is now available. Click the button below to view your full report.
+            </p>
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              <tr>
+                <td style="background:#2563eb;border-radius:6px;">
+                  <a href="${reportUrl}" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">View My Report →</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0;color:#9ca3af;font-size:12px;">Or copy this link: <a href="${reportUrl}" style="color:#2563eb;">${reportUrl}</a></p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:16px 32px;text-align:center;">
+            <p style="margin:0;color:#9ca3af;font-size:12px;">Powered by ${agencyName}</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+      await resend.emails.send({
+        from: `${agencyName} <${fromEmail}>`,
+        to: input.toEmail,
+        subject: `Your AI Visibility Report — ${input.businessName || 'Your Business'}`,
+        html,
+      });
+      return { success: true };
+    }),
+
+  // Super admin: start impersonating an agency (returns the agency user id for context switching)
+  startImpersonation: protectedProcedure
+    .input(z.object({ agencyId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Forbidden — super admin only');
+      const { getAgencyById } = await import('./dbAgencies');
+      const { getDb } = await import('./db');
+      const { users } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const agency = await getAgencyById(input.agencyId);
+      if (!agency) throw new Error('Agency not found');
+      if (!agency.userId) throw new Error('Agency has no linked user account');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+      const [agencyUser] = await db.select().from(users).where(eq(users.id, agency.userId)).limit(1);
+      if (!agencyUser) throw new Error('Agency user account not found');
+      return {
+        agencyId: agency.id,
+        agencyName: agency.brandName || agency.name,
+        agencyUserId: agencyUser.id,
+        agencyUserEmail: agencyUser.email,
+      };
     }),
 });
 

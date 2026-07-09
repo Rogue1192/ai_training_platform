@@ -9,10 +9,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 import {
   Loader2, Plus, Building2, Mail, Phone, Pencil, Trash2,
   ChevronDown, ChevronRight, Users, CreditCard, CheckCircle, XCircle,
-  Package
+  Package, Eye
 } from "lucide-react";
 
 // Package tier is selected PER CLIENT when the agency adds a client — NOT at agency level.
@@ -36,8 +37,14 @@ const defaultForm = {
 };
 
 export default function AgencyManagement() {
+  const [, navigate] = useLocation();
   const { data: agencies, isLoading } = trpc.agency.list.useQuery();
   const utils = trpc.useUtils();
+
+  const handleViewAsAgency = (agencyId: number) => {
+    sessionStorage.setItem('impersonatedAgencyId', String(agencyId));
+    navigate('/agency');
+  };
 
   const createMutation = trpc.agency.create.useMutation({
     onSuccess: () => {
@@ -200,6 +207,14 @@ export default function AgencyManagement() {
                         ? <CheckCircle className="h-3 w-3 text-green-500" />
                         : <XCircle className="h-3 w-3 text-muted-foreground" />}
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="View as Agency"
+                      onClick={() => handleViewAsAgency(agency.id)}
+                    >
+                      <Eye className="h-4 w-4 text-blue-400" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEdit(agency)}>
                       <Pencil className="h-4 w-4" />
                     </Button>

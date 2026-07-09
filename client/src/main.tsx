@@ -57,12 +57,11 @@ const trpcClient = trpc.createClient({
       transformer: superjson,
       headers() {
         const token = window.__supabaseToken;
-        if (token) {
-          return {
-            Authorization: `Bearer ${token}`,
-          };
-        }
-        return {};
+        const impersonatedAgencyId = sessionStorage.getItem('impersonatedAgencyId');
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (impersonatedAgencyId) headers['x-impersonate-agency'] = impersonatedAgencyId;
+        return headers;
       },
       fetch(input, init) {
         return globalThis.fetch(input, {

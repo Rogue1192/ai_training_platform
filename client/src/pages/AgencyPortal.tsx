@@ -10,7 +10,7 @@ import AddClientModal from "@/components/AddClientModal";
 import {
   Loader2, Building2, MapPin, Globe, ArrowRight,
   TrendingUp, AlertCircle, CheckCircle, Clock, Settings, Plus,
-  Users, Link, Copy, Check, Package,
+  Users, Link, Copy, Check, Package, LogOut,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, {
@@ -94,8 +94,34 @@ export default function AgencyPortal() {
     return acc;
   }, {});
 
+  const impersonatedAgencyId = sessionStorage.getItem('impersonatedAgencyId');
+
+  const handleExitImpersonation = () => {
+    sessionStorage.removeItem('impersonatedAgencyId');
+    navigate('/admin/agencies');
+  };
+
   return (
     <div className="space-y-6">
+      {/* Impersonation Banner */}
+      {impersonatedAgencyId && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-600 px-4 py-3">
+          <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 text-sm font-medium">
+            <span>👁</span>
+            <span>Viewing as <strong>{agency?.name ?? "Agency"}</strong> — Super Admin impersonation mode</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-amber-400 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 shrink-0"
+            onClick={handleExitImpersonation}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Exit Impersonation
+          </Button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   Loader2, ArrowLeft, Building2, Globe, MapPin, Phone,
   Mail, TrendingUp, CheckCircle, Clock, AlertCircle, Bell,
-  Link2, Copy, Plus, Trash2, ExternalLink
+  Link2, Copy, Plus, Trash2, ExternalLink, LogOut, Send
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -67,8 +67,34 @@ export default function AgencyClientDetail() {
   // Default to true if field is null/undefined (existing clients before migration)
   const winEmailsEnabled = client.agencyWinEmailsEnabled !== false;
 
+  const impersonatedAgencyId = sessionStorage.getItem('impersonatedAgencyId');
+
+  const handleExitImpersonation = () => {
+    sessionStorage.removeItem('impersonatedAgencyId');
+    navigate('/admin/agencies');
+  };
+
   return (
     <div className="space-y-6">
+      {/* Impersonation Banner */}
+      {impersonatedAgencyId && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-600 px-4 py-3">
+          <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 text-sm font-medium">
+            <span>👁</span>
+            <span>Viewing as <strong>{client?.agencyName ?? "Agency"}</strong> — Super Admin impersonation mode</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-amber-400 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 shrink-0"
+            onClick={handleExitImpersonation}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Exit Impersonation
+          </Button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate("/agency")}>
@@ -201,7 +227,14 @@ export default function AgencyClientDetail() {
         ) : (
           <div className="space-y-2">
             {clientCampaigns.map((campaign: any) => (
-              <CampaignRow key={campaign.id} campaign={campaign} businessId={clientId} />
+              <CampaignRow
+                key={campaign.id}
+                campaign={campaign}
+                businessId={clientId}
+                clientEmail={client.contactEmail ?? undefined}
+                clientName={client.contactName ?? undefined}
+                businessName={client.name}
+              />
             ))}
           </div>
         )}
@@ -210,10 +243,18 @@ export default function AgencyClientDetail() {
   );
 }
 
-function CampaignRow({ campaign, businessId }: { campaign: any; businessId: number }) {
+function CampaignRow({ campaign, businessId, clientEmail, clientName, businessName }: {
+  campaign: any;
+  businessId: number;
+  clientEmail?: string;
+  clientName?: string;
+  businessName?: string;
+}) {
   const isActive = campaign.isActive;
   const trialStatus = campaign.trialStatus;
   const [showLinks, setShowLinks] = useState(false);
+  const [sendEmailLinkId, setSendEmailLinkId] = useState<number | null>(null);
+  const [emailInput, setEmailInput] = useState(clientEmail ?? '');
 
   const { data: reportLinks = [], refetch: refetchLinks } = trpc.agency.getClientReportLinks.useQuery(
     { campaignId: campaign.id },
@@ -232,6 +273,14 @@ function CampaignRow({ campaign, businessId }: { campaign: any; businessId: numb
     onSuccess: () => {
       refetchLinks();
       toast.success("Link deactivated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const sendEmail = trpc.agency.sendReportEmail.useMutation({
+    onSuccess: () => {
+      toast.success("Report email sent!");
+      setSendEmailLinkId(null);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -325,6 +374,18 @@ function CampaignRow({ campaign, businessId }: { campaign: any; businessId: numb
                         >
                           <Copy className="h-3 w-3" />
                         </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 shrink-0 text-blue-500 hover:text-blue-600"
+                          onClick={() => {
+                            setSendEmailLinkId(sendEmailLinkId === link.id ? null : link.id);
+                            setEmailInput(clientEmail ?? '');
+                          }}
+                          title="Send report via email"
+                        >
+                          <Send className="h-3 w-3" />
+                        </Button>
                         <a
                           href={`${baseUrl}/report/${link.accessToken}`}
                           target="_blank"
@@ -344,6 +405,40 @@ function CampaignRow({ campaign, businessId }: { campaign: any; businessId: numb
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </>
+                    )}
+                    {/* Inline send email form */}
+                    {link.isActive && sendEmailLinkId === link.id && (
+                      <div className="w-full mt-2 flex items-center gap-2">
+                        <input
+                          type="email"
+                          className="flex-1 h-7 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                          placeholder="client@email.com"
+                          value={emailInput}
+                          onChange={(e) => setEmailInput(e.target.value)}
+                        />
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={sendEmail.isPending || !emailInput}
+                          onClick={() => sendEmail.mutate({
+                            dashboardId: link.id,
+                            toEmail: emailInput,
+                            clientName: clientName,
+                            businessName: businessName,
+                          })}
+                        >
+                          {sendEmail.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3 mr-1" />}
+                          Send
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => setSendEmailLinkId(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
                     )}
                     {!link.isActive && (
                       <Badge variant="outline" className="text-[10px] shrink-0">Inactive</Badge>
