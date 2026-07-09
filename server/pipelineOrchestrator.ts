@@ -25,6 +25,7 @@ import { eq, and } from "drizzle-orm";
 
 export type PipelineStep = 
   | "keyword_research"
+  | "query_review"
   | "credibility_research"
   | "content_generation"
   | "publishing"
@@ -73,6 +74,7 @@ function statusToStep(status: string): PipelineStep {
   const mapping: Record<string, PipelineStep> = {
     pending: "keyword_research",
     keyword_research: "keyword_research",
+    query_review: "credibility_research",  // query_review pauses before credibility_research
     credibility_research: "credibility_research",
     content_generation: "content_generation",
     publishing: "publishing",
@@ -150,10 +152,13 @@ export async function runPipelineStep(
       case "keyword_research": {
         const { runCampaignKeywordResearch } = await import("./keywordResearchPipeline");
         const kwResult = await runCampaignKeywordResearch(campaignId);
+        // After keyword research, pause for query review unless queries were pre-set
+        const { updateCampaign } = await import('./dbCampaigns');
+        await updateCampaign(campaignId, { status: 'query_review' });
         result = {
           step,
           success: true,
-          message: `Keyword research complete. Found ${kwResult.queryLocationsCreated || 0} query-location combinations.`,
+          message: `Keyword research complete. Found ${kwResult.queryLocationsCreated || 0} query-location combinations. Paused for query review.`,
           data: kwResult,
           nextStep: "credibility_research",
         };
@@ -602,6 +607,11 @@ export async function runFullPipeline(
       return { stepsRun, stoppedAt: step, reason: "failed" };
     }
     
+    // Stop after keyword_research for query review
+    if (step === "keyword_research") {
+      return { stepsRun, stoppedAt: step, reason: "stopped" };
+    }
+
     // Stop after indexing submission (need to wait 3-4 days)
     if (step === "indexing") {
       return { stepsRun, stoppedAt: step, reason: "waiting" };

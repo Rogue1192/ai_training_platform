@@ -24,6 +24,7 @@ export const clientTypeEnum = pgEnum("client_type", ["ai_only", "ai_plus_seo", "
 export const campaignStatusEnum = pgEnum("campaign_status", [
   "pending",           // Just created from webhook
   "keyword_research",  // Running keyword research
+  "query_review",      // Keyword research done — awaiting admin query approval
   "credibility_research", // Researching credibility data
   "content_generation", // Generating content pages
   "publishing",        // Auto-publishing to WordPress

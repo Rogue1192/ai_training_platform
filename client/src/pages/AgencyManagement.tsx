@@ -13,7 +13,7 @@ import { useLocation } from "wouter";
 import {
   Loader2, Plus, Building2, Mail, Phone, Pencil, Trash2,
   ChevronDown, ChevronRight, Users, CreditCard, CheckCircle, XCircle,
-  Package, Eye
+  Package, Eye, Upload, ImageIcon
 } from "lucide-react";
 
 // Package tier is selected PER CLIENT when the agency adds a client — NOT at agency level.
@@ -40,6 +40,38 @@ export default function AgencyManagement() {
   const [, navigate] = useLocation();
   const { data: agencies, isLoading } = trpc.agency.list.useQuery();
   const utils = trpc.useUtils();
+  const [logoUploading, setLogoUploading] = useState(false);
+
+  const uploadLogoMutation = trpc.agency.uploadLogo.useMutation({
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('Image too large — max 5MB'); return; }
+    setLogoUploading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const result = await uploadLogoMutation.mutateAsync({
+        agencyId: editingId ?? undefined,
+        dataUrl,
+        fileName: file.name,
+      });
+      setFormData((prev) => ({ ...prev, brandLogoUrl: result.url }));
+      toast.success('Logo uploaded!');
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setLogoUploading(false);
+      e.target.value = '';
+    }
+  };
 
   const handleViewAsAgency = (agencyId: number) => {
     sessionStorage.setItem('impersonatedAgencyId', String(agencyId));
@@ -314,12 +346,45 @@ export default function AgencyManagement() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Logo URL</Label>
+                <Label>Logo</Label>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="pointer-events-none"
+                      disabled={logoUploading}
+                    >
+                      {logoUploading
+                        ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Uploading…</>
+                        : <><Upload className="h-3.5 w-3.5 mr-1.5" />Upload Logo</>}
+                    </Button>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={handleLogoFileChange}
+                    />
+                  </label>
+                  <span className="text-xs text-muted-foreground">or paste URL:</span>
+                </div>
                 <Input
                   value={formData.brandLogoUrl}
                   onChange={(e) => setFormData({ ...formData, brandLogoUrl: e.target.value })}
                   placeholder="https://acmedigital.com/logo.png"
                 />
+                {formData.brandLogoUrl && (
+                  <div className="rounded-md border p-2 bg-muted/30 flex items-center gap-2">
+                    <ImageIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <img
+                      src={formData.brandLogoUrl}
+                      alt="Logo preview"
+                      className="max-h-8 max-w-[120px] object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

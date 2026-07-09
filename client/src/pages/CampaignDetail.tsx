@@ -59,7 +59,7 @@ import {
   Save,
   RefreshCw,
 } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { useRoute, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -177,6 +177,44 @@ export default function CampaignDetail() {
       toast.success("Campaign updated");
       refetchCampaign();
     },
+  });
+
+  // ── Query Review state ──
+  const utils = trpc.useUtils();
+  const [editingQueryId, setEditingQueryId] = useState<number | null>(null);
+  const [editingQueryText, setEditingQueryText] = useState("");
+  const [newQueryText, setNewQueryText] = useState("");
+  const [newQueryLocation, setNewQueryLocation] = useState("");
+
+  const updateQueryLocationMutation = trpc.llmInsights.updateQueryLocation.useMutation({
+    onSuccess: () => {
+      setEditingQueryId(null);
+      utils.campaign.getQueryLocations.invalidate({ campaignId });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteQueryLocationMutation = trpc.llmInsights.deleteQueryLocation.useMutation({
+    onSuccess: () => utils.campaign.getQueryLocations.invalidate({ campaignId }),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const addQueryLocationsMutation = trpc.campaign.addQueryLocations.useMutation({
+    onSuccess: () => {
+      setNewQueryText("");
+      setNewQueryLocation("");
+      utils.campaign.getQueryLocations.invalidate({ campaignId });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const approveQueryReviewMutation = trpc.llmInsights.approveQueryReview.useMutation({
+    onSuccess: () => {
+      toast.success("Queries approved — pipeline continuing…");
+      refetchCampaign();
+      refetchPipeline();
+    },
+    onError: (err) => toast.error(err.message),
   });
 
   const [isRunningRankCheck, setIsRunningRankCheck] = useState(false);
@@ -310,6 +348,122 @@ export default function CampaignDetail() {
           </Button>
         </div>
       </div>
+
+      {/* ── Query Review Banner ── */}
+      {campaign.status === 'query_review' && (
+        <Card className="border-amber-500/50 bg-amber-500/5">
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-amber-300 text-sm">Query Review Required</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Keyword research is complete. Review, edit, add, or remove queries below before the pipeline continues to content generation.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                className="shrink-0 bg-amber-500 hover:bg-amber-400 text-black"
+                disabled={approveQueryReviewMutation.isPending}
+                onClick={() => approveQueryReviewMutation.mutate({ campaignId })}
+              >
+                {approveQueryReviewMutation.isPending
+                  ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Processing…</>
+                  : <><CheckCircle className="w-3.5 h-3.5 mr-1.5" />Approve &amp; Continue</>}
+              </Button>
+            </div>
+
+            {/* Editable query list */}
+            {queryLocations && queryLocations.length > 0 && (
+              <div className="mt-4 space-y-2">
+                {queryLocations.map((ql: any) => (
+                  <div key={ql.id} className="flex items-center gap-2 rounded-md border border-border bg-card p-2 text-sm">
+                    {editingQueryId === ql.id ? (
+                      <>
+                        <Input
+                          className="h-7 text-xs flex-1"
+                          value={editingQueryText}
+                          onChange={(e) => setEditingQueryText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') updateQueryLocationMutation.mutate({ id: ql.id, searchQuery: editingQueryText });
+                            if (e.key === 'Escape') setEditingQueryId(null);
+                          }}
+                          autoFocus
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2"
+                          onClick={() => updateQueryLocationMutation.mutate({ id: ql.id, searchQuery: editingQueryText })}
+                          disabled={updateQueryLocationMutation.isPending}
+                        >
+                          {updateQueryLocationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditingQueryId(null)}>
+                          ×
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="flex-1 truncate text-foreground">{ql.searchQuery}</span>
+                        <span className="text-muted-foreground text-xs shrink-0">{ql.location}</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-1.5 text-muted-foreground hover:text-foreground"
+                          onClick={() => { setEditingQueryId(ql.id); setEditingQueryText(ql.searchQuery); }}
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-1.5 text-destructive hover:text-destructive"
+                          onClick={() => deleteQueryLocationMutation.mutate({ id: ql.id })}
+                          disabled={deleteQueryLocationMutation.isPending}
+                        >
+                          ×
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ))}
+
+                {/* Add new query row */}
+                <div className="flex items-center gap-2 mt-3">
+                  <Input
+                    className="h-7 text-xs flex-1"
+                    placeholder="New query…"
+                    value={newQueryText}
+                    onChange={(e) => setNewQueryText(e.target.value)}
+                  />
+                  <Input
+                    className="h-7 text-xs w-36"
+                    placeholder="Location…"
+                    value={newQueryLocation}
+                    onChange={(e) => setNewQueryLocation(e.target.value)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-3 text-xs"
+                    disabled={!newQueryText.trim() || !newQueryLocation.trim() || addQueryLocationsMutation.isPending}
+                    onClick={() => addQueryLocationsMutation.mutate({
+                      campaignId,
+                      entries: [{ searchQuery: newQueryText.trim(), location: newQueryLocation.trim() }],
+                    })}
+                  >
+                    {addQueryLocationsMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : '+ Add'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Pipeline Progress Bar */}
       <Card className="bg-card border-border">

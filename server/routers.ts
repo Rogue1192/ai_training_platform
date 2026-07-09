@@ -1268,8 +1268,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           trainingAggressiveness: z.enum(["aggressive", "moderate", "maintenance"]).optional(),
           rankCheckFrequency: z.enum(["daily", "weekly", "biweekly"]).optional(),
           status: z.enum([
-            "pending", "keyword_research", "credibility_research", "content_generation",
-            "publishing", "indexing", "baseline_check", "training", "monitoring", "paused", "error"
+            "pending", "keyword_research", "query_review", "credibility_research", "content_generation",
+            "publishing", "indexing", "indexing_verification", "baseline_check", "training", "monitoring", "paused", "error"
           ]).optional(),
         })
       )
@@ -1280,7 +1280,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           throw new Error("Campaign not found");
         }
         const { id, ...updates } = input;
-        return updateCampaign(id, updates);
+        return updateCampaign(id, updates as any);
       }),
     // Query-location management for a campaign
     getQueryLocations: protectedProcedure
@@ -2525,6 +2525,47 @@ export const llmInsightsRouter = router({
     }),
 
   /**
+   * Update a single query-location row (rename the searchQuery).
+   * Used by the Query Review UI to let admins edit generated queries.
+   */
+  updateQueryLocation: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      searchQuery: z.string().min(1),
+    }))
+    .mutation(async ({ input }) => {
+      const { updateQueryLocation } = await import('./dbCampaigns');
+      return updateQueryLocation(input.id, { searchQuery: input.searchQuery });
+    }),
+
+  /**
+   * Approve the query review step for a campaign — sets status back to
+   * keyword_research_complete so the pipeline can continue from credibility_research.
+   * Optionally runs the next pipeline step immediately.
+   */
+  approveQueryReview: protectedProcedure
+    .input(z.object({
+      campaignId: z.number(),
+      runNext: z.boolean().optional().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { updateCampaign, getCampaignById } = await import('./dbCampaigns');
+      const campaign = await getCampaignById(input.campaignId);
+      if (!campaign) throw new Error('Campaign not found');
+      if (campaign.status !== 'query_review') throw new Error('Campaign is not in query_review status');
+      // Mark query review as approved by advancing status
+      await updateCampaign(input.campaignId, { status: 'credibility_research' });
+      if (input.runNext) {
+        // Run the full pipeline from credibility_research onward
+        const { runFullPipeline } = await import('./pipelineOrchestrator');
+        runFullPipeline(input.campaignId, ctx.user.id).catch((err: any) => {
+          console.error('[approveQueryReview] Pipeline error:', err.message);
+        });
+      }
+      return { success: true };
+    }),
+
+  /**
    * Fetch AI search volume from DataForSEO for a campaign's tracked queries and
    * write it onto each query-location. Used by the "Refresh AI volume" button —
    * fills the AI Vol column for queries that were added without volume data.
@@ -3431,6 +3472,41 @@ export const agencyRouter = router({
         html,
       });
       return { success: true };
+    }),
+
+  // Upload a logo image for an agency — accepts base64 data URL, stores in Supabase Storage
+  uploadLogo: protectedProcedure
+    .input(z.object({
+      agencyId: z.number().optional(), // optional — if omitted, uses the caller's own agency
+      dataUrl: z.string().min(1),       // base64 data URL: "data:image/png;base64,..."
+      fileName: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyByUserId, getAgencyById } = await import('./dbAgencies');
+      // Determine which agency this upload is for
+      let agencyId: number;
+      if (input.agencyId !== undefined) {
+        if (ctx.user.role !== 'admin') throw new Error('Forbidden — only super admin can upload for other agencies');
+        agencyId = input.agencyId;
+      } else {
+        const myAgency = await getAgencyByUserId(ctx.user.id);
+        if (!myAgency) throw new Error('Agency not found');
+        agencyId = myAgency.id;
+      }
+      // Parse the base64 data URL
+      const match = input.dataUrl.match(/^data:([a-zA-Z0-9/+]+);base64,(.+)$/);
+      if (!match) throw new Error('Invalid data URL format');
+      const [, mimeType, base64Data] = match;
+      const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml'];
+      if (!allowedTypes.includes(mimeType!)) throw new Error(`Unsupported image type: ${mimeType}`);
+      const buffer = Buffer.from(base64Data!, 'base64');
+      if (buffer.length > 5 * 1024 * 1024) throw new Error('Image too large — maximum 5MB');
+      const ext = mimeType!.split('/')[1]!.replace('svg+xml', 'svg');
+      const fileName = input.fileName?.replace(/[^a-zA-Z0-9._-]/g, '_') || `logo.${ext}`;
+      const storageKey = `agency-logos/${agencyId}/${Date.now()}-${fileName}`;
+      const { storagePut } = await import('./storage');
+      const { url } = await storagePut(storageKey, buffer, mimeType!);
+      return { url };
     }),
 
   // Super admin: start impersonating an agency (returns the agency user id for context switching)

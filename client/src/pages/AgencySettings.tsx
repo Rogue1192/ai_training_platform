@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   Loader2, Palette, CreditCard, CheckCircle, AlertCircle,
-  ArrowLeft, LogOut,
+  ArrowLeft, LogOut, Upload, ImageIcon,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -37,6 +37,34 @@ export default function AgencySettings() {
       setBrandLogoUrl(agency.brandLogoUrl ?? "");
     }
   }, [agency]);
+
+  const [logoUploading, setLogoUploading] = useState(false);
+  const uploadLogoMutation = trpc.agency.uploadLogo.useMutation({
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('Image too large — max 5MB'); return; }
+    setLogoUploading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const result = await uploadLogoMutation.mutateAsync({ dataUrl, fileName: file.name });
+      setBrandLogoUrl(result.url);
+      toast.success('Logo uploaded! Click “Save Branding” to apply.');
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setLogoUploading(false);
+      e.target.value = '';
+    }
+  };
 
   const handleSaveBranding = () => {
     if (!agency) return;
@@ -166,19 +194,41 @@ export default function AgencySettings() {
             <p className="text-xs text-muted-foreground">The sender name clients see in their inbox.</p>
           </div>
           <div className="space-y-1.5">
-            <Label>Logo URL</Label>
+            <Label>Logo</Label>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="pointer-events-none"
+                  disabled={logoUploading}
+                >
+                  {logoUploading
+                    ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Uploading…</>
+                    : <><Upload className="h-3.5 w-3.5 mr-1.5" />Upload Logo</>}
+                </Button>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={handleLogoFileChange}
+                />
+              </label>
+              <span className="text-xs text-muted-foreground">or paste URL below</span>
+            </div>
             <Input
               value={brandLogoUrl}
               onChange={(e) => setBrandLogoUrl(e.target.value)}
               placeholder="https://youragency.com/logo.png"
             />
             <p className="text-xs text-muted-foreground">
-              Displayed on the client intake form and in email headers. Use a direct image URL (PNG or SVG recommended).
+              Displayed on the client intake form and in email headers.
             </p>
           </div>
           {brandLogoUrl && (
-            <div className="rounded-md border p-3 bg-muted/30">
-              <p className="text-xs text-muted-foreground mb-2">Logo preview:</p>
+            <div className="rounded-md border p-3 bg-muted/30 flex items-center gap-3">
+              <ImageIcon className="h-4 w-4 text-muted-foreground shrink-0" />
               <img
                 src={brandLogoUrl}
                 alt="Brand logo preview"
