@@ -1307,13 +1307,26 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const { getCampaignById, createCampaignQueryLocations } = await import("./dbCampaigns");
+        const { getCampaignById, createCampaignQueryLocations, getQueryLocationsByCampaignId } = await import("./dbCampaigns");
         const campaign = await getCampaignById(input.campaignId);
         if (!campaign) {
           throw new Error("Campaign not found");
         }
+        // Enforce maxQuerySlots cap
+        const maxSlots = campaign.maxQuerySlots || 15;
+        const existing = await getQueryLocationsByCampaignId(input.campaignId);
+        const available = maxSlots - existing.length;
+        if (available <= 0) {
+          throw new Error(`Query slot limit reached (${maxSlots} slots for this package). Remove an existing query before adding a new one.`);
+        }
+        // Trim entries to fit within remaining budget
+        const allowed = input.entries.slice(0, available);
+        if (allowed.length < input.entries.length) {
+          // Still insert what fits — caller sees the count mismatch via the return value
+          console.warn(`[addQueryLocations] Trimmed ${input.entries.length - allowed.length} entries to stay within maxQuerySlots=${maxSlots}`);
+        }
         return createCampaignQueryLocations(
-          input.entries.map((e) => ({ ...e, campaignId: input.campaignId }))
+          allowed.map((e) => ({ ...e, campaignId: input.campaignId }))
         );
       }),
     // Trigger keyword research for a campaign
