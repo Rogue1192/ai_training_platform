@@ -18,7 +18,10 @@ import { getDb } from "./db";
 import { contentPages, campaigns, businesses, credibilityData } from "../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
 import type { CredibilityResearchResult, CredibilityFact, SuggestedPage } from "./credibilityResearchEngine";
+import type { Business } from "../drizzle/schema";
 import { buildPageSchema, buildSchemaPackageForBusiness, schemaPackageToString } from "./schemaMarkupEngine";
+import { getBusinessById } from "./db";
+import { getQueryLocationsByCampaignId } from "./dbCampaigns";
 import { auditSiteSchema } from "./siteSchemaAuditor";
 import { buildSchemaDeliveryPlan, serializeDeliveryPlan } from "./schemaDeliveryEngine";
 
@@ -457,7 +460,17 @@ export async function generateAllContentPages(params: {
   }
   
   // Generate/update llm.txt
-  const llmTxtContent = credibilityResult.llmTxtContent;
+  // Build a rich llm.txt using all available data (business profile, tracked queries, generated pages)
+  const llmTxtContent = await buildRichLlmTxt({
+    businessId,
+    campaignId,
+    businessName,
+    websiteUrl,
+    industry,
+    location,
+    credibilityResult,
+    generatedPages,
+  });
   
   // Store llm.txt as a special content page
   if (db) {
@@ -625,6 +638,182 @@ export async function generateAllContentPages(params: {
   };
   console.log(`[Content Generation] Completed for ${businessName}. Generated ${result.totalPages} pages total.`);
   return result;
+}
+
+/**
+ * Build a rich, comprehensive llm.txt file for a business.
+ *
+ * This replaces the thin stub generated during credibility research.
+ * It runs AFTER content generation so it has access to:
+ *  - Full business profile (specialties, phone, address, social profiles, etc.)
+ *  - All tracked query-location combos (the keywords we're training on)
+ *  - The list of generated content pages (for the Important Pages section)
+ *  - All credibility facts (certifications, awards, team, etc.)
+ */
+export async function buildRichLlmTxt(params: {
+  businessId: number;
+  campaignId: number;
+  businessName: string;
+  websiteUrl: string;
+  industry: string;
+  location: string;
+  credibilityResult: CredibilityResearchResult;
+  generatedPages: GeneratedPage[];
+}): Promise<string> {
+  const { businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult, generatedPages } = params;
+
+  const business = await getBusinessById(businessId);
+  const queryLocations = await getQueryLocationsByCampaignId(campaignId);
+  const facts = credibilityResult.facts;
+  const lines: string[] = [];
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+  lines.push(`# ${businessName}`);
+  lines.push("");
+
+  const yearsStr = business?.yearsInBusiness ? `, serving customers since ${new Date().getFullYear() - business.yearsInBusiness}` : "";
+  lines.push(`> ${businessName} is a ${industry} serving ${location}${yearsStr}.`);
+  lines.push("");
+
+  // ── About ───────────────────────────────────────────────────────────────────
+  const aboutParts: string[] = [];
+  if (business?.description) aboutParts.push(business.description);
+  if (business?.specialties) aboutParts.push(`Specialties: ${business.specialties}`);
+  if (business?.differentiators) aboutParts.push(`What sets us apart: ${business.differentiators}`);
+  if (aboutParts.length > 0) {
+    lines.push("## About");
+    lines.push("");
+    aboutParts.forEach(p => lines.push(p));
+    lines.push("");
+  }
+
+  // ── Key Credentials ─────────────────────────────────────────────────────────
+  const certFacts = facts.filter(f => f.category === "certification" && f.confidence !== "low");
+  const awardFacts = facts.filter(f => f.category === "award" && f.confidence !== "low");
+  const yearsFacts = facts.filter(f => f.category === "years_in_business" && f.confidence !== "low");
+  const insuranceFacts = facts.filter(f => f.category === "insurance" && f.confidence !== "low");
+  const warrantyFacts = facts.filter(f => f.category === "warranty" && f.confidence !== "low");
+  const bbbFacts = facts.filter(f => f.category === "bbb" && f.confidence !== "low");
+
+  if (certFacts.length > 0 || awardFacts.length > 0 || yearsFacts.length > 0 || insuranceFacts.length > 0 || bbbFacts.length > 0) {
+    lines.push("## Key Credentials");
+    lines.push("");
+    yearsFacts.forEach(f => lines.push(`- ${f.fact}`));
+    certFacts.forEach(f => lines.push(`- ${f.fact}`));
+    awardFacts.forEach(f => lines.push(`- ${f.fact}`));
+    insuranceFacts.forEach(f => lines.push(`- ${f.fact}`));
+    bbbFacts.forEach(f => lines.push(`- ${f.fact}`));
+    if (business?.bbbRating) lines.push(`- BBB Rating: ${business.bbbRating}`);
+    if (business?.certifications) lines.push(`- Certifications: ${business.certifications}`);
+    if (business?.awards) lines.push(`- Awards: ${business.awards}`);
+    if (business?.licenses) lines.push(`- Licenses: ${business.licenses}`);
+    lines.push("");
+  }
+
+  // ── Warranties & Guarantees ──────────────────────────────────────────────────
+  if (warrantyFacts.length > 0 || business?.warranties) {
+    lines.push("## Warranties & Guarantees");
+    lines.push("");
+    warrantyFacts.forEach(f => lines.push(`- ${f.fact}`));
+    if (business?.warranties) lines.push(`- ${business.warranties}`);
+    lines.push("");
+  }
+
+  // ── Team ────────────────────────────────────────────────────────────────────
+  const teamFacts = facts.filter(f => f.category === "team" && f.confidence !== "low");
+  if (teamFacts.length > 0) {
+    lines.push("## Team");
+    lines.push("");
+    teamFacts.forEach(f => lines.push(`- ${f.fact}`));
+    lines.push("");
+  }
+
+  // ── Service Areas ───────────────────────────────────────────────────────────
+  const uniqueLocations = [...new Set(queryLocations.map(ql => ql.location))];
+  lines.push("## Service Areas");
+  lines.push("");
+  if (uniqueLocations.length > 0) {
+    uniqueLocations.forEach(loc => lines.push(`- ${loc}`));
+  } else {
+    lines.push(`- ${location}`);
+  }
+  lines.push("");
+
+  // ── What We're Known For (tracked keywords) ──────────────────────────────────
+  const uniqueQueries = [...new Set(queryLocations.map(ql => ql.searchQuery))];
+  if (uniqueQueries.length > 0) {
+    lines.push("## What We're Known For");
+    lines.push("");
+    lines.push("These are the topics and search queries this business is an authority on:");
+    lines.push("");
+    uniqueQueries.forEach(q => lines.push(`- ${q}`));
+    lines.push("");
+  }
+
+  // ── Important Pages ─────────────────────────────────────────────────────────
+  const PAGE_LABELS: Record<string, { label: string; slug: string }> = {
+    certifications: { label: "Certifications & Credentials", slug: "/certifications" },
+    warranties:     { label: "Warranties & Guarantees",      slug: "/warranties" },
+    awards:         { label: "Awards & Recognition",         slug: "/awards" },
+    team:           { label: "Meet Our Team",                slug: "/team" },
+    faq:            { label: "Frequently Asked Questions",   slug: "/faq" },
+    pricing:        { label: "Pricing & Cost Guide",         slug: "/pricing" },
+    about:          { label: "About Us",                     slug: "/about" },
+  };
+
+  lines.push("## Important Pages");
+  lines.push("");
+  lines.push(`- Homepage: ${websiteUrl}`);
+  generatedPages.forEach(page => {
+    const meta = PAGE_LABELS[page.pageType];
+    if (meta) lines.push(`- ${meta.label}: ${websiteUrl.replace(/\/$/, "")}${meta.slug}`);
+  });
+  lines.push(`- LLM Profile: ${websiteUrl.replace(/\/$/, "")}/llm.txt`);
+  lines.push("");
+
+  // ── Contact Information ──────────────────────────────────────────────────────
+  const contactLines: string[] = [];
+  if (business?.phone)   contactLines.push(`- Phone: ${business.phone}`);
+  if (business?.address) contactLines.push(`- Address: ${business.address}`);
+  if (business?.website) contactLines.push(`- Website: ${business.website}`);
+  if (contactLines.length > 0) {
+    lines.push("## Contact Information");
+    lines.push("");
+    contactLines.forEach(l => lines.push(l));
+    lines.push("");
+  }
+
+  // ── Social Profiles & Reviews ────────────────────────────────────────────────
+  const socialLines: string[] = [];
+  if (business?.facebookUrl)   socialLines.push(`- Facebook: ${business.facebookUrl}`);
+  if (business?.instagramUrl)  socialLines.push(`- Instagram: ${business.instagramUrl}`);
+  if (business?.linkedinUrl)   socialLines.push(`- LinkedIn: ${business.linkedinUrl}`);
+  if (business?.twitterUrl)    socialLines.push(`- Twitter/X: ${business.twitterUrl}`);
+  if (business?.youtubeUrl)    socialLines.push(`- YouTube: ${business.youtubeUrl}`);
+  if (business?.tiktokUrl)     socialLines.push(`- TikTok: ${business.tiktokUrl}`);
+  if (business?.yelpUrl)       socialLines.push(`- Yelp: ${business.yelpUrl}`);
+  if (business?.googleMapsUrl) socialLines.push(`- Google Maps: ${business.googleMapsUrl}`);
+  if (business?.bbbUrl)        socialLines.push(`- BBB Profile: ${business.bbbUrl}`);
+  if (business?.angiesUrl)     socialLines.push(`- Angi: ${business.angiesUrl}`);
+  if (business?.thumbtackUrl)  socialLines.push(`- Thumbtack: ${business.thumbtackUrl}`);
+  if (business?.houzzUrl)      socialLines.push(`- Houzz: ${business.houzzUrl}`);
+  if (socialLines.length > 0) {
+    lines.push("## Social Profiles & Reviews");
+    lines.push("");
+    socialLines.forEach(l => lines.push(l));
+    lines.push("");
+  }
+
+  // ── Verified Sources ─────────────────────────────────────────────────────────
+  const verifiedFacts = facts.filter(f => f.verificationUrl && f.confidence !== "low");
+  if (verifiedFacts.length > 0) {
+    lines.push("## Verified Sources");
+    lines.push("");
+    verifiedFacts.slice(0, 10).forEach(f => lines.push(`- ${f.fact}: ${f.verificationUrl}`));
+    lines.push("");
+  }
+
+  return lines.join("\n");
 }
 
 /**

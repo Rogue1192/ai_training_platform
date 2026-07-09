@@ -1179,6 +1179,14 @@ function ContentTab({ campaignId }: { campaignId: number }) {
 
   const currentCount = contentPages?.length ?? 0;
 
+  const regenerateLlmTxt = trpc.campaign.regenerateLlmTxt.useMutation({
+    onSuccess: (data) => {
+      utils.campaign.getContentPages.invalidate({ campaignId });
+      toast.success(`llm.txt regenerated (${data.contentLength} chars)`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const setContentPageUrl = trpc.campaign.setContentPageUrl.useMutation({
     onSuccess: (data) => {
       utils.campaign.getContentPages.invalidate({ campaignId });
@@ -1413,6 +1421,16 @@ function ContentTab({ campaignId }: { campaignId: number }) {
               This file tells GPTBot, Claude-Web, Google-Extended, and other AI crawlers exactly who this business is, what they specialize in, and where to find their credibility pages.
             </p>
             <div className="flex justify-end mb-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5 mr-2"
+                onClick={() => regenerateLlmTxt.mutate({ campaignId })}
+                disabled={regenerateLlmTxt.isPending}
+              >
+                <RefreshCw className={`w-3 h-3 ${regenerateLlmTxt.isPending ? "animate-spin" : ""}`} />
+                {regenerateLlmTxt.isPending ? "Regenerating..." : "Regenerate"}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"

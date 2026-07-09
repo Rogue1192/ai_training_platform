@@ -1515,6 +1515,102 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { getContentGenerationPrompt } = await import("./contentGenerationEngine");
         return { prompt: getContentGenerationPrompt() };
       }),
+
+    /**
+     * Regenerate the llm.txt for an existing campaign using the rich generator.
+     * This is used for campaigns that were created before the rich llm.txt generator
+     * was introduced, or when business profile data has been updated.
+     */
+    regenerateLlmTxt: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") throw new Error("Admin access required");
+        const { getDb, getBusinessById } = await import("./db");
+        const { getCampaignById, getCredibilityDataByBusinessId } = await import("./dbCampaigns");
+        const { buildRichLlmTxt, getContentPagesForCampaign } = await import("./contentGenerationEngine");
+        const { contentPages: cpTable } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+
+        const business = await getBusinessById(campaign.businessId);
+        if (!business) throw new Error("Business not found");
+
+        // Load credibility data to pass to the rich generator
+        const credData = await getCredibilityDataByBusinessId(business.id);
+        if (!credData) throw new Error("Credibility data not found — run credibility research first");
+
+        // Reconstruct a CredibilityResearchResult-compatible shape from stored data.
+        // The credibilityData table stores the full research output in researchResults (JSON).
+        const researchResults = (credData.researchResults as any) ?? {};
+        const credibilityResult = {
+          businessName: business.name,
+          industry: business.businessType ?? "",
+          overallScore: credData.credibilityScore ?? 0,
+          facts: (researchResults.facts ?? []) as any[],
+          suggestedPages: (researchResults.suggestedPages ?? []) as any[],
+          llmTxtContent: "",
+          schemaMarkupRecommendations: (researchResults.schemaMarkupRecommendations ?? []) as any[],
+          researchSummary: researchResults.researchSummary ?? "",
+          researchedAt: credData.researchCompletedAt?.toISOString() ?? new Date().toISOString(),
+        };
+
+        // Get the already-generated content pages (for Important Pages section)
+        const allPages = await getContentPagesForCampaign(input.campaignId);
+        const generatedPages = allPages
+          .filter((p: any) => !["llm_txt", "schema_package", "schema_audit", "schema_delivery"].includes(p.pageType))
+          .map((p: any) => ({
+            pageType: p.pageType,
+            pageTitle: p.pageTitle,
+            pageSlug: p.pageSlug,
+            pageContent: p.pageContent ?? "",
+            metaDescription: p.metaDescription ?? "",
+            schemaMarkup: p.schemaMarkup ?? "",
+            interlinkTargets: p.interlinkTargets ?? [],
+            deliveryType: (p.deliveryType ?? "new_page") as "new_page" | "inject_existing",
+          }));
+
+        const richContent = await buildRichLlmTxt({
+          businessId: business.id,
+          campaignId: input.campaignId,
+          businessName: business.name,
+          websiteUrl: business.website ?? "",
+          industry: business.businessType ?? "",
+          location: business.location ?? "",
+          credibilityResult,
+          generatedPages,
+        });
+
+        // Upsert the llm.txt content page
+        const [existing] = await db
+          .select({ id: cpTable.id })
+          .from(cpTable)
+          .where(and(eq(cpTable.campaignId, input.campaignId), eq(cpTable.pageType, "llm_txt")))
+          .limit(1);
+
+        if (existing) {
+          await db.update(cpTable)
+            .set({ pageContent: richContent, updatedAt: new Date() })
+            .where(eq(cpTable.id, existing.id));
+        } else {
+          await db.insert(cpTable).values({
+            businessId: business.id,
+            campaignId: input.campaignId,
+            pageType: "llm_txt",
+            pageTitle: "llm.txt",
+            pageSlug: "llm.txt",
+            pageContent: richContent,
+            status: "generated",
+            generationModel: "system",
+          });
+        }
+
+        return { success: true, contentLength: richContent.length };
+      }),
     getPageTypeConfigs: protectedProcedure
       .query(async () => {
         const { getPageTypeConfigs } = await import("./contentGenerationEngine");
