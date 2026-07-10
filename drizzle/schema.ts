@@ -151,6 +151,8 @@ export const businesses = pgTable("businesses", {
   useWebhookForContent: boolean("useWebhookForContent").default(false).notNull(),
   // Archive flag — soft-delete for test/inactive clients
   isArchived: boolean("isArchived").default(false).notNull(),
+  // Bundled billing flag — when true, campaigns created for this business should default to no-charge
+  noCharge: boolean("noCharge").default(false).notNull(),
   // Internal source tag — "rogue", "ranklocal", or null (white-label/unknown)
   internalSource: varchar("internalSource", { length: 50 }),
   // Specialties & unique expertise — free-text field seeded into MiniMax training prompts

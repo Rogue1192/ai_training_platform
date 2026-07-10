@@ -149,6 +149,8 @@ export const appRouter = router({
           // Agency assignment
           agencyId: z.number().nullable().optional(),
           billingType: z.enum(["white_label", "direct", "legacy", "external"]).optional(),
+          // Bundled billing flag
+          noCharge: z.boolean().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -1243,10 +1245,13 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
   campaign: router({
     createManual: protectedProcedure
       .input(z.object({
-        businessName: z.string().min(1, "Business name is required"),
-        websiteUrl: z.string().url("Valid website URL is required"),
+        // NEW: pass an existing businessId to skip business creation
+        businessId: z.number().int().positive().optional(),
+        // Legacy fields kept for backward-compat (webhook, etc.) — ignored when businessId is set
+        businessName: z.string().min(1, "Business name is required").optional(),
+        websiteUrl: z.string().url("Valid website URL is required").optional(),
         industry: z.string().optional(),
-        contactEmail: z.string().email("Valid contact email is required"),
+        contactEmail: z.string().email("Valid contact email is required").optional(),
         contactName: z.string().optional(),
         contactPhone: z.string().optional(),
         locations: z.array(z.string().min(1)).optional(),
@@ -1315,79 +1320,111 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           throw new Error("Package tier not found");
         }
 
-        // Compose locations
         const sanitizeLoc = (s: string) => s.replace(/;/g, ",").replace(/\s+/g, " ").trim().slice(0, 140);
-        const finalLocations = (input.locations ?? []).map((l) => sanitizeLoc(l)).filter(Boolean);
-        if (finalLocations.length === 0 && input.city?.trim() && input.state?.trim()) {
-          const city = sanitizeLoc(input.city).slice(0, 100);
-          const state = sanitizeLoc(input.state).slice(0, 40);
-          if (city && state) finalLocations.push(`${city}, ${state}`);
-        }
-        if (finalLocations.length === 0) {
-          throw new Error("At least one location is required");
-        }
 
-        const industry = input.industry?.trim() || "general";
+        // ── NEW PATH: businessId supplied — use existing business record ──────────
+        let businessId: number;
+        let finalLocations: string[];
+        let industry: string;
+        let resolvedBusinessName: string;
+        let resolvedNoCharge: boolean;
 
-        // Check if business already exists
-        const existingBusinesses = await db
-          .select()
-          .from(businesses)
-          .where(eq(businesses.website, input.websiteUrl))
-          .limit(1);
+        if (input.businessId) {
+          const { getBusinessById } = await import("./db");
+          const biz = await getBusinessById(input.businessId);
+          if (!biz) throw new Error(`Business ${input.businessId} not found`);
 
-        let businessId;
+          businessId = biz.id;
+          resolvedBusinessName = biz.name;
+          industry = biz.businessType?.trim() || "general";
+          resolvedNoCharge = (biz as any).noCharge ?? input.noCharge ?? false;
 
-        if (existingBusinesses.length > 0) {
-          businessId = existingBusinesses[0].id;
-          const updateFields: Record<string, any> = {
-            businessType: industry,
-            contactEmail: input.contactEmail,
-            updatedAt: new Date(),
-            location: serializeLocations(finalLocations),
-          };
-          if (input.contactName) updateFields.contactName = input.contactName;
-          if (input.contactPhone) updateFields.phone = input.contactPhone;
-          if (input.yearsFounded) updateFields.yearsInBusiness = input.yearsFounded;
-          if (input.certifications) updateFields.certifications = input.certifications.join(", ");
-          if (input.awards) updateFields.awards = input.awards.join(", ");
-          if (input.bbbRating) updateFields.bbbRating = input.bbbRating;
-          if (input.clientType) updateFields.clientType = input.clientType;
-          if (input.siteAdminUrl) updateFields.siteAdminUrl = input.siteAdminUrl;
-          if (input.siteUsername) updateFields.siteUsername = input.siteUsername;
-          if (input.sitePassword) updateFields.sitePasswordEncrypted = encrypt(input.sitePassword);
-          if (input.source) updateFields.internalSource = input.source;
-          if (input.specialties) updateFields.specialties = input.specialties;
+          // Parse locations from the business record; fall back to any locations passed in
+          const { parseLocations } = await import("@shared/location");
+          const bizLocs = parseLocations(biz.location || "");
+          const passedLocs = (input.locations ?? []).map((l) => sanitizeLoc(l)).filter(Boolean);
+          finalLocations = passedLocs.length > 0 ? passedLocs : bizLocs;
 
-          await db.update(businesses).set(updateFields).where(eq(businesses.id, businessId));
+          if (finalLocations.length === 0) {
+            throw new Error("The selected business has no locations. Please add at least one location in the Businesses tab first.");
+          }
         } else {
-          const newBusiness = await db
-            .insert(businesses)
-            .values({
-              userId: ctx.user.id,
-              name: input.businessName,
-              website: input.websiteUrl,
+          // ── LEGACY PATH: all fields supplied manually ─────────────────────────
+          if (!input.businessName) throw new Error("businessName is required when businessId is not provided");
+          if (!input.websiteUrl) throw new Error("websiteUrl is required when businessId is not provided");
+
+          finalLocations = (input.locations ?? []).map((l) => sanitizeLoc(l)).filter(Boolean);
+          if (finalLocations.length === 0 && input.city?.trim() && input.state?.trim()) {
+            const city = sanitizeLoc(input.city).slice(0, 100);
+            const state = sanitizeLoc(input.state).slice(0, 40);
+            if (city && state) finalLocations.push(`${city}, ${state}`);
+          }
+          if (finalLocations.length === 0) {
+            throw new Error("At least one location is required");
+          }
+
+          industry = input.industry?.trim() || "general";
+          resolvedBusinessName = input.businessName;
+          resolvedNoCharge = input.noCharge ?? false;
+
+          // Check if business already exists by website URL
+          const existingBusinesses = await db
+            .select()
+            .from(businesses)
+            .where(eq(businesses.website, input.websiteUrl))
+            .limit(1);
+
+          if (existingBusinesses.length > 0) {
+            businessId = existingBusinesses[0].id;
+            const updateFields: Record<string, any> = {
               businessType: industry,
               contactEmail: input.contactEmail,
-              contactName: input.contactName || null,
-              phone: input.contactPhone || null,
-              location: serializeLocations(finalLocations),
-              description: null,
-              clientType: input.clientType,
-              yearsInBusiness: input.yearsFounded || null,
-              certifications: input.certifications?.join(", ") || null,
-              awards: input.awards?.join(", ") || null,
-              bbbRating: input.bbbRating || null,
-              siteAdminUrl: input.siteAdminUrl || null,
-              siteUsername: input.siteUsername || null,
-              sitePasswordEncrypted: input.sitePassword ? encrypt(input.sitePassword) : null,
-              internalSource: input.source || null,
-              specialties: input.specialties || null,
-              createdAt: new Date(),
               updatedAt: new Date(),
-            })
-            .returning();
-          businessId = newBusiness[0].id;
+              location: serializeLocations(finalLocations),
+            };
+            if (input.contactName) updateFields.contactName = input.contactName;
+            if (input.contactPhone) updateFields.phone = input.contactPhone;
+            if (input.yearsFounded) updateFields.yearsInBusiness = input.yearsFounded;
+            if (input.certifications) updateFields.certifications = input.certifications.join(", ");
+            if (input.awards) updateFields.awards = input.awards.join(", ");
+            if (input.bbbRating) updateFields.bbbRating = input.bbbRating;
+            if (input.clientType) updateFields.clientType = input.clientType;
+            if (input.siteAdminUrl) updateFields.siteAdminUrl = input.siteAdminUrl;
+            if (input.siteUsername) updateFields.siteUsername = input.siteUsername;
+            if (input.sitePassword) updateFields.sitePasswordEncrypted = encrypt(input.sitePassword);
+            if (input.source) updateFields.internalSource = input.source;
+            if (input.specialties) updateFields.specialties = input.specialties;
+
+            await db.update(businesses).set(updateFields).where(eq(businesses.id, businessId));
+          } else {
+            const newBusiness = await db
+              .insert(businesses)
+              .values({
+                userId: ctx.user.id,
+                name: input.businessName,
+                website: input.websiteUrl,
+                businessType: industry,
+                contactEmail: input.contactEmail,
+                contactName: input.contactName || null,
+                phone: input.contactPhone || null,
+                location: serializeLocations(finalLocations),
+                description: null,
+                clientType: input.clientType,
+                yearsInBusiness: input.yearsFounded || null,
+                certifications: input.certifications?.join(", ") || null,
+                awards: input.awards?.join(", ") || null,
+                bbbRating: input.bbbRating || null,
+                siteAdminUrl: input.siteAdminUrl || null,
+                siteUsername: input.siteUsername || null,
+                sitePasswordEncrypted: input.sitePassword ? encrypt(input.sitePassword) : null,
+                internalSource: input.source || null,
+                specialties: input.specialties || null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .returning();
+            businessId = newBusiness[0].id;
+          }
         }
 
         // Check for existing active campaign
@@ -1416,7 +1453,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           userId: ctx.user.id,
           businessId,
           packageTierId: packageTier.id,
-          campaignName: `${input.businessName} - AI Visibility`,
+          campaignName: `${resolvedBusinessName} - AI Visibility`,
           status: "pending",
           clientType: input.clientType,
           trainingAggressiveness: "aggressive",
@@ -1429,7 +1466,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           selectedPackage: input.selectedPackage || null,
           billingType: input.billingType || (input.agencyId ? "white_label" : "direct"),
           campaignScope: input.campaignScope ?? "local",
-          noCharge: input.noCharge ?? false,
+          noCharge: resolvedNoCharge,
         });
 
         const { initializeTrial } = await import("./trialManager");
@@ -1468,7 +1505,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           campaignId: campaign.id,
           accessToken,
           isActive: true,
-          dashboardTitle: `${input.businessName} - AI Visibility Report`,
+          dashboardTitle: `${resolvedBusinessName} - AI Visibility Report`,
           accessCount: 0,
         });
 
