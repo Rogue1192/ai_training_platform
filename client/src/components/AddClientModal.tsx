@@ -37,7 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
   Loader2, Building2, User, Shield, Share2, CreditCard,
-  ChevronLeft, ChevronRight, Check, Info, AlertTriangle, MapPin,
+  ChevronLeft, ChevronRight, Check, Info, AlertTriangle, MapPin, Plus, X,
 } from "lucide-react";
 
 // ─── Package tier config ──────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ const emptyForm = {
   businessType: "",
   website: "",
   // Multi-location slots — serialized as "City1, ST; City2, ST; …" on submit
-  locations: ["", "", "", "", ""] as [string, string, string, string, string],
+  locations: [""] as string[],
   address: "",
   phone: "",
   description: "",
@@ -349,31 +349,51 @@ export default function AddClientModal({
                   />
                 </div>
 
-                {/* Multi-location slots */}
+                {/* Dynamic location list */}
                 <div className="col-span-2 space-y-1.5">
                   <Label className="flex items-center gap-1.5">
                     <MapPin className="h-4 w-4 text-muted-foreground" />
                     Target Locations / Service Areas
-                    <span className="text-xs text-muted-foreground font-normal ml-1">
-                      ({selectedPackage.maxQuerySlots} query slots total — {selectedPackage.hint})
-                    </span>
                   </Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([0, 1, 2, 3, 4] as const).map((i) => (
-                      <Input
-                        key={i}
-                        placeholder={`Location ${i + 1} — City, ST`}
-                        value={form.locations[i]}
-                        onChange={(e) => {
-                          const next: [string, string, string, string, string] = [...form.locations] as [string, string, string, string, string];
-                          next[i] = e.target.value;
-                          setForm((f) => ({ ...f, locations: next }));
-                        }}
-                      />
+                  <div className="space-y-2">
+                    {form.locations.map((loc, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className="flex items-center justify-center h-7 w-7 rounded-full bg-muted text-xs font-medium text-muted-foreground shrink-0">{i + 1}</div>
+                        <Input
+                          placeholder="City, State — e.g. Dallas, TX"
+                          value={loc}
+                          onChange={(e) => {
+                            const next = [...form.locations];
+                            next[i] = e.target.value;
+                            setForm((f) => ({ ...f, locations: next }));
+                          }}
+                          className="flex-1"
+                        />
+                        {form.locations.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = [...form.locations];
+                              next.splice(i, 1);
+                              setForm((f) => ({ ...f, locations: next }));
+                            }}
+                            className="text-muted-foreground hover:text-destructive transition-colors"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     ))}
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, locations: [...f.locations, ""] }))}
+                      className="text-sm text-primary hover:underline flex items-center gap-1"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add location
+                    </button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    The AI trains on each location separately — more locations = more cities where the client appears in AI answers.
+                    The AI trains on each location separately — add as many service areas as needed.
                   </p>
                 </div>
 

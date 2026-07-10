@@ -591,38 +591,46 @@ export default function Businesses() {
                       <Input id="businessType" value={formData.businessType} onChange={(e) => setFormData({ ...formData, businessType: e.target.value })} placeholder="e.g., HVAC Company" className="bg-background border-input" />
                     </div>
                   </div>
-                  {/* Package-aware target location slots */}
-                  {(() => {
-                    const maxLoc = formData.packageTier === "starter" ? 3 : 5;
-                    const slots = Array.from({ length: maxLoc }, (_, i) => i);
-                    return (
-                      <div className="space-y-2">
-                        <Label>
-                          Target Locations
-                          <span className="ml-2 text-xs text-muted-foreground font-normal">
-                            ({maxLoc} slots for {formData.packageTier.charAt(0).toUpperCase() + formData.packageTier.slice(1)} plan)
-                          </span>
-                        </Label>
-                        <div className={`grid gap-2 ${maxLoc === 3 ? "grid-cols-3" : "grid-cols-5"}`}>
-                          {slots.map((i) => (
-                            <Input
-                              key={i}
-                              value={formData.locations[i] ?? ""}
-                              onChange={(e) => {
-                                const next = [...formData.locations];
-                                while (next.length <= i) next.push("");
-                                next[i] = e.target.value;
-                                setFormData({ ...formData, locations: next });
-                              }}
-                              placeholder={`City ${i + 1}, ST`}
-                              className="bg-background border-input text-sm"
-                            />
-                          ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground">These are the cities the AI will be trained to associate this business with. Fill as many as your package allows.</p>
+                  {/* Dynamic location list */}
+                  <div className="space-y-2">
+                    <Label>Target Locations / Service Areas</Label>
+                    {(formData.locations.length === 0 ? [""] : formData.locations).map((loc, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className="flex items-center justify-center h-7 w-7 rounded-full bg-muted text-xs font-medium text-muted-foreground shrink-0">{i + 1}</div>
+                        <Input
+                          value={loc}
+                          onChange={(e) => {
+                            const next = formData.locations.length === 0 ? [""] : [...formData.locations];
+                            next[i] = e.target.value;
+                            setFormData({ ...formData, locations: next });
+                          }}
+                          placeholder="City, State — e.g. Dallas, TX"
+                          className="bg-background border-input flex-1"
+                        />
+                        {(formData.locations.length === 0 ? [""] : formData.locations).length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = [...formData.locations];
+                              next.splice(i, 1);
+                              setFormData({ ...formData, locations: next });
+                            }}
+                            className="text-muted-foreground hover:text-destructive transition-colors"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
-                    );
-                  })()}
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, locations: [...(formData.locations.length === 0 ? [""] : formData.locations), ""] })}
+                      className="text-sm text-primary hover:underline flex items-center gap-1"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add location
+                    </button>
+                    <p className="text-xs text-muted-foreground">The AI trains on each location separately — add as many service areas as needed.</p>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="phone">Phone</Label>
