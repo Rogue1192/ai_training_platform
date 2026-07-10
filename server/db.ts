@@ -1435,3 +1435,62 @@ export async function ensureBusinessNoChargeColumn(): Promise<void> {
     console.warn('[DB] ensureBusinessNoChargeColumn:', err.message);
   }
 }
+
+/**
+ * ensureCampaignColumns
+ *
+ * Adds every column that is defined in schema.ts for the campaigns table but may
+ * not physically exist in the database because it was added to the schema after
+ * the original CREATE TABLE migration (0006) and was never backfilled via a
+ * dedicated migration or ensure function.
+ *
+ * Columns covered (all idempotent via ADD COLUMN IF NOT EXISTS):
+ *   — trialStatus, trialStartedAt, trialExpiresAt, trialConvertedAt  (0012 — safe to re-run)
+ *   — selectedPackage, maxQueries, maxLocations                       (0012 — safe to re-run)
+ *   — stripePaymentLinkSentAt                                         (never migrated)
+ *   — stripeCustomerId                                                 (0012 added varchar(100); schema now 255 — leave as-is)
+ *   — stripeSubscriptionId                                             (0019 added to businesses; campaigns never got it)
+ *   — maxQuerySlots                                                    (never migrated)
+ *   — billingType                                                      (never migrated)
+ *   — campaignScope                                                    (0026 — safe to re-run)
+ *   — noCharge                                                         (ensure function above — safe to re-run)
+ *
+ * Safe to call on every startup — all statements use IF NOT EXISTS.
+ */
+export async function ensureCampaignColumns(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const client = (db as any).$client as import("postgres").Sql;
+
+  const columns: Array<{ name: string; ddl: string }> = [
+    // Trial management (migration 0012 — idempotent re-run is fine)
+    { name: "trialStatus",        ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "trialStatus" varchar(20) NOT NULL DEFAULT 'trial'` },
+    { name: "trialStartedAt",     ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "trialStartedAt" timestamp` },
+    { name: "trialExpiresAt",     ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "trialExpiresAt" timestamp` },
+    { name: "trialConvertedAt",   ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "trialConvertedAt" timestamp` },
+    { name: "selectedPackage",    ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "selectedPackage" varchar(50)` },
+    { name: "maxQueries",         ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "maxQueries" integer NOT NULL DEFAULT 5` },
+    { name: "maxLocations",       ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "maxLocations" integer NOT NULL DEFAULT 3` },
+    // Stripe fields
+    { name: "stripePaymentLinkSentAt", ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "stripePaymentLinkSentAt" timestamp` },
+    { name: "stripeCustomerId",   ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "stripeCustomerId" varchar(255)` },
+    { name: "stripeSubscriptionId", ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "stripeSubscriptionId" varchar(255)` },
+    // Query slot budget (replaces maxQueries × maxLocations model)
+    { name: "maxQuerySlots",      ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "maxQuerySlots" integer NOT NULL DEFAULT 15` },
+    // Billing
+    { name: "billingType",        ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "billingType" varchar(20) NOT NULL DEFAULT 'white_label'` },
+    // Campaign scope (migration 0026 — idempotent re-run is fine)
+    { name: "campaignScope",      ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "campaignScope" varchar(20) NOT NULL DEFAULT 'local'` },
+    // No-charge flag
+    { name: "noCharge",           ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "noCharge" boolean NOT NULL DEFAULT false` },
+  ];
+
+  for (const col of columns) {
+    try {
+      await client.unsafe(col.ddl);
+      console.log(`[DB] campaigns.${col.name} column ensured`);
+    } catch (err: any) {
+      console.warn(`[DB] ensureCampaignColumns (${col.name}):`, err.message);
+    }
+  }
+}

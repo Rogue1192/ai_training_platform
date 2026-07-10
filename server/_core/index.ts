@@ -13,7 +13,7 @@ import { trainingWorker } from "../trainingQueue";
 import { startTrainingWorkerV2 } from "../trainingQueueV2";
 import { startScheduler } from "../scheduler";
 import { createWebhookRouter } from "../webhookHandler";
-import { ensureMonkeyIndexerEnumValue, ensureIsTargetLocationColumn, ensureModelConfigEnumValue, ensureCampaignScopeColumn, ensureNoChargeColumn, ensureBusinessNoChargeColumn } from "../db";
+import { ensureMonkeyIndexerEnumValue, ensureIsTargetLocationColumn, ensureModelConfigEnumValue, ensureCampaignScopeColumn, ensureNoChargeColumn, ensureBusinessNoChargeColumn, ensureCampaignColumns } from "../db";
 
 // Combined router with all sub-routers including llmInsights, agency, and costTracking
 const combinedRouter = router({
@@ -119,6 +119,11 @@ ensureNoChargeColumn().catch((err) =>
 );
 ensureBusinessNoChargeColumn().catch((err) =>
   console.warn("[Startup] ensureBusinessNoChargeColumn failed (non-fatal):", err.message)
+);
+// Comprehensive campaigns column backfill — adds every column that exists in schema.ts
+// but may be missing from the live database due to missing migrations.
+ensureCampaignColumns().catch((err) =>
+  console.warn("[Startup] ensureCampaignColumns failed (non-fatal):", err.message)
 );
 
 startServer().catch(console.error);
