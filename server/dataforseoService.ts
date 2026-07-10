@@ -570,16 +570,56 @@ export async function runKeywordResearchPipeline(
     };
   });
 
-  // Step 5: Sort by AI search volume desc, then regular search volume as tiebreaker.
+  // Step 5: Anchor-slot strategy.
+  // Each bare seed (e.g. "house cleaning") gets a guaranteed slot before any
+  // modifier variants ("best house cleaning", "top rated house cleaning", etc.)
+  // are allowed to fill remaining capacity.  This prevents a scenario where
+  // every slot is consumed by modifier-heavy variants and the foundational
+  // service term is never trained on.
+  //
+  // Algorithm:
+  //   a) Sort the full candidate list by AI volume desc (tiebreak: SEO volume).
+  //   b) Walk the sorted list; mark the FIRST occurrence of each bare seed as
+  //      an "anchor" and promote it to the front of the output list.
+  //   c) Fill remaining slots from the sorted list, skipping already-selected.
+
   merged.sort((a, b) => {
     if (b.aiSearchVolume !== a.aiSearchVolume) return b.aiSearchVolume - a.aiSearchVolume;
     return b.searchVolume - a.searchVolume;
   });
 
-  const topKeywords = merged.slice(0, maxKeywords);
+  // Build a normalised set of bare seed strings for anchor detection.
+  const bareSeedSet = new Set(seeds.map((s) => s.toLowerCase().trim()));
+
+  // Identify the best (highest-volume) representative of each bare seed.
+  const anchorMap = new Map<string, (typeof merged)[0]>(); // seed -> best candidate
+  for (const item of merged) {
+    const kw = item.keyword.toLowerCase();
+    for (const seed of bareSeedSet) {
+      // A keyword is the bare-seed representative if it IS the seed (possibly
+      // with a location suffix added later) or equals it exactly.
+      // We match: keyword starts with seed and contains no extra modifier words
+      // ("best", "top", "affordable", "near me", "company").
+      const withoutSeed = kw.replace(seed, "").trim();
+      const isModified = /\b(best|top|affordable|near me|company|rated|trusted|leading|#1|number one)\b/.test(withoutSeed);
+      if ((kw === seed || kw.startsWith(seed + " ")) && !isModified) {
+        if (!anchorMap.has(seed)) anchorMap.set(seed, item);
+        break;
+      }
+    }
+  }
+
+  const anchors = Array.from(anchorMap.values());
+  const anchorKeywords = new Set(anchors.map((a) => a.keyword.toLowerCase()));
+
+  // Fill remaining slots from the volume-sorted list, skipping anchors already included.
+  const fillers = merged.filter((item) => !anchorKeywords.has(item.keyword.toLowerCase()));
+
+  const combined = [...anchors, ...fillers];
+  const topKeywords = combined.slice(0, maxKeywords);
 
   console.log(
-    `[DataForSEO] Pipeline complete: ${topKeywords.length} on-topic keywords selected from ${candidateStrings.length} candidates`
+    `[DataForSEO] Pipeline complete: ${topKeywords.length} on-topic keywords selected from ${candidateStrings.length} candidates (${anchors.length} anchor slots reserved for bare service terms)`
   );
 
   return {
