@@ -47,7 +47,6 @@ const PACKAGES = [
   {
     value: "starter" as const,
     name: "Starter",
-    price: "$99/mo",
     maxQuerySlots: 15,
     totalSessions: 120,
     description: "15 AI training slots (5 keywords × 3 cities)",
@@ -56,7 +55,6 @@ const PACKAGES = [
   {
     value: "growth" as const,
     name: "Growth",
-    price: "$149/mo",
     maxQuerySlots: 25,
     totalSessions: 200,
     description: "25 AI training slots (5 keywords × 5 cities)",
@@ -65,7 +63,6 @@ const PACKAGES = [
   {
     value: "pro" as const,
     name: "Pro",
-    price: "$179/mo",
     maxQuerySlots: 50,
     totalSessions: 400,
     description: "50 AI training slots (10 keywords × 5 cities)",
@@ -616,7 +613,7 @@ export default function NewCampaignModal({
                         </div>
                       )}
                     </div>
-                    <p className="text-lg font-bold">{pkg.price}</p>
+                    <p className="text-sm font-semibold text-primary">{pkg.maxQuerySlots} query slots</p>
                     <p className="text-xs text-muted-foreground mt-1">{pkg.hint}</p>
                     <p className="text-xs text-muted-foreground">
                       {pkg.totalSessions} AI training sessions/mo

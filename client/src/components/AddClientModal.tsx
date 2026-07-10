@@ -46,30 +46,24 @@ const PACKAGES = [
   {
     value: "starter" as const,
     name: "Starter",
-    price: "$99/mo",
     maxQuerySlots: 15,
     totalSessions: 120,
-    suggestedRetail: "$199/mo",
     description: "15 AI training slots (5 keywords × 3 cities)",
     hint: "e.g. 5 keywords × 3 cities, or 15 keywords in 1 city",
   },
   {
     value: "growth" as const,
     name: "Growth",
-    price: "$149/mo",
     maxQuerySlots: 25,
     totalSessions: 200,
-    suggestedRetail: "$299/mo",
     description: "25 AI training slots (5 keywords × 5 cities)",
     hint: "e.g. 5 keywords × 5 cities, or 25 keywords in 1 city",
   },
   {
     value: "pro" as const,
     name: "Pro",
-    price: "$179/mo",
     maxQuerySlots: 50,
     totalSessions: 400,
-    suggestedRetail: "$349/mo",
     description: "50 AI training slots (10 keywords × 5 cities)",
     hint: "e.g. 10 keywords × 5 cities, or 50 keywords in 1 city",
   },
@@ -622,7 +616,7 @@ export default function AddClientModal({
                           </div>
                         )}
                       </div>
-                      <p className="text-lg font-bold">{pkg.price}</p>
+                      <p className="text-sm font-semibold text-primary">{pkg.maxQuerySlots} query slots</p>
                       <p className="text-xs text-muted-foreground mt-1">
                         {pkg.description}
                       </p>
@@ -632,25 +626,20 @@ export default function AddClientModal({
                       <p className="text-xs text-muted-foreground">
                         {pkg.totalSessions} AI training sessions/mo
                       </p>
-                      <div className="mt-2 pt-2 border-t border-border/50">
-                        <p className="text-xs text-muted-foreground">Suggested retail:</p>
-                        <p className="text-xs font-medium text-green-400">{pkg.suggestedRetail}</p>
-                      </div>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Billing summary */}
+              {/* Package summary */}
               <div className="rounded-md border p-3 bg-muted/30 text-sm space-y-1">
-                <p className="font-medium">Billing Summary</p>
+                <p className="font-medium">Package Summary</p>
                 <div className="flex justify-between text-muted-foreground">
-                  <span>{selectedPackage.name} plan — monthly</span>
-                  <span>{selectedPackage.price}</span>
+                  <span>{selectedPackage.name} plan</span>
+                  <span>{selectedPackage.maxQuerySlots} query slots</span>
                 </div>
                 <p className="text-xs text-muted-foreground pt-1">
-                  A Stripe subscription will be created automatically on your agency account.
-                  The subscription starts immediately upon saving.
+                  {selectedPackage.totalSessions} AI training sessions per month.
                 </p>
               </div>
             </div>
