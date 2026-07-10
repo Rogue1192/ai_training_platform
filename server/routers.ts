@@ -215,6 +215,7 @@ export const appRouter = router({
         clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
         internalSource: z.enum(["rogue", "ranklocal"]).optional(),
         packageTier: z.enum(["starter", "growth", "pro"]),
+        noCharge: z.boolean().default(false),
       }))
       .mutation(async ({ ctx, input }) => {
         const { createBusiness } = await import("./db");
@@ -267,6 +268,7 @@ export const appRouter = router({
               maxLocations: tier.maxLocations,
               maxQuerySlots: resolvedMaxQuerySlots,
               selectedPackage: packageTier,
+              noCharge: input.noCharge ?? false,
             });
             // Initialize trial
             const { initializeTrial } = await import('./trialManager');
@@ -1274,6 +1276,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         source: z.enum(["rogue", "ranklocal"]).optional(),
         specialties: z.string().optional(),
         campaignScope: z.enum(["local", "national", "ecommerce"]).default("local"),
+        noCharge: z.boolean().default(false),
       }))
       .mutation(async ({ ctx, input }) => {
         const { getDb } = await import("./db");
@@ -1426,6 +1429,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           selectedPackage: input.selectedPackage || null,
           billingType: input.billingType || (input.agencyId ? "white_label" : "direct"),
           campaignScope: input.campaignScope ?? "local",
+          noCharge: input.noCharge ?? false,
         });
 
         const { initializeTrial } = await import("./trialManager");

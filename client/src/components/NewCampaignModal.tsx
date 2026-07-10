@@ -102,6 +102,7 @@ const emptyForm = {
   // Step 3 — Package & Settings
   packageTierSlug: "starter" as "starter" | "growth" | "pro",
   campaignScope: "local" as "local" | "national" | "ecommerce",
+  noCharge: false,
   clientType: "ai_only" as "ai_only" | "ai_plus_seo" | "ai_plus_seo_plus_build",
   billingType: "direct" as "direct" | "white_label" | "legacy",
   agencyId: "" as string,
@@ -251,6 +252,7 @@ export default function NewCampaignModal({
       sitePassword: form.sitePassword.trim() || undefined,
       source: form.source || undefined,
       searchQueries: searchQueries.length > 0 ? searchQueries : undefined,
+      noCharge: form.noCharge,
     });
   };
 
@@ -665,6 +667,22 @@ export default function NewCampaignModal({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* No Charge checkbox */}
+              <div className="col-span-2">
+                <label className="flex items-start gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={form.noCharge}
+                    onChange={(e) => set("noCharge", e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-input accent-primary cursor-pointer"
+                  />
+                  <div>
+                    <p className="text-sm font-medium leading-none group-hover:text-primary transition-colors">No Charge (Bundled)</p>
+                    <p className="text-xs text-muted-foreground mt-1">This campaign is included in a larger package and should not be billed individually. Suppresses cost tracking and Stripe subscription creation.</p>
+                  </div>
+                </label>
               </div>
 
               <div className="col-span-2 space-y-1.5">

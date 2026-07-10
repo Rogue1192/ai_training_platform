@@ -285,6 +285,7 @@ export default function Businesses() {
     // Agency assignment
     agencyId: null as number | null,
     billingType: "direct" as string,
+    noCharge: false,
   });
 
   const resetForm = () => {
@@ -316,6 +317,7 @@ export default function Businesses() {
       useWebhookForContent: false,
       agencyId: null,
       billingType: "direct",
+      noCharge: false,
     });
     setEditingBusiness(null);
     setActiveTab("basic");
@@ -421,6 +423,7 @@ export default function Businesses() {
       useWebhookForContent: business.useWebhookForContent ?? false,
       agencyId: business.agencyId ?? null,
       billingType: business.billingType || "direct",
+      noCharge: business.noCharge ?? false,
     });
     setEditingBusiness(business.id);
     setActiveTab("basic");
@@ -682,6 +685,20 @@ export default function Businesses() {
                           <SelectItem value="pro">Pro — $179/mo (50 slots: 10 keywords × 5 cities)</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                  </div>
+                  {/* No Charge checkbox */}
+                  <div className="flex items-start gap-3 pt-1">
+                    <input
+                      type="checkbox"
+                      id="noCharge"
+                      checked={formData.noCharge ?? false}
+                      onChange={(e) => setFormData({ ...formData, noCharge: e.target.checked })}
+                      className="mt-0.5 h-4 w-4 rounded border-input accent-primary cursor-pointer"
+                    />
+                    <div>
+                      <label htmlFor="noCharge" className="text-sm font-medium cursor-pointer">No Charge (Bundled)</label>
+                      <p className="text-xs text-muted-foreground mt-0.5">Campaign is included in a larger package — suppresses cost tracking and billing.</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">

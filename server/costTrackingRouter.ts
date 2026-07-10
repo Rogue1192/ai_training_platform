@@ -105,6 +105,7 @@ export const costTrackingRouter = router({
           campaignStatus: campaigns.status,
           campaignCreatedAt: campaigns.createdAt,
           billingType: campaigns.billingType,
+          noCharge: campaigns.noCharge,
           businessId: businesses.id,
           businessName: businesses.name,
           agencyId: businesses.agencyId,
@@ -116,11 +117,13 @@ export const costTrackingRouter = router({
           input.billingType !== "all"
             ? and(
                 eq(campaigns.billingType, input.billingType),
+                eq(campaigns.noCharge, false),
                 input.agencyId ? eq(businesses.agencyId, input.agencyId) : undefined
               )
-            : input.agencyId
-            ? eq(businesses.agencyId, input.agencyId)
-            : undefined
+            : and(
+                eq(campaigns.noCharge, false),
+                input.agencyId ? eq(businesses.agencyId, input.agencyId) : undefined
+              )
         )
         .orderBy(desc(campaigns.createdAt))
         .limit(input.limit)

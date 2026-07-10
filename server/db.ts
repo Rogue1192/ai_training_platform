@@ -1405,3 +1405,18 @@ export async function ensureCampaignScopeColumn(): Promise<void> {
     console.warn('[DB] ensureCampaignScopeColumn:', err.message);
   }
 }
+
+export async function ensureNoChargeColumn(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE "campaigns"
+      ADD COLUMN IF NOT EXISTS "noCharge" boolean NOT NULL DEFAULT false
+    `;
+    console.log('[DB] campaigns.noCharge column ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureNoChargeColumn:', err.message);
+  }
+}

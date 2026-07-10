@@ -433,6 +433,9 @@ export const campaigns = pgTable("campaigns", {
   // 'national'   = agency, franchise, SaaS, nationwide service — queries run without location suffix, national prompt framing
   // 'ecommerce'  = online store, no physical presence — no location at all, product-discovery prompt framing, Organization schema
   campaignScope: varchar("campaignScope", { length: 20 }).default("local").notNull(),
+  // No-charge flag — when true, this campaign is bundled into a larger package and should not be billed individually
+  // Suppresses: Stripe subscription creation, cost tracking entries, and billing-related alerts
+  noCharge: boolean("noCharge").default(false).notNull(),
   // Metadata
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
