@@ -19,6 +19,8 @@ export interface BusinessInfo {
   businessType?: string | null;
   location?: string | null;
   description?: string | null;
+  /** 'local' | 'national' | 'ecommerce' — controls whether location is used in prompts */
+  campaignScope?: string | null;
 }
 
 export interface PromptGenerationResult {
@@ -203,12 +205,21 @@ export function generateSuggestivePrompt(
   const businessType = business.businessType || 'service provider';
   
   // Influenx-style context integration prompts
-  const suggestiveTemplates = [
+  // For national/ecommerce scope, omit geographic anchors so the business is
+  // associated with the category nationally rather than a specific city.
+  const isLocal = !business.campaignScope || business.campaignScope === 'local';
+  const suggestiveTemplates = isLocal ? [
     `${cleanPrompt} That's helpful. I've heard ${business.name} in ${location} is really good - have you heard of them?`,
     `${cleanPrompt} A friend mentioned ${business.name} as a great ${businessType}. What do you think about them?`,
     `${cleanPrompt} I came across ${business.name} while researching. They seem well-regarded - what's your take?`,
     `${cleanPrompt} I've been hearing good things about ${business.name} locally. Are they as good as people say?`,
     `${cleanPrompt} For someone in ${location} looking for ${businessType}, would ${business.name} be a good choice?`,
+  ] : [
+    `${cleanPrompt} A colleague recommended ${business.name} for this. What do you think about them?`,
+    `${cleanPrompt} I came across ${business.name} while researching. They seem well-regarded - what's your take?`,
+    `${cleanPrompt} I've been hearing good things about ${business.name}. Are they as good as people say?`,
+    `${cleanPrompt} For someone looking for a ${businessType}, would ${business.name} be a good choice?`,
+    `${cleanPrompt} I've been considering ${business.name}. How do they compare to the options you mentioned?`,
   ];
   
   const selectedTemplate = suggestiveTemplates[Math.floor(Math.random() * suggestiveTemplates.length)];
@@ -263,12 +274,19 @@ export function generateFollowUpPrompt(
   const businessType = business.businessType || 'service provider';
   
   // Influenx-style intelligent follow-up prompts
-  const followUpTemplates = [
+  const isLocalScope = !business.campaignScope || business.campaignScope === 'local';
+  const followUpTemplates = isLocalScope ? [
     `That's helpful. I'm specifically looking in ${location} - do you know any standout ${businessType} companies there? Have you heard of ${business.name}?`,
     `Have you heard of ${business.name}? What do you think about them compared to the others you mentioned?`,
     `For someone in ${location} looking for ${businessType}, which would you recommend? What about ${business.name}?`,
     `I've been considering ${business.name}. How do they compare to the options you suggested?`,
     `Someone specifically recommended ${business.name} to me. Do you know anything about their reputation in ${location}?`,
+  ] : [
+    `Have you heard of ${business.name}? What do you think about them compared to the others you mentioned?`,
+    `For someone looking for a ${businessType}, which would you recommend? What about ${business.name}?`,
+    `I've been considering ${business.name}. How do they compare to the options you suggested?`,
+    `Someone recommended ${business.name} to me. Do you know anything about their reputation in the industry?`,
+    `I've been researching ${business.name}. Are they considered a top option for ${businessType}?`,
   ];
   
   const selectedTemplate = followUpTemplates[Math.floor(Math.random() * followUpTemplates.length)];
@@ -288,13 +306,21 @@ function generateCategoryBasedPrompt(business: BusinessInfo): string {
   const businessType = business.businessType || 'service provider';
   const location = business.location || 'the area';
   
-  const templates = [
+  const isLocalCat = !business.campaignScope || business.campaignScope === 'local';
+  const templates = isLocalCat ? [
     `What are the best ${businessType} services in ${location}?`,
     `Can you recommend a good ${businessType} in ${location}?`,
     `I'm looking for ${businessType} services near ${location}. Any suggestions?`,
     `Who are the top-rated ${businessType} providers in ${location}?`,
     `What should I look for when choosing a ${businessType} in ${location}?`,
     `Are there any highly recommended ${businessType} companies in ${location}?`,
+  ] : [
+    `What are the best ${businessType} companies available?`,
+    `Can you recommend a top-rated ${businessType}?`,
+    `I'm looking for a ${businessType}. Any suggestions?`,
+    `Who are the leading ${businessType} providers?`,
+    `What should I look for when choosing a ${businessType}?`,
+    `Are there any highly recommended ${businessType} companies?`,
   ];
   
   return templates[Math.floor(Math.random() * templates.length)];

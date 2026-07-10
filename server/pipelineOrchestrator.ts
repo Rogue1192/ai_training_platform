@@ -203,6 +203,7 @@ export async function runPipelineStep(
           industry: business.businessType || "",
           location: business.location || "",
           credibilityResult: credData.researchResults as any,
+          campaignScope: (campaign as any).campaignScope ?? "local",
         });
         // Fire outbound webhook to companion platform — ONLY for clients where we are building
         // their website (useWebhookForContent = true). For clients with their own existing site,
@@ -424,20 +425,30 @@ export async function runPipelineStep(
         let sessionsCreated = 0;
         let sessionsSkipped = 0;
 
+        // Scope-aware helpers
+        const campaignScope = (campaign as any).campaignScope ?? 'local';
+        const isLocal = campaignScope === 'local';
+
         for (const ql of queryLocations) {
           // (idempotency is now checked per-target below)
 
           // Build 8 prompt variations scoped to this specific query + location
+          // For national/ecommerce campaigns, omit the location so prompts don't
+          // anchor the business to a specific city.
           const expanded = expandQueryToPrompts({
             rawQuery: ql.searchQuery,
             businessName: business.name,
             businessType: business.businessType || "service provider",
-            location: ql.location,
+            location: isLocal ? ql.location : (ql.location || ""),
           });
           const prompts = expanded.all; // max 8 variations
 
-          const trainingGoal = `Train AI to recommend ${business.name} for ${ql.searchQuery} in ${ql.location}`;
-          const topic = `${business.name} — ${ql.searchQuery} — ${ql.location}`;
+          const trainingGoal = isLocal
+            ? `Train AI to recommend ${business.name} for ${ql.searchQuery} in ${ql.location}`
+            : `Train AI to recommend ${business.name} for ${ql.searchQuery}`;
+          const topic = isLocal
+            ? `${business.name} — ${ql.searchQuery} — ${ql.location}`
+            : `${business.name} — ${ql.searchQuery}`;
 
           for (const target of sessionTargets) {
             // Skip this specific ql+label combo if a session already exists
@@ -452,7 +463,9 @@ export async function runPipelineStep(
                 businessId: campaign.businessId,
                 campaignId,
                 campaignQueryLocationId: ql.id,
-                trainingName: `${business.name} | ${ql.location} | ${ql.searchQuery} | ${target.label}`,
+                trainingName: isLocal
+                  ? `${business.name} | ${ql.location} | ${ql.searchQuery} | ${target.label}`
+                  : `${business.name} | ${ql.searchQuery} | ${target.label}`,
                 topic,
                 targetAiProvider: target.provider as any,
                 targetAiModel: target.model,

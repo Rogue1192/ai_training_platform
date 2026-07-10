@@ -428,6 +428,11 @@ export const campaigns = pgTable("campaigns", {
   // Billing type — determines revenue rate for P&L calculation
   // 'white_label' = agency wholesale ($99/$149/$179), 'direct' = retail ($199/$299/$349), 'legacy' = costs only
   billingType: varchar("billingType", { length: 20 }).default("white_label").notNull(),
+  // Campaign scope — controls whether location is appended to queries and how prompts are framed
+  // 'local'      = service-area business (plumber, cleaner, roofer) — location appended to every query (default, ~90% of use cases)
+  // 'national'   = agency, franchise, SaaS, nationwide service — queries run without location suffix, national prompt framing
+  // 'ecommerce'  = online store, no physical presence — no location at all, product-discovery prompt framing, Organization schema
+  campaignScope: varchar("campaignScope", { length: 20 }).default("local").notNull(),
   // Metadata
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

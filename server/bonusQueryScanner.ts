@@ -204,9 +204,12 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
       let geminiSnippet: string | null = null;
 
       try {
-        const queryWithLocation = ql.location
-          ? `${adjacentQuery} in ${ql.location}`
-          : adjacentQuery;
+        // Append location only for local-scope campaigns
+        const campaignScope = (campaign as any).campaignScope ?? 'local';
+        const queryWithLocation =
+          campaignScope === 'local' && ql.location
+            ? `${adjacentQuery} in ${ql.location}`
+            : adjacentQuery;
         const result = await checkLLMVisibilityDirect(
           queryWithLocation,
           (business as any).name,

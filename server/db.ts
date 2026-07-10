@@ -1368,3 +1368,40 @@ export async function ensureModelConfigEnumValue(): Promise<void> {
  * Ensure the four screenshot columns exist on campaign_query_locations.
  * Safe to run on every startup — uses ADD COLUMN IF NOT EXISTS (idempotent).
  */
+export async function ensureScreenshotColumns(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`ALTER TABLE "rankSnapshots" ADD COLUMN IF NOT EXISTS "chatgptScreenshotUrl" text`;
+    await client`ALTER TABLE "rankSnapshots" ADD COLUMN IF NOT EXISTS "geminiScreenshotUrl" text`;
+    await client`ALTER TABLE "rankSnapshots" ADD COLUMN IF NOT EXISTS "aiOverviewScreenshotUrl" text`;
+    await client`ALTER TABLE "rankSnapshots" ADD COLUMN IF NOT EXISTS "rawResponseText" text`;
+    console.log('[DB] rankSnapshots screenshot columns ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureScreenshotColumns:', err.message);
+  }
+}
+
+/**
+ * Ensure the campaignScope column exists on campaigns.
+ * Controls whether location is appended to queries and how prompts/schema are framed.
+ * 'local' (default) = service-area business
+ * 'national' = agency/franchise/SaaS — no location suffix on queries
+ * 'ecommerce' = online store — no location at all, product-discovery framing
+ * Safe to run on every startup — uses IF NOT EXISTS so it's idempotent.
+ */
+export async function ensureCampaignScopeColumn(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE "campaigns"
+      ADD COLUMN IF NOT EXISTS "campaignScope" varchar(20) NOT NULL DEFAULT 'local'
+    `;
+    console.log('[DB] campaigns.campaignScope column ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureCampaignScopeColumn:', err.message);
+  }
+}

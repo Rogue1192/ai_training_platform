@@ -215,10 +215,14 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
   // (which iterates over `mentions`) still works without changes.
   const mentions: import("./dataforseoService").DirectVisibilityResult[] = [];
 
+  // Determine campaign scope — 'local' appends location, 'national'/'ecommerce' do not
+  const campaignScope = (campaign as any).campaignScope ?? 'local';
+
   for (const ql of queryLocations) {
-    const queryWithLocation = ql.location
-      ? `${ql.searchQuery} in ${ql.location}`
-      : ql.searchQuery;
+    const queryWithLocation =
+      campaignScope === 'local' && ql.location
+        ? `${ql.searchQuery} in ${ql.location}`
+        : ql.searchQuery;
 
     const mention = await checkLLMVisibilityDirect(
       queryWithLocation,

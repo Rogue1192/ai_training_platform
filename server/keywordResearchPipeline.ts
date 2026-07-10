@@ -404,11 +404,15 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
     // the index-lag problem that caused all-zero baselines.
     console.log(`[Pipeline] Running direct LLM visibility checks for ${queryLocations.length} queries (business: "${business.name}")`);
 
+    // Determine campaign scope — 'local' appends location, 'national'/'ecommerce' do not
+    const campaignScope = (campaign as any).campaignScope ?? 'local';
+
     for (const ql of queryLocations) {
-      // Build the query string — use searchQuery + location for specificity
-      const queryWithLocation = ql.location
-        ? `${ql.searchQuery} in ${ql.location}`
-        : ql.searchQuery;
+      // Build the query string — append location only for local-scope campaigns
+      const queryWithLocation =
+        campaignScope === 'local' && ql.location
+          ? `${ql.searchQuery} in ${ql.location}`
+          : ql.searchQuery;
 
       const mention = await checkLLMVisibilityDirect(
         queryWithLocation,

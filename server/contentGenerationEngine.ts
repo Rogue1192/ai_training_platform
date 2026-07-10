@@ -381,8 +381,10 @@ export async function generateAllContentPages(params: {
   industry: string;
   location: string;
   credibilityResult: CredibilityResearchResult;
+  /** 'local' | 'national' | 'ecommerce' — controls prompt framing and schema type */
+  campaignScope?: string;
 }): Promise<ContentGenerationResult> {
-  const { userId, businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult } = params;
+  const { userId, businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult, campaignScope = 'local' } = params;
   
   // Get the global Anthropic API key
   const apiKeyRecord = await getApiKeyByProvider("anthropic");
@@ -471,6 +473,7 @@ export async function generateAllContentPages(params: {
     credibilityResult,
     generatedPages,
     apiKey,
+    campaignScope,
   });
   
   // Store llm.txt as a special content page
@@ -662,8 +665,11 @@ export async function buildRichLlmTxt(params: {
   generatedPages: GeneratedPage[];
   /** Optional Anthropic API key — used to generate the AI-powered FAQ section */
   apiKey?: string;
+  /** 'local' | 'national' | 'ecommerce' — controls Service Areas label and FAQ framing */
+  campaignScope?: string;
 }): Promise<string> {
-  const { businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult, generatedPages, apiKey } = params;
+  const { businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult, generatedPages, apiKey, campaignScope = 'local' } = params;
+  const isLocal = campaignScope === 'local';
 
   const business = await getBusinessById(businessId);
   const queryLocations = await getQueryLocationsByCampaignId(campaignId);
@@ -751,14 +757,23 @@ export async function buildRichLlmTxt(params: {
     lines.push("");
   }
 
-  // ── Service Areas ───────────────────────────────────────────────────────────
-  const uniqueLocations = [...new Set(queryLocations.map(ql => ql.location))];
-  lines.push("## Service Areas");
-  lines.push("");
-  if (uniqueLocations.length > 0) {
-    uniqueLocations.forEach(loc => lines.push(`- ${loc}`));
+  // ── Service Areas / Markets Served ────────────────────────────────────────
+  const uniqueLocations = [...new Set(queryLocations.map(ql => ql.location).filter(Boolean))];
+  if (isLocal) {
+    lines.push("## Service Areas");
+    lines.push("");
+    if (uniqueLocations.length > 0) {
+      uniqueLocations.forEach(loc => lines.push(`- ${loc}`));
+    } else {
+      lines.push(`- ${location}`);
+    }
   } else {
-    lines.push(`- ${location}`);
+    lines.push("## Markets Served");
+    lines.push("");
+    lines.push(campaignScope === 'ecommerce' ? "- Online (ships/serves nationwide)" : "- United States (nationwide)");
+    if (uniqueLocations.length > 0) {
+      uniqueLocations.slice(0, 5).forEach(loc => lines.push(`- ${loc}`));
+    }
   }
   lines.push("");
 
@@ -785,11 +800,12 @@ export async function buildRichLlmTxt(params: {
       const topFacts = facts.filter(f => f.confidence !== "low").slice(0, 12);
       const factsForFaq = topFacts.map(f => `- [${f.category}] ${f.fact}`).join("\n");
 
-      const faqPrompt = `You are writing the Frequently Asked Questions section for the llm.txt machine-readable profile of a local business. This file is read by AI engines (ChatGPT, Perplexity, Google AI Overviews) to understand and recommend the business.
+      const scopeLabel = campaignScope === 'ecommerce' ? 'e-commerce brand' : campaignScope === 'national' ? 'national brand or agency' : 'local business';
+      const faqPrompt = `You are writing the Frequently Asked Questions section for the llm.txt machine-readable profile of a ${scopeLabel}. This file is read by AI engines (ChatGPT, Perplexity, Google AI Overviews) to understand and recommend the business.
 
 Business: ${businessName}
 Industry: ${industry}
-Service Areas: ${uniqueLocationsForFaq.join(", ") || location}
+${isLocal ? `Service Areas: ${uniqueLocationsForFaq.join(", ") || location}` : `Coverage: ${campaignScope === 'ecommerce' ? 'Nationwide online' : 'United States (nationwide)'}`}
 Website: ${websiteUrl}
 ${business?.specialties ? `Specialties: ${business.specialties}` : ""}
 ${business?.differentiators ? `Differentiators: ${business.differentiators}` : ""}
@@ -805,7 +821,7 @@ ${uniqueQueriesForFaq.slice(0, 10).map(q => `- ${q}`).join("\n") || "(General lo
 Generate exactly 10 FAQs that a potential customer would realistically ask. Rules:
 1. Questions must be in natural conversational phrasing (how people actually search)
 2. Answers must be 2-4 sentences, direct, factual, and grounded in the data above
-3. Cover these topics across the 10 questions: pricing/cost, service areas covered, qualifications/credentials, process/what to expect, availability/response time, warranties/guarantees, what makes them different from competitors, a specific service they are known for, how to get started/get a quote, and one location-specific question
+3. Cover these topics across the 10 questions: pricing/cost, ${isLocal ? 'service areas covered' : 'who they serve / ideal client'}, qualifications/credentials, process/what to expect, availability/response time, warranties/guarantees, what makes them different from competitors, a specific service they are known for, how to get started/get a quote, and one ${isLocal ? 'location-specific' : 'industry-specific'} question
 4. Include the business name naturally in at least 5 of the 10 answers
 5. Do NOT fabricate specific prices, phone numbers, or hours unless they appear in the verified facts above
 

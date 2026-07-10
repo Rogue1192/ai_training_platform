@@ -101,6 +101,7 @@ const emptyForm = {
   locations: ["", "", "", "", ""] as string[],
   // Step 3 — Package & Settings
   packageTierSlug: "starter" as "starter" | "growth" | "pro",
+  campaignScope: "local" as "local" | "national" | "ecommerce",
   clientType: "ai_only" as "ai_only" | "ai_plus_seo" | "ai_plus_seo_plus_build",
   billingType: "direct" as "direct" | "white_label" | "legacy",
   agencyId: "" as string,
@@ -192,8 +193,11 @@ export default function NewCampaignModal({
       if (!form.contactEmail.includes("@")) return { ok: false, error: "Enter a valid email address" };
     }
     if (step === 2) {
-      const filled = form.locations.filter((l) => l.trim().length > 0);
-      if (filled.length === 0) return { ok: false, error: "At least one location is required" };
+      // Locations are required for local scope only
+      if (form.campaignScope === 'local') {
+        const filled = form.locations.filter((l) => l.trim().length > 0);
+        if (filled.length === 0) return { ok: false, error: "At least one location is required for local campaigns" };
+      }
     }
     return { ok: true };
   };
@@ -209,8 +213,8 @@ export default function NewCampaignModal({
 
   const handleSubmit = () => {
     const filledLocations = form.locations.filter((l) => l.trim().length > 0);
-    if (filledLocations.length === 0) {
-      toast.error("At least one location is required");
+    if (form.campaignScope === 'local' && filledLocations.length === 0) {
+      toast.error("At least one location is required for local campaigns");
       return;
     }
 
@@ -237,6 +241,7 @@ export default function NewCampaignModal({
         : undefined,
       specialties: form.specialties.trim() || undefined,
       locations: filledLocations,
+      campaignScope: form.campaignScope,
       packageTierSlug: form.packageTierSlug,
       clientType: form.clientType,
       billingType: form.billingType,
@@ -460,17 +465,29 @@ export default function NewCampaignModal({
         {/* ── Step 2: Locations ── */}
         {step === 2 && (
           <div className="space-y-4">
-            <SectionTitle icon={MapPin} title="Service Area Locations" />
+            <SectionTitle icon={MapPin} title={form.campaignScope === 'local' ? 'Service Area Locations' : 'Target Markets (Optional)'} />
             <div className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 flex gap-2 text-sm">
               <Info className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
               <div className="text-blue-300 space-y-1">
-                <p className="font-medium">More locations = more AI coverage</p>
-                <p>
-                  The AI trains on each location separately. With the{" "}
-                  <strong>{selectedPackage.name}</strong> plan ({selectedPackage.maxQuerySlots} slots),
-                  adding more cities spreads coverage across more markets.
-                </p>
-                <p className="text-xs">{selectedPackage.hint}</p>
+                {form.campaignScope === 'local' ? (
+                  <>
+                    <p className="font-medium">More locations = more AI coverage</p>
+                    <p>
+                      The AI trains on each location separately. With the{" "}
+                      <strong>{selectedPackage.name}</strong> plan ({selectedPackage.maxQuerySlots} slots),
+                      adding more cities spreads coverage across more markets.
+                    </p>
+                    <p className="text-xs">{selectedPackage.hint}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium">Optional: add specific markets or regions</p>
+                    <p>
+                      For {form.campaignScope === 'ecommerce' ? 'e-commerce' : 'national'} campaigns, location anchors are removed from AI queries.
+                      You can optionally list key markets (e.g. "New York, NY") for reference — or leave all fields blank.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 
@@ -483,7 +500,7 @@ export default function NewCampaignModal({
                   <Input
                     value={loc}
                     onChange={(e) => setLoc(idx, e.target.value)}
-                    placeholder={`City, State — e.g. Dallas, TX`}
+                    placeholder={form.campaignScope === 'local' ? `City, State — e.g. Dallas, TX` : `Market / region (optional) — e.g. New York, NY`}
                     className="flex-1"
                   />
                   {form.locations.length > 1 && (
@@ -531,6 +548,45 @@ export default function NewCampaignModal({
         {step === 3 && (
           <div className="space-y-4">
             <SectionTitle icon={Package} title="Package & Settings" />
+
+            {/* Campaign Scope selector */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Campaign Scope</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: "local", label: "Local", desc: "City / region targeting" },
+                  { value: "national", label: "National", desc: "Nationwide / agency" },
+                  { value: "ecommerce", label: "E-Commerce", desc: "Online store / brand" },
+                ] as const).map((s) => {
+                  const isSel = form.campaignScope === s.value;
+                  return (
+                    <button
+                      key={s.value}
+                      type="button"
+                      onClick={() => set("campaignScope", s.value)}
+                      className={`text-left rounded-lg border p-3 transition-all ${
+                        isSel
+                          ? "border-primary bg-primary/10 ring-1 ring-primary"
+                          : "border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <p className="font-semibold text-sm">{s.label}</p>
+                      <p className="text-xs text-muted-foreground">{s.desc}</p>
+                      {isSel && (
+                        <div className="mt-1.5 h-4 w-4 rounded-full bg-primary flex items-center justify-center">
+                          <Check className="h-2.5 w-2.5 text-primary-foreground" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {form.campaignScope !== "local" && (
+                <p className="text-xs text-amber-400">
+                  Non-local scope: location fields become optional and AI training prompts will not include city/state anchors.
+                </p>
+              )}
+            </div>
 
             {/* Package tier cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

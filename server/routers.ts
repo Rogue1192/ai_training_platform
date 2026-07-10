@@ -1273,6 +1273,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         agencyPackageTier: z.enum(['starter', 'growth', 'pro']).optional(),
         source: z.enum(["rogue", "ranklocal"]).optional(),
         specialties: z.string().optional(),
+        campaignScope: z.enum(["local", "national", "ecommerce"]).default("local"),
       }))
       .mutation(async ({ ctx, input }) => {
         const { getDb } = await import("./db");
@@ -1424,6 +1425,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           maxQuerySlots: resolvedMaxQuerySlots,
           selectedPackage: input.selectedPackage || null,
           billingType: input.billingType || (input.agencyId ? "white_label" : "direct"),
+          campaignScope: input.campaignScope ?? "local",
         });
 
         const { initializeTrial } = await import("./trialManager");
@@ -1677,6 +1679,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           industry: business.businessType || "",
           location: business.location || "",
           credibilityResult: credData.researchResults as any,
+          campaignScope: (campaign as any).campaignScope ?? "local",
         });
       }),
     getContentPages: protectedProcedure
@@ -1829,6 +1832,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           location: business.location ?? "",
           credibilityResult,
           generatedPages,
+          campaignScope: (campaign as any).campaignScope ?? "local",
         });
 
         // Upsert the llm.txt content page

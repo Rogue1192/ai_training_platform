@@ -32,7 +32,7 @@
 
 import { getDb } from "./db";
 import { parseLocations, primaryLocation } from "@shared/location";
-import { businesses, credibilityData, contentPages } from "../drizzle/schema";
+import { businesses, credibilityData, contentPages, campaigns } from "../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
 import type { CredibilityFact } from "./credibilityResearchEngine";
 
@@ -822,6 +822,11 @@ export async function buildSchemaPackageForBusiness(
     }
   }
 
+  // Load campaign for scope information
+  const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+  const campaignScope = (campaign as any)?.campaignScope ?? 'local';
+  const isNationalOrEcom = campaignScope === 'national' || campaignScope === 'ecommerce';
+
   // Load all content pages for this campaign
   const pages = await db
     .select()
@@ -836,6 +841,11 @@ export async function buildSchemaPackageForBusiness(
   // Parse all locations from the location field (";"-delimited, with a legacy
   // "City, ST" comma fallback — see shared/location.ts).
   const locations = parseLocations(business.location);
+
+  // For national/ecommerce campaigns, override locations so areaServed is "United States"
+  const effectiveLocations = isNationalOrEcom
+    ? [] // will be overridden below after buildSiteWideSchema
+    : locations;
 
   // Build site-wide schema
   const siteWideSchema = buildSiteWideSchema(
@@ -872,9 +882,22 @@ export async function buildSchemaPackageForBusiness(
       houzzUrl: business.houzzUrl,
     },
     allFacts,
-    locations,
+    effectiveLocations,
     publishedPageUrls
   );
+
+  // For national/ecommerce campaigns, replace City-typed areaServed with a
+  // Country-typed entry so schema.org correctly reflects nationwide coverage.
+  if (isNationalOrEcom) {
+    siteWideSchema.areaServed = [{
+      "@type": "Country",
+      name: "United States",
+    }];
+    // Also upgrade the @type to Organization for national brands / agencies
+    if (campaignScope === 'national') {
+      siteWideSchema["@type"] = "Organization";
+    }
+  }
 
   // Build per-page schemas
   const pageSchemas: Record<string, SchemaBlock> = {};
