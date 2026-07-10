@@ -438,6 +438,10 @@ export const campaigns = pgTable("campaigns", {
   // No-charge flag — when true, this campaign is bundled into a larger package and should not be billed individually
   // Suppresses: Stripe subscription creation, cost tracking entries, and billing-related alerts
   noCharge: boolean("noCharge").default(false).notNull(),
+  // Resume tracking — set when an admin requests a pipeline resume/retry.
+  // The pipeline reads this to know it should re-queue from the next incomplete stage.
+  // Cleared automatically once the pipeline picks it up and starts running.
+  resumeRequestedAt: timestamp("resumeRequestedAt"),
   // Metadata
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

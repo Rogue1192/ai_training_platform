@@ -1483,6 +1483,8 @@ export async function ensureCampaignColumns(): Promise<void> {
     { name: "campaignScope",      ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "campaignScope" varchar(20) NOT NULL DEFAULT 'local'` },
     // No-charge flag
     { name: "noCharge",           ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "noCharge" boolean NOT NULL DEFAULT false` },
+    // Resume tracking — nullable timestamp, set by the admin resume action, cleared by the pipeline
+    { name: "resumeRequestedAt",  ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "resumeRequestedAt" timestamp` },
   ];
 
   for (const col of columns) {

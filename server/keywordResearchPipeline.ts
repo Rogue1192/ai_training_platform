@@ -222,14 +222,29 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
 
     if (goldenTemplate) {
       // Use cached golden template — no API call needed!
-      topKeywords = goldenTemplate.slice(0, maxQueries).map((k) => ({
-        keyword: k.keyword,
-        aiSearchVolume: k.aiSearchVolume,
-        searchVolume: k.searchVolume,
-        searchIntent: k.searchIntent,
+      // Re-expand the cached bare keyword seeds through the long-tail geo-specific
+      // templates so the stored queries are full sentences with city+state inline
+      // (e.g. "best hvac repair services in Chino, CA") rather than bare fragments
+      // (e.g. "hvac", "best repair") that were generated before the template upgrade.
+      const primaryLocation = allLocations[0] ?? null;
+      const { buildServiceSeeds, expandToBuyerIntentQueries: expandQueries } = await import("./dataforseoService");
+      const cachedSeeds = goldenTemplate
+        .slice(0, 8)
+        .map((k) => k.keyword)
+        .filter(Boolean);
+      // Prefer seeds derived from businessType+specialties (more accurate) but fall
+      // back to the raw cached keywords if no type signal is available.
+      const seeds = buildServiceSeeds(business.businessType, business.specialties);
+      const seedsToUse = seeds.length > 0 ? seeds : cachedSeeds;
+      const expandedKeywords = expandQueries(seedsToUse, maxQueries, primaryLocation ?? undefined);
+      topKeywords = expandedKeywords.slice(0, maxQueries).map((kw) => ({
+        keyword: kw,
+        aiSearchVolume: 0,   // volume not available from cache expansion; AI volume check runs later
+        searchVolume: 0,
+        searchIntent: "commercial",
       }));
       usedCache = true;
-      console.log(`[Pipeline] Using golden template for "${industry}" — saved API costs!`);
+      console.log(`[Pipeline] Using golden template for "${industry}" — expanded ${topKeywords.length} long-tail geo-specific queries (location: ${primaryLocation ?? "none"}) — saved API costs!`);
     } else {
       // Step 2: Run fresh keyword research
       if (!business.website) {
@@ -240,6 +255,9 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
         maxKeywords: maxQueries,
         businessType: business.businessType,
         specialties: business.specialties,
+        // Pass the first location so queries are generated with city+state inline
+        // (e.g. "best hvac repair services in Chino, CA") rather than bare fragments.
+        primaryLocation: allLocations[0] ?? null,
       });
 
       topKeywords = research.topKeywords;

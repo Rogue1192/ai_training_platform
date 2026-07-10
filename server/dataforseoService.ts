@@ -434,24 +434,75 @@ export function buildServiceSeeds(
   return seeds.slice(0, 8);
 }
 
-/** Expand seed service phrases into buyer-intent query candidates. */
-export function expandToBuyerIntentQueries(seeds: string[], maxKeywords: number): string[] {
-  const templates = (s: string) => [
-    `${s} near me`,
-    `best ${s}`,
-    `${s} company`,
-    `affordable ${s}`,
-    `top rated ${s}`,
+/**
+ * Expand seed service phrases into long-tail, geo-specific, high-buying-intent queries.
+ *
+ * Every query is phrased as a natural-language sentence a homeowner or business
+ * owner would type into ChatGPT or Google AI Overview — NOT a bare keyword fragment.
+ * The city+state is baked directly into the query string so the stored query is
+ * immediately meaningful without any post-processing location suffix.
+ *
+ * Pattern philosophy (mirrors Titan Cleaning gold-standard):
+ *   - Always include "in {city}, {state}" or "near {city}, {state}" inline
+ *   - Mix question-form queries ("who", "what", "how to find") with noun-phrase queries
+ *   - Include audience qualifiers ("for busy families", "for older homes", "for small businesses")
+ *   - Include urgency/situation qualifiers ("emergency", "same-day", "last-minute")
+ *   - Include eco/quality qualifiers ("eco-friendly", "licensed and insured", "affordable")
+ *   - Avoid bare fragments like "hvac", "best repair", "company near me"
+ */
+export function expandToBuyerIntentQueries(
+  seeds: string[],
+  maxKeywords: number,
+  location?: string   // e.g. "Chino, CA" — baked into every query
+): string[] {
+  const loc = location?.trim() || "";
+  const inLoc  = loc ? ` in ${loc}`  : "";
+  const nearLoc = loc ? ` near ${loc}` : "";
+  const forLoc  = loc ? ` for ${loc} residents` : "";
+
+  const templates = (s: string): string[] => [
+    // ── Noun-phrase + geo ───────────────────────────────────────────────────
+    `best ${s} services${inLoc}`,
+    `affordable ${s} options${inLoc}`,
+    `licensed and insured ${s} companies${inLoc}`,
+    `top-rated ${s} professionals${nearLoc}`,
+    `reliable ${s} contractors${inLoc}`,
+    // ── Question-form (high AI-Overview match rate) ─────────────────────────
+    `who are the best ${s} companies${inLoc}`,
+    `how to find affordable ${s} options${inLoc}`,
+    `what ${s} services are available${inLoc}`,
+    `are there any eco-friendly ${s} providers${inLoc}`,
+    `which ${s} company is most trusted${inLoc}`,
+    // ── Audience-qualified ─────────────────────────────────────────────────
+    `affordable ${s} options for busy families${inLoc}`,
+    `${s} services for small businesses${inLoc}`,
+    `${s} solutions for older homes${inLoc}`,
+    `${s} help${forLoc}`,
+    // ── Urgency / situation ────────────────────────────────────────────────
+    `emergency ${s} services${inLoc}`,
+    `same-day ${s} companies${inLoc}`,
+    `last-minute ${s} options${nearLoc}`,
+    // ── Comparison / decision ──────────────────────────────────────────────
+    `best local ${s} options${inLoc}`,
+    `${s} companies with free estimates${inLoc}`,
+    `${s} specialists with good reviews${inLoc}`,
   ];
+
   const out: string[] = [];
   const seen = new Set<string>();
   const push = (q: string) => {
-    if (!seen.has(q)) { seen.add(q); out.push(q); }
+    const norm = q.toLowerCase().trim();
+    if (!seen.has(norm)) { seen.add(norm); out.push(q); }
   };
-  // Round-robin over template index so each seed contributes its primary variant first.
+
+  // Round-robin over template index so each seed contributes its primary variant
+  // first — ensures diversity across seeds before exhausting any single seed.
   const perSeed = seeds.map(templates);
-  for (let t = 0; t < 5; t++) {
-    for (const variants of perSeed) push(variants[t]!);
+  const maxTemplates = templates("").length;
+  for (let t = 0; t < maxTemplates; t++) {
+    for (const variants of perSeed) {
+      if (variants[t]) push(variants[t]!);
+    }
   }
   return out.slice(0, Math.max(maxKeywords * 3, 15));
 }
@@ -497,9 +548,11 @@ export async function runKeywordResearchPipeline(
     specialties?: string | null;
     locationCode?: number;
     languageCode?: string;
+    /** Primary location string (e.g. "Chino, CA") baked into every generated query. */
+    primaryLocation?: string | null;
   }
 ): Promise<KeywordResearchResult> {
-  const { maxKeywords, businessType, specialties, locationCode = 2840, languageCode = "en" } = options;
+  const { maxKeywords, businessType, specialties, locationCode = 2840, languageCode = "en", primaryLocation } = options;
 
   console.log(`[DataForSEO] Starting keyword research pipeline for ${domain} (max: ${maxKeywords})`);
 
@@ -507,7 +560,7 @@ export async function runKeywordResearchPipeline(
   // type + specialties. These are relevant by construction and are the primary
   // source; the domain's ranked keywords are only a supplement below.
   const seeds = buildServiceSeeds(businessType, specialties);
-  const seededQueries = seeds.length ? expandToBuyerIntentQueries(seeds, maxKeywords) : [];
+  const seededQueries = seeds.length ? expandToBuyerIntentQueries(seeds, maxKeywords, primaryLocation ?? undefined) : [];
   const relevanceVocab = seedStemVocab(seeds);
   if (seeds.length) {
     console.log(`[DataForSEO] Seeded ${seededQueries.length} buyer-intent queries from ${seeds.length} service seed(s): ${seeds.join(" | ")}`);
@@ -535,10 +588,18 @@ export async function runKeywordResearchPipeline(
   );
 
   // Step 3: Candidate set = seeded queries + on-topic domain keywords (deduped).
+  // Domain keywords that pass the relevance filter are bare fragments (e.g. "hvac",
+  // "a/c repair") — expand them through the same long-tail geo-specific templates
+  // so every stored query is a full sentence with city+state inline.
   const siteByKeyword = new Map(relevantSiteKeywords.map((k) => [k.keyword.toLowerCase(), k]));
+  const domainKeywordSeeds = relevantSiteKeywords.map((k) => k.keyword);
+  const expandedDomainQueries = domainKeywordSeeds.length
+    ? expandToBuyerIntentQueries(domainKeywordSeeds, maxKeywords, primaryLocation ?? undefined)
+    : [];
   const candidateStrings: string[] = [];
   const seenCandidate = new Set<string>();
-  for (const q of [...seededQueries, ...relevantSiteKeywords.map((k) => k.keyword)]) {
+  // Seeded queries first (highest priority), then expanded domain queries.
+  for (const q of [...seededQueries, ...expandedDomainQueries]) {
     const key = q.toLowerCase();
     if (!seenCandidate.has(key)) {
       seenCandidate.add(key);
@@ -559,67 +620,34 @@ export async function runKeywordResearchPipeline(
   const aiVolumeMap = new Map(aiVolumes.map((v) => [v.keyword.toLowerCase(), v]));
   console.log(`[DataForSEO] Got AI search volume for ${aiVolumes.length} candidate keywords`);
 
+  // All candidates are now long-tail sentences; the siteByKeyword map keys are bare
+  // fragments so they won't match directly. We still try a lookup for any bare
+  // keywords that may have slipped through, but default to 0 / "commercial" otherwise.
   const merged = candidateStrings.map((kw) => {
     const site = siteByKeyword.get(kw.toLowerCase());
     return {
       keyword: kw,
       searchVolume: site?.searchVolume || 0,
       aiSearchVolume: aiVolumeMap.get(kw.toLowerCase())?.aiSearchVolume || 0,
-      // Seeded queries are buyer-intent by construction; domain keywords carry their own intent.
+      // All seeded / expanded queries are buyer-intent by construction.
       searchIntent: site?.searchIntent || "commercial",
     };
   });
 
-  // Step 5: Anchor-slot strategy.
-  // Each bare seed (e.g. "house cleaning") gets a guaranteed slot before any
-  // modifier variants ("best house cleaning", "top rated house cleaning", etc.)
-  // are allowed to fill remaining capacity.  This prevents a scenario where
-  // every slot is consumed by modifier-heavy variants and the foundational
-  // service term is never trained on.
-  //
-  // Algorithm:
-  //   a) Sort the full candidate list by AI volume desc (tiebreak: SEO volume).
-  //   b) Walk the sorted list; mark the FIRST occurrence of each bare seed as
-  //      an "anchor" and promote it to the front of the output list.
-  //   c) Fill remaining slots from the sorted list, skipping already-selected.
-
+  // Step 5: Sort by AI volume desc (tiebreak: SEO volume) and take top N.
+  // All candidates are now long-tail geo-specific sentences, so the old anchor-slot
+  // strategy (which reserved slots for bare seed fragments) is no longer needed.
+  // The round-robin expansion in expandToBuyerIntentQueries already ensures each
+  // service seed contributes its primary variant before any seed is exhausted.
   merged.sort((a, b) => {
     if (b.aiSearchVolume !== a.aiSearchVolume) return b.aiSearchVolume - a.aiSearchVolume;
     return b.searchVolume - a.searchVolume;
   });
 
-  // Build a normalised set of bare seed strings for anchor detection.
-  const bareSeedSet = new Set(seeds.map((s) => s.toLowerCase().trim()));
-
-  // Identify the best (highest-volume) representative of each bare seed.
-  const anchorMap = new Map<string, (typeof merged)[0]>(); // seed -> best candidate
-  for (const item of merged) {
-    const kw = item.keyword.toLowerCase();
-    for (const seed of bareSeedSet) {
-      // A keyword is the bare-seed representative if it IS the seed (possibly
-      // with a location suffix added later) or equals it exactly.
-      // We match: keyword starts with seed and contains no extra modifier words
-      // ("best", "top", "affordable", "near me", "company").
-      const withoutSeed = kw.replace(seed, "").trim();
-      const isModified = /\b(best|top|affordable|near me|company|rated|trusted|leading|#1|number one)\b/.test(withoutSeed);
-      if ((kw === seed || kw.startsWith(seed + " ")) && !isModified) {
-        if (!anchorMap.has(seed)) anchorMap.set(seed, item);
-        break;
-      }
-    }
-  }
-
-  const anchors = Array.from(anchorMap.values());
-  const anchorKeywords = new Set(anchors.map((a) => a.keyword.toLowerCase()));
-
-  // Fill remaining slots from the volume-sorted list, skipping anchors already included.
-  const fillers = merged.filter((item) => !anchorKeywords.has(item.keyword.toLowerCase()));
-
-  const combined = [...anchors, ...fillers];
-  const topKeywords = combined.slice(0, maxKeywords);
+  const topKeywords = merged.slice(0, maxKeywords);
 
   console.log(
-    `[DataForSEO] Pipeline complete: ${topKeywords.length} on-topic keywords selected from ${candidateStrings.length} candidates (${anchors.length} anchor slots reserved for bare service terms)`
+    `[DataForSEO] Pipeline complete: ${topKeywords.length} long-tail geo-specific queries selected from ${candidateStrings.length} candidates`
   );
 
   return {
