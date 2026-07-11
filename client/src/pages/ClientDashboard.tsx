@@ -274,7 +274,7 @@ function WinCard({ win, index }: { win: any; index: number }) {
     aiOverview: Eye,
   };
   const platformColors: Record<string, string> = {
-    chatgpt: "#22c55e",
+    chatgpt: "#3b82f6",
     gemini: "#a855f7",
     aiOverview: "#f97316",
   };
@@ -387,12 +387,12 @@ function VisibilityTrendChart({ trends }: { trends: any[] }) {
       <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
         <defs>
           <linearGradient id="gradOverall" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
-            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.4} />
+            <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
           </linearGradient>
           <linearGradient id="gradChatGPT" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-            <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
           </linearGradient>
           <linearGradient id="gradGemini" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
@@ -415,8 +415,8 @@ function VisibilityTrendChart({ trends }: { trends: any[] }) {
             color: "#e2e8f0",
           }}
         />
-        <Area type="monotone" dataKey="overall" stroke="#3b82f6" strokeWidth={2.5} fill="url(#gradOverall)" name="Overall" />
-        <Area type="monotone" dataKey="chatgpt" stroke="#22c55e" strokeWidth={1.5} fill="url(#gradChatGPT)" name="ChatGPT" />
+        <Area type="monotone" dataKey="overall" stroke="#22c55e" strokeWidth={2.5} fill="url(#gradOverall)" name="Overall" />
+        <Area type="monotone" dataKey="chatgpt" stroke="#3b82f6" strokeWidth={1.5} fill="url(#gradChatGPT)" name="ChatGPT" />
         <Area type="monotone" dataKey="gemini" stroke="#a855f7" strokeWidth={1.5} fill="url(#gradGemini)" name="Gemini" />
         <Area type="monotone" dataKey="aiOverview" stroke="#f97316" strokeWidth={1.5} fill="url(#gradAI)" name="AI Overview" />
         <Legend
@@ -435,7 +435,7 @@ function PlatformBreakdown({ score }: { score: any }) {
   const data = [
     { name: "AI Overview", value: score.aiOverview, fill: "#f97316" },
     { name: "Gemini", value: score.gemini, fill: "#a855f7" },
-    { name: "ChatGPT", value: score.chatgpt, fill: "#22c55e" },
+    { name: "ChatGPT", value: score.chatgpt, fill: "#3b82f6" },
   ];
 
   return (
@@ -749,7 +749,7 @@ export default function ClientDashboard() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {([
                 { label: "Overall", value: baselineScore.overall, color: getScoreColor(baselineScore.overall) },
-                { label: "ChatGPT", value: baselineScore.chatgpt, color: "#22c55e" },
+                { label: "ChatGPT", value: baselineScore.chatgpt, color: "#3b82f6" },
                 { label: "Gemini", value: baselineScore.gemini, color: "#a855f7" },
                 { label: "AI Overview", value: baselineScore.aiOverview, color: "#f97316" },
               ] as { label: string; value: number; color: string }[]).map(({ label, value, color }) => (
@@ -779,7 +779,7 @@ export default function ClientDashboard() {
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <ScoreComparisonCard title="Overall" current={currentScore.overall} baseline={baselineScore.overall} icon={Target} />
-              <ScoreComparisonCard title="ChatGPT" current={currentScore.chatgpt} baseline={baselineScore.chatgpt} icon={Bot} platformColor="#22c55e" />
+              <ScoreComparisonCard title="ChatGPT" current={currentScore.chatgpt} baseline={baselineScore.chatgpt} icon={Bot} platformColor="#3b82f6" />
               <ScoreComparisonCard title="Gemini" current={currentScore.gemini} baseline={baselineScore.gemini} icon={Sparkles} platformColor="#a855f7" />
               <ScoreComparisonCard title="AI Overview" current={currentScore.aiOverview} baseline={baselineScore.aiOverview} icon={Eye} platformColor="#f97316" />
             </div>
