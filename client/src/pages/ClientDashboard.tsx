@@ -41,8 +41,6 @@ import {
   Video,
   Play,
   Star,
-  AlertTriangle,
-  RefreshCw,
 } from "lucide-react";
 
 // ============= Score Color Utilities =============
@@ -607,52 +605,6 @@ function BonusWinsBanner({ bonusResults }: { bonusResults: any[] }) {
   );
 }
 
-// ============= Drop-off Alert =============
-
-function DropoffAlert({ dropoffEvents }: { dropoffEvents: any[] }) {
-  const openDropoffs = dropoffEvents.filter((e) => !e.recoveredAt);
-  if (openDropoffs.length === 0) return null;
-
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.25 }}
-    >
-      <div className="rounded-2xl border border-red-500/30 bg-gradient-to-br from-red-500/10 via-red-900/5 to-transparent p-5">
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-full bg-red-500/20 flex items-center justify-center shrink-0 mt-0.5">
-            <AlertTriangle className="w-4 h-4 text-red-400" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-red-300 mb-1">
-              Visibility Drop Detected — Re-optimization Initiated
-            </h3>
-            <p className="text-xs text-red-400/70 mb-3">
-              Your business stopped appearing for {openDropoffs.length} {openDropoffs.length === 1 ? "query" : "queries"}. Our team has already initiated a new optimization campaign to restore your visibility.
-            </p>
-            <div className="space-y-1.5">
-              {openDropoffs.slice(0, 5).map((e: any, i: number) => (
-                <div key={i} className="flex items-center gap-2 text-xs text-red-300/80">
-                  <RefreshCw className="w-3 h-3 text-red-400 shrink-0" />
-                  <span className="font-medium">{e.searchQuery}</span>
-                  <span className="text-red-500/50">·</span>
-                  <span className="capitalize" style={{ color: e.platform === 'chatgpt' ? '#22c55e' : e.platform === 'gemini' ? '#a855f7' : '#f97316' }}>
-                    {e.platform === 'chatgpt' ? 'ChatGPT' : e.platform === 'gemini' ? 'Gemini' : 'AI Overview'}
-                  </span>
-                </div>
-              ))}
-              {openDropoffs.length > 5 && (
-                <p className="text-xs text-red-500/50">+{openDropoffs.length - 5} more</p>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </motion.section>
-  );
-}
-
 // ============= Main Dashboard Component =============
 
 export default function ClientDashboard() {
@@ -665,11 +617,6 @@ export default function ClientDashboard() {
   );
 
   const { data: bonusResults = [] } = trpc.rankTracking.getBonusResultsByToken.useQuery(
-    { token },
-    { enabled: !!token, refetchOnWindowFocus: false }
-  );
-
-  const { data: dropoffEvents = [] } = trpc.rankTracking.getDropoffEventsByToken.useQuery(
     { token },
     { enabled: !!token, refetchOnWindowFocus: false }
   );
@@ -808,9 +755,6 @@ export default function ClientDashboard() {
             </div>
           </motion.section>
         )}
-
-        {/* Drop-off Alert — shown above wins if any open drop-offs exist */}
-        <DropoffAlert dropoffEvents={dropoffEvents} />
 
         {/* Wins Section */}
         {report.recentWins.length > 0 && (

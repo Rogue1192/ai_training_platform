@@ -34,20 +34,22 @@ export interface PackageTier {
   monthlyPriceWhiteLabel: number; // Agency wholesale price (cents)
 }
 
+// Tier slots are simple flat limits — no maxQueries × maxLocations math.
+// Clients put in any combination of queries + locations; total combos must not exceed their tier slot limit.
 export const PACKAGE_TIERS: Record<string, PackageTier> = {
-  // Trial (default for all new campaigns) — 15 slots, same as Starter
-  trial:   { id: "trial",   name: "14-Day Trial", maxQuerySlots: 15, maxQueries: 5,  maxLocations: 3,  monthlyPriceDirect: 0,     monthlyPriceWhiteLabel: 0     },
-  // Current tier slugs (new query-budget model)
-  starter: { id: "starter", name: "Starter",      maxQuerySlots: 15, maxQueries: 5,  maxLocations: 3,  monthlyPriceDirect: 19900, monthlyPriceWhiteLabel: 9900  },
-  growth:  { id: "growth",  name: "Growth",       maxQuerySlots: 30, maxQueries: 6,  maxLocations: 5,  monthlyPriceDirect: 29900, monthlyPriceWhiteLabel: 14900 },
-  pro:     { id: "pro",     name: "Pro",          maxQuerySlots: 50, maxQueries: 10, maxLocations: 5,  monthlyPriceDirect: 34900, monthlyPriceWhiteLabel: 17900 },
-  // Legacy tier slugs (kept for backward compat with existing campaigns)
-  starter_5loc:  { id: "starter_5loc",  name: "Starter — Territory Control",  maxQuerySlots: 25, maxQueries: 5,  maxLocations: 5,  monthlyPriceDirect: 69700, monthlyPriceWhiteLabel: 9900  },
-  growth_5loc:   { id: "growth_5loc",   name: "Growth — Territory Control",   maxQuerySlots: 40, maxQueries: 8,  maxLocations: 5,  monthlyPriceDirect: 79700, monthlyPriceWhiteLabel: 14900 },
-  pro_5loc:      { id: "pro_5loc",      name: "Pro — Territory Control",      maxQuerySlots: 50, maxQueries: 10, maxLocations: 5,  monthlyPriceDirect: 89700, monthlyPriceWhiteLabel: 17900 },
-  starter_10loc: { id: "starter_10loc", name: "Starter — Market Dominance",   maxQuerySlots: 50, maxQueries: 5,  maxLocations: 10, monthlyPriceDirect: 109700, monthlyPriceWhiteLabel: 9900 },
-  growth_10loc:  { id: "growth_10loc",  name: "Growth — Market Dominance",    maxQuerySlots: 80, maxQueries: 8,  maxLocations: 10, monthlyPriceDirect: 129700, monthlyPriceWhiteLabel: 14900 },
-  pro_10loc:     { id: "pro_10loc",     name: "Pro — Market Dominance",       maxQuerySlots: 100, maxQueries: 10, maxLocations: 10, monthlyPriceDirect: 149700, monthlyPriceWhiteLabel: 17900 },
+  // Trial (default for all new campaigns) — same slot limit as Starter
+  trial:   { id: "trial",   name: "14-Day Trial", maxQuerySlots: 15, maxQueries: 15, maxLocations: 99, monthlyPriceDirect: 0,     monthlyPriceWhiteLabel: 0     },
+  // Paid tiers
+  starter: { id: "starter", name: "Starter",      maxQuerySlots: 15, maxQueries: 15, maxLocations: 99, monthlyPriceDirect: 19900, monthlyPriceWhiteLabel: 9900  },
+  growth:  { id: "growth",  name: "Growth",       maxQuerySlots: 25, maxQueries: 25, maxLocations: 99, monthlyPriceDirect: 29900, monthlyPriceWhiteLabel: 14900 },
+  pro:     { id: "pro",     name: "Pro",          maxQuerySlots: 50, maxQueries: 50, maxLocations: 99, monthlyPriceDirect: 34900, monthlyPriceWhiteLabel: 17900 },
+  // Legacy aliases — map to the correct flat slot limit for backward compat
+  starter_5loc:  { id: "starter_5loc",  name: "Starter", maxQuerySlots: 15, maxQueries: 15, maxLocations: 99, monthlyPriceDirect: 19900, monthlyPriceWhiteLabel: 9900  },
+  growth_5loc:   { id: "growth_5loc",   name: "Growth",  maxQuerySlots: 25, maxQueries: 25, maxLocations: 99, monthlyPriceDirect: 29900, monthlyPriceWhiteLabel: 14900 },
+  pro_5loc:      { id: "pro_5loc",      name: "Pro",     maxQuerySlots: 50, maxQueries: 50, maxLocations: 99, monthlyPriceDirect: 34900, monthlyPriceWhiteLabel: 17900 },
+  starter_10loc: { id: "starter_10loc", name: "Starter", maxQuerySlots: 15, maxQueries: 15, maxLocations: 99, monthlyPriceDirect: 19900, monthlyPriceWhiteLabel: 9900  },
+  growth_10loc:  { id: "growth_10loc",  name: "Growth",  maxQuerySlots: 25, maxQueries: 25, maxLocations: 99, monthlyPriceDirect: 29900, monthlyPriceWhiteLabel: 14900 },
+  pro_10loc:     { id: "pro_10loc",     name: "Pro",     maxQuerySlots: 50, maxQueries: 50, maxLocations: 99, monthlyPriceDirect: 34900, monthlyPriceWhiteLabel: 17900 },
 };
 
 export const TRIAL_DURATION_DAYS = 14;

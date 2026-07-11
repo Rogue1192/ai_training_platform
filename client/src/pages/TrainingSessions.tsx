@@ -357,10 +357,14 @@ export default function TrainingSessions() {
     return Array.from(groups.values()).sort((a, b) => a.businessName.localeCompare(b.businessName));
   }, [filteredSessions]);
 
-  const [collapsedBusinesses, setCollapsedBusinesses] = useState<Set<string>>(new Set());
+  // Default: all groups collapsed — use a sentinel so we can lazily init from groupedSessions
+  const [collapsedBusinesses, setCollapsedBusinesses] = useState<Set<string> | null>(null);
+  // Resolve: null means "all collapsed" (use all group keys)
+  const resolvedCollapsed = collapsedBusinesses ?? new Set(groupedSessions.map(g => g.businessId?.toString() ?? "unknown"));
   const toggleBusinessCollapse = (key: string) => {
     setCollapsedBusinesses(prev => {
-      const next = new Set(prev);
+      const base = prev ?? new Set(groupedSessions.map(g => g.businessId?.toString() ?? "unknown"));
+      const next = new Set(base);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
@@ -1031,7 +1035,7 @@ export default function TrainingSessions() {
           </div>
           {groupedSessions.map((group) => {
             const groupKey = group.businessId?.toString() ?? "unknown";
-            const isCollapsed = collapsedBusinesses.has(groupKey);
+            const isCollapsed = resolvedCollapsed.has(groupKey);
             const errorCount = group.sessions.filter(s => s.status === "error").length;
             const activeCount = group.sessions.filter(s => s.status === "in_progress").length;
             return (

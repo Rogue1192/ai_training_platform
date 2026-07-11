@@ -193,13 +193,16 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
     const allLocations = business.location ? parseLocations(business.location) : [];
     const numLocations = Math.max(allLocations.length, 1);
     // How many unique keyword topics to generate = ceil(budget / locations)
-    const maxQueries = Math.ceil(maxQuerySlots / numLocations);
+    // NOTE: maxQueries is recalculated below after we know effectiveMaxQuerySlots
+    let maxQueries = Math.ceil(maxQuerySlots / numLocations);
     const maxLocations = allLocations.length; // use all provided locations
 
     // Check if query-locations already exist (e.g., from webhook with pre-set queries)
+    // Only count tracked (isTargetLocation=true) rows against the quota.
     const existingQLs = await getQueryLocationsByCampaignId(campaignId);
-    if (existingQLs.length > 0) {
-      console.log(`[Pipeline] Campaign ${campaignId} already has ${existingQLs.length} query-locations, skipping keyword research`);
+    const remainingSlots = maxQuerySlots - existingQLs.length;
+    if (remainingSlots <= 0) {
+      console.log(`[Pipeline] Campaign ${campaignId} already has ${existingQLs.length}/${maxQuerySlots} tracked query-locations — quota full, skipping keyword research`);
       await updateCampaign(campaignId, {
         keywordResearchCompletedAt: new Date(),
       });
@@ -210,6 +213,11 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
         usedCache: false,
       };
     }
+    // Adjust the slot budget to only fill remaining capacity
+    const effectiveMaxQuerySlots = remainingSlots;
+    // Recalculate maxQueries based on remaining slots
+    maxQueries = Math.ceil(effectiveMaxQuerySlots / numLocations);
+    console.log(`[Pipeline] Campaign ${campaignId} has ${existingQLs.length} existing tracked queries, filling ${effectiveMaxQuerySlots} remaining slots (quota: ${maxQuerySlots})`);
 
     // Determine the industry
     const industry = business.businessType || "general";
@@ -313,12 +321,12 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
       };
     }
 
-    // Build the matrix — cap total pairs at maxQuerySlots
+    // Build the matrix — cap total pairs at effectiveMaxQuerySlots (remaining quota)
     const entries = [];
     let slotsUsed = 0;
     outer: for (const kw of topKeywords) {
       for (const location of locations) {
-        if (slotsUsed >= maxQuerySlots) break outer;
+        if (slotsUsed >= effectiveMaxQuerySlots) break outer;
         entries.push({
           campaignId,
           searchQuery: kw.keyword,
@@ -326,6 +334,8 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
           aiSearchVolume: kw.aiSearchVolume,
           trainingStatus: "pending" as const,
           trainingSessions: 0,
+          // All rows generated here fill remaining tracked slots — mark as tracked.
+          isTargetLocation: true,
         });
         slotsUsed++;
       }
