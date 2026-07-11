@@ -357,14 +357,21 @@ export default function TrainingSessions() {
     return Array.from(groups.values()).sort((a, b) => a.businessName.localeCompare(b.businessName));
   }, [filteredSessions]);
 
-  // Default: all groups collapsed — use a sentinel so we can lazily init from groupedSessions
-  const [collapsedBusinesses, setCollapsedBusinesses] = useState<Set<string> | null>(null);
-  // Resolve: null means "all collapsed" (use all group keys)
-  const resolvedCollapsed = collapsedBusinesses ?? new Set(groupedSessions.map(g => g.businessId?.toString() ?? "unknown"));
+  // All groups start collapsed. When sessions load for the first time, populate the set.
+  const [collapsedBusinesses, setCollapsedBusinesses] = useState<Set<string>>(new Set());
+  const [initializedCollapse, setInitializedCollapse] = useState(false);
+
+  useEffect(() => {
+    if (!initializedCollapse && groupedSessions.length > 0) {
+      setCollapsedBusinesses(new Set(groupedSessions.map(g => g.businessId?.toString() ?? "unknown")));
+      setInitializedCollapse(true);
+    }
+  }, [groupedSessions, initializedCollapse]);
+
+  const resolvedCollapsed = collapsedBusinesses;
   const toggleBusinessCollapse = (key: string) => {
     setCollapsedBusinesses(prev => {
-      const base = prev ?? new Set(groupedSessions.map(g => g.businessId?.toString() ?? "unknown"));
-      const next = new Set(base);
+      const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });

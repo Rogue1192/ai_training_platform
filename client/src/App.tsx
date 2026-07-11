@@ -7,7 +7,6 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import Businesses from "./pages/Businesses";
-import TrainingSessions from "./pages/TrainingSessions";
 import Settings from "./pages/Settings";
 import Campaigns from "./pages/Campaigns";
 import PackageTiers from "./pages/PackageTiers";
@@ -35,7 +34,6 @@ import { toast } from "sonner";
 import {
   LayoutDashboard,
   Building2,
-  Brain,
   Settings as SettingsIcon,
   Rocket,
   Package,
@@ -52,7 +50,6 @@ const adminNavigationItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/campaigns", label: "Campaigns", icon: Rocket },
   { href: "/businesses", label: "Businesses", icon: Building2 },
-  { href: "/training", label: "Training", icon: Brain },
   { href: "/packages", label: "Packages", icon: Package },
   { href: "/client-dashboards", label: "Client Links", icon: Link2 },
   { href: "/prompts", label: "Prompts", icon: FileText },
@@ -151,11 +148,6 @@ function Router() {
       <Route path="/businesses">
         <DashboardLayout navigationItems={navItems}>
           <Businesses />
-        </DashboardLayout>
-      </Route>
-      <Route path="/training">
-        <DashboardLayout navigationItems={navItems}>
-          <TrainingSessions />
         </DashboardLayout>
       </Route>
       <Route path="/packages">
