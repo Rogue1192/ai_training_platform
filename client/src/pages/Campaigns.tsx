@@ -179,7 +179,11 @@ export default function Campaigns() {
             return (
               <Card
                 key={campaign.id}
-                className="bg-card border-border hover:border-primary/20 transition-all cursor-pointer"
+                className={`bg-card transition-all cursor-pointer ${
+                  campaign.isBlocked
+                    ? "border-orange-500/60 hover:border-orange-400"
+                    : "border-border hover:border-primary/20"
+                }`}
                 onClick={() => navigate(`/campaigns/${campaign.id}`)}
               >
                 <CardContent className="p-4">
@@ -207,6 +211,12 @@ export default function Campaigns() {
                             {statusLabels[campaign.status] ||
                               campaign.status}
                           </Badge>
+                          {campaign.isBlocked && (
+                            <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30 text-xs gap-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              Action Required
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">

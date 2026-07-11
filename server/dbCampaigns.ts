@@ -514,7 +514,7 @@ export async function getSchemaMarkupByBusinessId(businessId: number): Promise<S
 // ============= All Campaigns (no user filter — internal team tool) =============
 
 export async function getAllCampaignsWithBusinessInfo(): Promise<
-  (Campaign & { businessName: string; businessType: string | null; website: string | null })[]
+  (Campaign & { businessName: string; businessType: string | null; website: string | null; isBlocked: boolean })[]
 > {
   const db = await getDb();
   if (!db) return [];
@@ -550,7 +550,11 @@ export async function getAllCampaignsWithBusinessInfo(): Promise<
     .innerJoin(businesses, eq(campaigns.businessId, businesses.id))
     .orderBy(desc(campaigns.createdAt));
 
-  return result as any;
+  // A campaign is "blocked" if it is stuck in publishing (content not yet live)
+  return result.map((r: any) => ({
+    ...r,
+    isBlocked: r.status === 'publishing' && !r.publishingCompletedAt,
+  })) as any;
 }
 
 export async function getAllCampaignStats(): Promise<Record<string, number>> {

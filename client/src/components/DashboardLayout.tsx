@@ -36,6 +36,8 @@ interface NavigationItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Optional alert count shown as a red badge on the nav item */
+  alertCount?: number;
 }
 
 export default function DashboardLayout({
@@ -176,13 +178,18 @@ function DashboardLayoutContent({
                     <SidebarMenuButton
                       isActive={isActive}
                       onClick={() => setLocation(itemPath)}
-                      tooltip={item.label}
+                      tooltip={item.alertCount ? `${item.label} (${item.alertCount} action required)` : item.label}
                       className={`h-10 transition-all font-normal`}
                     >
                       <item.icon
                         className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
                       />
-                      <span>{item.label}</span>
+                      <span className="flex-1">{item.label}</span>
+                      {item.alertCount ? (
+                        <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white leading-none">
+                          {item.alertCount > 9 ? "9+" : item.alertCount}
+                        </span>
+                      ) : null}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

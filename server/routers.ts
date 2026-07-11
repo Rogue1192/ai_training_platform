@@ -3456,6 +3456,50 @@ export const agencyRouter = router({
     }));
   }),
 
+  // Agency: get all client dashboard links for this agency's clients
+  myClientDashboards: protectedProcedure.query(async ({ ctx }) => {
+    const { getAgencyByUserId, getAgencyById } = await import('./dbAgencies');
+    const { businesses, clientDashboards } = await import('../drizzle/schema');
+    const { eq, inArray, desc } = await import('drizzle-orm');
+    const { getDb } = await import('./db');
+    const db = await getDb();
+    if (!db) return [];
+    // Resolve agency (supports impersonation)
+    let agencyId: number | null = null;
+    if (ctx.impersonatedAgencyId && ctx.user?.role === 'admin') {
+      agencyId = ctx.impersonatedAgencyId;
+    } else {
+      const agency = await getAgencyByUserId(ctx.user.id);
+      if (!agency) return [];
+      agencyId = agency.id;
+    }
+    // Get all business IDs for this agency
+    const clientRows = await db.select({ id: businesses.id, name: businesses.name, website: businesses.website })
+      .from(businesses).where(eq(businesses.agencyId, agencyId));
+    if (clientRows.length === 0) return [];
+    const businessIds = clientRows.map((b) => b.id);
+    // Get all active dashboards for those businesses
+    const dashRows = await db.select({
+      id: clientDashboards.id,
+      businessId: clientDashboards.businessId,
+      accessToken: clientDashboards.accessToken,
+      dashboardTitle: clientDashboards.dashboardTitle,
+      isActive: clientDashboards.isActive,
+      accessCount: clientDashboards.accessCount,
+      lastAccessedAt: clientDashboards.lastAccessedAt,
+      createdAt: clientDashboards.createdAt,
+    }).from(clientDashboards)
+      .where(inArray(clientDashboards.businessId, businessIds))
+      .orderBy(desc(clientDashboards.createdAt));
+    // Attach business name
+    const bizMap = new Map(clientRows.map((b) => [b.id, b]));
+    return dashRows.map((d) => ({
+      ...d,
+      businessName: bizMap.get(d.businessId!)?.name ?? null,
+      businessWebsite: bizMap.get(d.businessId!)?.website ?? null,
+    }));
+  }),
+
   // Admin: get clients for a specific agency
   getClients: protectedProcedure
     .input(z.object({ agencyId: z.number() }))

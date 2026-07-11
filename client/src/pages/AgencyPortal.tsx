@@ -5,12 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import AddClientModal from "@/components/AddClientModal";
 import {
   Loader2, Building2, MapPin, Globe, ArrowRight,
   TrendingUp, AlertCircle, CheckCircle, Clock, Settings, Plus,
-  Users, Link, Copy, Check, Package, LogOut,
+  Users, Link, Copy, Check, Package, LogOut, ExternalLink, BarChart3, FileText,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, {
@@ -83,12 +84,9 @@ export default function AgencyPortal() {
   }
 
   // Split clients: pending (need tier assigned) vs active
-  // A client is "pending" only if they have NO campaign yet AND no billingType set to legacy.
-  // Pre-existing/legacy clients that already have campaigns should NEVER show the assign-package prompt.
   const pendingClients = clients?.filter((c: any) =>
     !c.agencyPackageTier && !c.hasCampaign && c.billingType !== 'legacy'
   ) ?? [];
-  // Active = has a package tier assigned OR already has a campaign OR is a legacy client
   const activeClients = clients?.filter((c: any) =>
     c.agencyPackageTier || c.hasCampaign || c.billingType === 'legacy'
   ) ?? [];
@@ -230,43 +228,59 @@ export default function AgencyPortal() {
         </div>
       )}
 
-      {/* ── Active client list ── */}
-      {!clients?.length ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <Building2 className="h-10 w-10 text-muted-foreground mb-3" />
-            <p className="font-medium">No clients yet</p>
-            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-              Add your first client manually or copy your onboarding link and send it to your client — they fill it out, you assign the package, and the campaign starts automatically.
-            </p>
-            <div className="flex gap-2 mt-4 flex-wrap justify-center">
-              {intakeData?.intakeUrl && (
-                <Button variant="outline" onClick={handleCopyLink}>
-                  <Copy className="h-4 w-4 mr-2" /> Copy Client Link
-                </Button>
-              )}
-              <Button onClick={() => setAddClientOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" /> Add Client Manually
-              </Button>
+      {/* ── Tabs: My Clients | Client Reports ── */}
+      <Tabs defaultValue="clients">
+        <TabsList className="mb-4">
+          <TabsTrigger value="clients" className="gap-2">
+            <Users className="h-4 w-4" />
+            My Clients
+          </TabsTrigger>
+          <TabsTrigger value="reports" className="gap-2">
+            <FileText className="h-4 w-4" />
+            Client Reports
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ── My Clients tab ── */}
+        <TabsContent value="clients">
+          {!clients?.length ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <Building2 className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="font-medium">No clients yet</p>
+                <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+                  Add your first client manually or copy your onboarding link and send it to your client — they fill it out, you assign the package, and the campaign starts automatically.
+                </p>
+                <div className="flex gap-2 mt-4 flex-wrap justify-center">
+                  {intakeData?.intakeUrl && (
+                    <Button variant="outline" onClick={handleCopyLink}>
+                      <Copy className="h-4 w-4 mr-2" /> Copy Client Link
+                    </Button>
+                  )}
+                  <Button onClick={() => setAddClientOpen(true)}>
+                    <Plus className="h-4 w-4 mr-2" /> Add Client Manually
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : activeClients.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {activeClients.map((client: any) => (
+                <ClientCard
+                  key={client.id}
+                  client={client}
+                  onClick={() => navigate(`/agency/clients/${client.id}`)}
+                />
+              ))}
             </div>
-          </CardContent>
-        </Card>
-      ) : activeClients.length > 0 ? (
-        <div className="space-y-3">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            Active Clients
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeClients.map((client: any) => (
-              <ClientCard
-                key={client.id}
-                client={client}
-                onClick={() => navigate(`/agency/clients/${client.id}`)}
-              />
-            ))}
-          </div>
-        </div>
-      ) : null}
+          ) : null}
+        </TabsContent>
+
+        {/* ── Client Reports tab ── */}
+        <TabsContent value="reports">
+          <ClientReportsTab agencyId={agency.id} />
+        </TabsContent>
+      </Tabs>
 
       {/* Add Client Modal */}
       <AddClientModal
@@ -278,6 +292,132 @@ export default function AgencyPortal() {
         }}
       />
     </div>
+  );
+}
+
+// ─── Client Reports Tab ───────────────────────────────────────────────────────
+
+function ClientReportsTab({ agencyId }: { agencyId: number }) {
+  const { data: dashboards, isLoading } = trpc.agency.myClientDashboards.useQuery();
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  function getReportUrl(token: string) {
+    return `${window.location.origin}/report/${token}`;
+  }
+
+  function copyReportUrl(id: number, token: string) {
+    navigator.clipboard.writeText(getReportUrl(token)).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2500);
+      toast.success("Report link copied — send this to your client.");
+    });
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!dashboards?.length) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+          <FileText className="h-10 w-10 text-muted-foreground mb-3" />
+          <p className="font-medium">No client reports yet</p>
+          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+            Report links are created automatically when a campaign is set up. Once your clients have active campaigns, their report links will appear here.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {dashboards.map((d: any) => (
+        <ReportCard
+          key={d.id}
+          dashboard={d}
+          isCopied={copiedId === d.id}
+          onCopy={() => copyReportUrl(d.id, d.accessToken)}
+          onOpen={() => window.open(getReportUrl(d.accessToken), "_blank")}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ReportCard({
+  dashboard, isCopied, onCopy, onOpen,
+}: {
+  dashboard: any;
+  isCopied: boolean;
+  onCopy: () => void;
+  onOpen: () => void;
+}) {
+  return (
+    <Card className={`transition-colors ${dashboard.isActive ? "hover:border-primary/40" : "opacity-60"}`}>
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle className="text-sm font-semibold leading-tight">
+            {dashboard.businessName ?? "Unknown Client"}
+          </CardTitle>
+          <Badge
+            variant={dashboard.isActive ? "default" : "secondary"}
+            className={`shrink-0 text-xs ${dashboard.isActive ? "bg-green-500/20 text-green-400 border-green-500/30" : ""}`}
+          >
+            {dashboard.isActive ? "Active" : "Disabled"}
+          </Badge>
+        </div>
+        {dashboard.dashboardTitle && (
+          <CardDescription className="text-xs">{dashboard.dashboardTitle}</CardDescription>
+        )}
+        {dashboard.businessWebsite && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+            <Globe className="h-3 w-3 shrink-0" />
+            <span className="truncate">{dashboard.businessWebsite.replace(/^https?:\/\//, "")}</span>
+          </div>
+        )}
+      </CardHeader>
+      <CardContent className="pb-3 space-y-2">
+        {/* View count */}
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <BarChart3 className="h-3 w-3 shrink-0" />
+          <span>{dashboard.accessCount ?? 0} view{(dashboard.accessCount ?? 0) !== 1 ? "s" : ""}</span>
+          {dashboard.lastAccessedAt && (
+            <span className="ml-1">· Last viewed {new Date(dashboard.lastAccessedAt).toLocaleDateString()}</span>
+          )}
+        </div>
+        {/* Action buttons */}
+        <div className="flex gap-2 pt-1">
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 h-8 text-xs gap-1.5"
+            onClick={onCopy}
+          >
+            {isCopied ? (
+              <><Check className="h-3 w-3 text-green-500" /> Copied!</>
+            ) : (
+              <><Copy className="h-3 w-3" /> Copy Link</>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-xs gap-1.5"
+            onClick={onOpen}
+            title="Preview report"
+          >
+            <ExternalLink className="h-3 w-3" />
+            Preview
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

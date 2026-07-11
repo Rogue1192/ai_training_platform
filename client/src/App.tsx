@@ -29,7 +29,7 @@ import ClientIntakeForm from "./pages/ClientIntakeForm";
 import CostTracking from "./pages/CostTracking";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Redirect } from "wouter";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
@@ -66,12 +66,33 @@ const adminNavigationItems = [
   { href: "/cost-tracking", label: "Cost Tracking", icon: DollarSign },
 ];
 
-// Agency navigation — limited to their portal
-const agencyNavigationItems = [
+// Base agency nav — alertCount is injected dynamically by AgencyNavWrapper
+const BASE_AGENCY_NAV = [
   { href: "/agency", label: "My Clients", icon: Building2 },
   { href: "/agency/llm-insights", label: "LLM Insights", icon: BarChart3 },
   { href: "/agency/settings", label: "Settings", icon: SettingsIcon },
 ];
+
+/** Wraps agency routes and injects the blocked-client count badge into the nav. */
+function AgencyRoute({ children }: { children: React.ReactNode }) {
+  const { data: clients } = trpc.agency.myClients.useQuery(undefined, {
+    staleTime: 30_000,
+    retry: false,
+  });
+  const agencyNavigationItems = useMemo(() => {
+    const blockedCount = (clients ?? []).filter((c: any) => c.campaignBlocked === true).length;
+    return BASE_AGENCY_NAV.map((item) =>
+      item.href === "/agency" && blockedCount > 0
+        ? { ...item, alertCount: blockedCount }
+        : item
+    );
+  }, [clients]);
+  return (
+    <DashboardLayout navigationItems={agencyNavigationItems}>
+      {children}
+    </DashboardLayout>
+  );
+}
 
 /** Polls Monkey Indexer account info once on mount (admin only) and shows a warning toast if credits ≤ 50. */
 function MonkeyIndexerCreditWatch() {
@@ -108,7 +129,7 @@ function MonkeyIndexerCreditWatch() {
 function Router() {
   const { user } = useAuth();
   const isAgency = user?.role === "agency";
-  const navItems = isAgency ? agencyNavigationItems : adminNavigationItems;
+  const navItems = isAgency ? BASE_AGENCY_NAV : adminNavigationItems;
 
   return (
     <Switch>
@@ -190,24 +211,16 @@ function Router() {
 
       {/* ── Agency portal routes ── */}
       <Route path="/agency">
-        <DashboardLayout navigationItems={agencyNavigationItems}>
-          <AgencyPortal />
-        </DashboardLayout>
+        <AgencyRoute><AgencyPortal /></AgencyRoute>
       </Route>
       <Route path="/agency/settings">
-        <DashboardLayout navigationItems={agencyNavigationItems}>
-          <AgencySettings />
-        </DashboardLayout>
+        <AgencyRoute><AgencySettings /></AgencyRoute>
       </Route>
       <Route path="/agency/clients/:id">
-        <DashboardLayout navigationItems={agencyNavigationItems}>
-          <AgencyClientDetail />
-        </DashboardLayout>
+        <AgencyRoute><AgencyClientDetail /></AgencyRoute>
       </Route>
       <Route path="/agency/llm-insights">
-        <DashboardLayout navigationItems={agencyNavigationItems}>
-          <AgencyLLMInsights />
-        </DashboardLayout>
+        <AgencyRoute><AgencyLLMInsights /></AgencyRoute>
       </Route>
 
       {/* Public client intake form — no auth required */}
