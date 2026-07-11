@@ -30,6 +30,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { DateRange } from "react-day-picker";
 import {
   DollarSign,
   TrendingUp,
@@ -43,6 +46,7 @@ import {
   Globe,
   Info,
   ArrowUpDown,
+  CalendarDays,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -104,12 +108,124 @@ function statusBadge(status: string) {
   return <Badge className={`${cls} text-xs capitalize`}>{status}</Badge>;
 }
 
+// ─── Date Range Helpers & Picker ────────────────────────────────────────────
+
+function defaultLast30(): DateRange {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - 30);
+  return { from, to };
+}
+
+function fmtDate(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function fmtRangeLabel(range: DateRange): string {
+  if (!range.from) return "Select range";
+  if (!range.to) return fmtDate(range.from);
+  return `${fmtDate(range.from)} – ${fmtDate(range.to)}`;
+}
+
+interface DateRangePickerProps {
+  value: DateRange;
+  onChange: (range: DateRange) => void;
+}
+
+function DateRangePicker({ value, onChange }: DateRangePickerProps) {
+  const [open, setOpen] = useState(false);
+
+  const preset = (days: number) => {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+    onChange({ from, to });
+    setOpen(false);
+  };
+
+  const thisMonth = () => {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = new Date();
+    onChange({ from, to });
+    setOpen(false);
+  };
+
+  const lastMonth = () => {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const to = new Date(now.getFullYear(), now.getMonth(), 0);
+    onChange({ from, to });
+    setOpen(false);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-2 text-xs border-border bg-background text-foreground hover:bg-muted/40"
+        >
+          <CalendarDays className="w-3.5 h-3.5 text-primary" />
+          {fmtRangeLabel(value)}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-auto p-0 bg-card border-border shadow-xl"
+        style={{ zIndex: 9999 }}
+      >
+        <div className="flex">
+          {/* Presets */}
+          <div className="flex flex-col gap-1 p-3 border-r border-border min-w-[130px]">
+            <p className="text-xs text-muted-foreground font-medium mb-1 uppercase tracking-wide">Presets</p>
+            {[
+              { label: "Last 7 days", action: () => preset(7) },
+              { label: "Last 30 days", action: () => preset(30) },
+              { label: "Last 60 days", action: () => preset(60) },
+              { label: "Last 90 days", action: () => preset(90) },
+              { label: "This month", action: thisMonth },
+              { label: "Last month", action: lastMonth },
+            ].map((p) => (
+              <button
+                key={p.label}
+                onClick={p.action}
+                className="text-left text-xs px-2 py-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {/* Calendar */}
+          <div className="p-3">
+            <Calendar
+              mode="range"
+              selected={value}
+              onSelect={(r) => {
+                if (r) {
+                  onChange(r);
+                  if (r.from && r.to) setOpen(false);
+                }
+              }}
+              numberOfMonths={2}
+              disabled={{ after: new Date() }}
+              className="text-foreground"
+            />
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ─── Aggregate Summary Cards ──────────────────────────────────────────────────
 
-function AggregateSummary() {
+function AggregateSummary({ dateRange }: { dateRange: DateRange }) {
   const { data, isLoading, isError, refetch, isFetching } = trpc.costTracking.getAggregateSummary.useQuery({
-    retry: 1,
-  } as any);
+    dateFrom: dateRange.from?.toISOString(),
+    dateTo: dateRange.to?.toISOString(),
+  });
 
   if (isLoading) {
     return (
@@ -143,7 +259,7 @@ function AggregateSummary() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-emerald-400">{fmt$(d.totalRevenueUsd)}</div>
-            <p className="text-xs text-muted-foreground">Current billing cycles</p>
+            <p className="text-xs text-muted-foreground">{fmtRangeLabel(dateRange)}</p>
           </CardContent>
         </Card>
 
@@ -224,7 +340,7 @@ function AggregateSummary() {
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-primary" /> Cost by Operation (30d)
+              <Cpu className="h-4 w-4 text-primary" /> Cost by Operation
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -243,7 +359,7 @@ function AggregateSummary() {
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
-              <Globe className="h-4 w-4 text-primary" /> Cost by Provider (30d)
+              <Globe className="h-4 w-4 text-primary" /> Cost by Provider
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -394,18 +510,26 @@ function CostLogDialog({
 
 // ─── Per-Campaign Table ───────────────────────────────────────────────────────
 
-function CampaignCostTable() {
+function CampaignCostTable({ dateRange }: { dateRange: DateRange }) {
   const [billingFilter, setBillingFilter] = useState<"all" | "white_label" | "direct" | "legacy" | "external">("all");
   const [selectedCampaign, setSelectedCampaign] = useState<{ id: number; name: string } | null>(null);
+  // Per-Client tab defaults to each campaign's own billing cycle window.
+  // Toggle off to use the shared date range from the page header.
+  const [useBillingCycle, setUseBillingCycle] = useState(true);
+
   const { data, isLoading, isFetching } = trpc.costTracking.getCampaignCosts.useQuery({
     billingType: billingFilter,
     limit: 100,
     offset: 0,
+    useBillingCycle,
+    dateFrom: useBillingCycle ? undefined : dateRange.from?.toISOString(),
+    dateTo: useBillingCycle ? undefined : dateRange.to?.toISOString(),
   });
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-muted-foreground">Filter by billing type:</span>
         <Select value={billingFilter} onValueChange={(v) => setBillingFilter(v as any)}>
           <SelectTrigger className="w-40 h-8 text-xs bg-background border-border">
@@ -419,6 +543,37 @@ function CampaignCostTable() {
             <SelectItem value="external">External</SelectItem>
           </SelectContent>
         </Select>
+
+        {/* Billing cycle vs date range toggle */}
+        <div className="flex items-center gap-2 ml-2">
+          <button
+            onClick={() => setUseBillingCycle(true)}
+            className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+              useBillingCycle
+                ? "bg-primary/20 border-primary/50 text-primary"
+                : "bg-transparent border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Per billing cycle
+          </button>
+          <button
+            onClick={() => setUseBillingCycle(false)}
+            className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+              !useBillingCycle
+                ? "bg-primary/20 border-primary/50 text-primary"
+                : "bg-transparent border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Use date range
+          </button>
+        </div>
+
+        {!useBillingCycle && (
+          <span className="text-xs text-muted-foreground">
+            Showing: {fmtRangeLabel(dateRange)}
+          </span>
+        )}
+
         {isFetching && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
         {data && (
           <span className="text-xs text-muted-foreground ml-auto">
@@ -545,6 +700,7 @@ function CampaignCostTable() {
 
 export default function CostTracking() {
   const [activeTab, setActiveTab] = useState<"overview" | "campaigns">("overview");
+  const [dateRange, setDateRange] = useState<DateRange>(defaultLast30);
   const utils = trpc.useUtils();
   const backfill = trpc.costTracking.backfillBillingTypes.useMutation({
     onSuccess: (data) => {
@@ -558,23 +714,27 @@ export default function CostTracking() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "var(--font-heading)" }}>
             Cost Tracking
           </h1>
           <p className="text-muted-foreground mt-1">
-            API costs vs. revenue — P&amp;L per client, per billing cycle
+            API costs vs. revenue — P&amp;L per client
           </p>
         </div>
-        <button
-          onClick={() => backfill.mutate()}
-          disabled={backfill.isPending}
-          className="shrink-0 px-3 py-1.5 text-xs font-medium rounded border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20 disabled:opacity-50 transition-colors"
-          title="Set billingType=legacy for campaigns with no billing type set. Run once after deploy."
-        >
-          {backfill.isPending ? "Backfilling..." : "Fix Null Billing Types"}
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Shared date range picker — applies to Overview; Per-Client can override */}
+          <DateRangePicker value={dateRange} onChange={setDateRange} />
+          <button
+            onClick={() => backfill.mutate()}
+            disabled={backfill.isPending}
+            className="shrink-0 px-3 py-1.5 text-xs font-medium rounded border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20 disabled:opacity-50 transition-colors"
+            title="Set billingType=legacy for campaigns with no billing type set. Run once after deploy."
+          >
+            {backfill.isPending ? "Backfilling..." : "Fix Null Billing Types"}
+          </button>
+        </div>
       </div>
 
       {/* Info banner */}
@@ -584,7 +744,7 @@ export default function CostTracking() {
           <strong>How billing cycles work:</strong> Each campaign resets on the same day-of-month as its creation date.
           Costs are tracked per cycle and compared against the plan's monthly revenue rate.
           Legacy clients show costs only — no revenue or P&amp;L.
-          You can change a campaign's billing type using the dropdown in the table below.
+          The date range picker above filters the Overview tab. The Per-Client tab defaults to each client's own billing cycle and can be switched to the date range.
         </div>
       </div>
 
@@ -612,8 +772,8 @@ export default function CostTracking() {
         </button>
       </div>
 
-      {activeTab === "overview" && <AggregateSummary />}
-      {activeTab === "campaigns" && <CampaignCostTable />}
+      {activeTab === "overview" && <AggregateSummary dateRange={dateRange} />}
+      {activeTab === "campaigns" && <CampaignCostTable dateRange={dateRange} />}
     </div>
   );
 }

@@ -90,6 +90,11 @@ export const costTrackingRouter = router({
         agencyId: z.number().optional(),
         limit: z.number().min(1).max(200).default(100),
         offset: z.number().min(0).default(0),
+        // Date range filter — ISO strings. If omitted, defaults to current billing cycle per campaign.
+        // Pass useBillingCycle: true to force per-campaign billing cycle windows (Per-Client tab default).
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        useBillingCycle: z.boolean().optional().default(false),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -149,6 +154,14 @@ export const costTrackingRouter = router({
       const tierMap = new Map(tierRows.map((t) => [t.id, t]));
       const agencyMap = new Map(agencyRows.map((a) => [a.id, a.brandName]));
 
+      // Resolve the date window to use for cost aggregation:
+      // - useBillingCycle=true (Per-Client tab): use each campaign's own billing cycle window
+      // - dateFrom/dateTo provided: use the explicit range
+      // - neither: default to last 30 days
+      const now = new Date();
+      const globalDateFrom = input.dateFrom ? new Date(input.dateFrom) : (() => { const d = new Date(now); d.setDate(d.getDate() - 30); return d; })();
+      const globalDateTo = input.dateTo ? new Date(input.dateTo) : now;
+
       // For each campaign, compute billing cycle window and aggregate costs
       const results: CampaignCostSummary[] = await Promise.all(
         campaignRows.map(async (row) => {
@@ -162,7 +175,11 @@ export const costTrackingRouter = router({
           const cycleStart = getCurrentBillingCycleStart(row.campaignCreatedAt);
           const cycleEnd = getBillingCycleEnd(cycleStart);
 
-          // Aggregate costs for current billing cycle
+          // Choose the window: billing cycle (Per-Client default) or the global date range
+          const windowStart = input.useBillingCycle ? cycleStart : globalDateFrom;
+          const windowEnd = input.useBillingCycle ? cycleEnd : globalDateTo;
+
+          // Aggregate costs for the selected window
           const cycleAgg = await db
             .select({
               operationType: costLogs.operationType,
@@ -172,8 +189,8 @@ export const costTrackingRouter = router({
             .where(
               and(
                 eq(costLogs.campaignId, row.campaignId),
-                gte(costLogs.createdAt, cycleStart),
-                lte(costLogs.createdAt, cycleEnd)
+                gte(costLogs.createdAt, windowStart),
+                lte(costLogs.createdAt, windowEnd)
               )
             )
             .groupBy(costLogs.operationType);
@@ -230,8 +247,8 @@ export const costTrackingRouter = router({
             billingType,
             campaignStatus: row.campaignStatus ?? "unknown",
             campaignCreatedAt: row.campaignCreatedAt.toISOString(),
-            billingCycleStart: cycleStart.toISOString(),
-            billingCycleEnd: cycleEnd.toISOString(),
+            billingCycleStart: (input.useBillingCycle ? cycleStart : windowStart).toISOString(),
+            billingCycleEnd: (input.useBillingCycle ? cycleEnd : windowEnd).toISOString(),
             totalCostUsd: Math.round(totalCostUsd * 10000) / 10000,
             trainingCostUsd: Math.round(trainingCost * 10000) / 10000,
             rankCheckCostUsd: Math.round(rankCheckCost * 10000) / 10000,
@@ -260,15 +277,23 @@ export const costTrackingRouter = router({
    * Get aggregate P&L summary across all campaigns for the current billing cycle.
    * Admin only.
    */
-  getAggregateSummary: protectedProcedure.query(async ({ ctx }) => {
+  getAggregateSummary: protectedProcedure
+    .input(
+      z.object({
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
     if (ctx.user?.role !== "admin") throw new Error("Forbidden");
 
     const db = await getDb();
     if (!db) throw new Error("Database not available");
 
     const now = new Date();
-    const thirtyDaysAgo = new Date(now);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // Default to last 30 days if no range provided
+    const rangeFrom = input?.dateFrom ? new Date(input.dateFrom) : (() => { const d = new Date(now); d.setDate(d.getDate() - 30); return d; })();
+    const rangeTo = input?.dateTo ? new Date(input.dateTo) : now;
 
     // Single query: all campaigns + their package tier slug + lifetime cost aggregated
     // We compute billing-cycle costs in one pass using a LEFT JOIN on costLogs.
@@ -288,25 +313,25 @@ export const costTrackingRouter = router({
       // All package tiers (small table, full fetch is fine)
       db.select({ id: packageTiers.id, slug: packageTiers.slug }).from(packageTiers),
 
-      // Cost breakdown by operation type (last 30 days)
+      // Cost breakdown by operation type (selected date range)
       db
         .select({
           operationType: costLogs.operationType,
           totalCost: sql<string>`COALESCE(SUM(${costLogs.costUsd}::numeric), 0)`,
         })
         .from(costLogs)
-        .where(gte(costLogs.createdAt, thirtyDaysAgo))
+        .where(and(gte(costLogs.createdAt, rangeFrom), lte(costLogs.createdAt, rangeTo)))
         .groupBy(costLogs.operationType)
         .orderBy(sql`SUM(${costLogs.costUsd}::numeric) DESC`),
 
-      // Cost breakdown by provider (last 30 days)
+      // Cost breakdown by provider (selected date range)
       db
         .select({
           provider: costLogs.provider,
           totalCost: sql<string>`COALESCE(SUM(${costLogs.costUsd}::numeric), 0)`,
         })
         .from(costLogs)
-        .where(gte(costLogs.createdAt, thirtyDaysAgo))
+        .where(and(gte(costLogs.createdAt, rangeFrom), lte(costLogs.createdAt, rangeTo)))
         .groupBy(costLogs.provider)
         .orderBy(sql`SUM(${costLogs.costUsd}::numeric) DESC`),
     ]);
@@ -314,21 +339,8 @@ export const costTrackingRouter = router({
     // Build tier map
     const tierMap = new Map(tierRows.map((t) => [t.id, t.slug]));
 
-    // Determine the date range we need to cover: earliest billing cycle start across all campaigns
-    const cycleWindows = campaignRows.map((c) => {
-      const start = getCurrentBillingCycleStart(c.createdAt);
-      const end = getBillingCycleEnd(start);
-      return { campaignId: c.id, start, end };
-    });
-
-    // Fetch all current-cycle cost logs in ONE query using a UNION-style approach:
-    // We get all logs for the earliest possible cycle start up to now, then filter per-campaign in JS.
-    const earliestCycleStart = cycleWindows.reduce(
-      (min, w) => (w.start < min ? w.start : min),
-      cycleWindows[0]?.start ?? now
-    );
-
-    const currentCycleLogs = campaignRows.length > 0
+    // Fetch all cost logs within the selected date range in ONE query
+    const rangeLogs = campaignRows.length > 0
       ? await db
           .select({
             campaignId: costLogs.campaignId,
@@ -336,12 +348,12 @@ export const costTrackingRouter = router({
             createdAt: costLogs.createdAt,
           })
           .from(costLogs)
-          .where(gte(costLogs.createdAt, earliestCycleStart))
+          .where(and(gte(costLogs.createdAt, rangeFrom), lte(costLogs.createdAt, rangeTo)))
       : [];
 
     // Group logs by campaignId for fast lookup
     const logsByCampaign = new Map<number, { costUsd: string | number; createdAt: Date }[]>();
-    for (const log of currentCycleLogs) {
+    for (const log of rangeLogs) {
       if (!log.campaignId) continue;
       if (!logsByCampaign.has(log.campaignId)) logsByCampaign.set(log.campaignId, []);
       logsByCampaign.get(log.campaignId)!.push(log);
@@ -359,14 +371,12 @@ export const costTrackingRouter = router({
       const tierSlug = campaign.packageTierId ? (tierMap.get(campaign.packageTierId) ?? "starter") : "starter";
       // Pass billingType as-is — null means no billing plan (legacy/pre-existing), revenue = 0
       const billingType = campaign.billingType ?? null;
-      const window = cycleWindows.find((w) => w.campaignId === campaign.id);
       const logs = logsByCampaign.get(campaign.id) ?? [];
 
-      const campaignCycleCost = logs
-        .filter((l) => window && l.createdAt >= window.start && l.createdAt <= window.end)
+      const campaignRangeCost = logs
         .reduce((sum, l) => sum + parseFloat(String(l.costUsd ?? 0)), 0);
 
-      totalCostUsd += campaignCycleCost;
+      totalCostUsd += campaignRangeCost;
       // noCharge campaigns contribute $0 revenue regardless of billingType
       const campaignRevenue = campaign.noCharge ? 0 : getMonthlyRevenue(billingType, tierSlug);
       totalRevenueUsd += campaignRevenue;
