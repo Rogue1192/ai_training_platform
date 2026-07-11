@@ -155,7 +155,8 @@ export const costTrackingRouter = router({
           const tier = row.packageTierId ? tierMap.get(row.packageTierId) : null;
           const tierSlug = tier?.slug ?? "starter";
           const tierName = tier?.name ?? "Starter";
-          const billingType = row.billingType ?? "white_label";
+          // null billingType = no billing plan (legacy/pre-existing) — revenue is $0
+          const billingType = row.billingType ?? null;
           const agencyName = row.agencyId ? (agencyMap.get(row.agencyId) ?? null) : null;
 
           const cycleStart = getCurrentBillingCycleStart(row.campaignCreatedAt);
@@ -214,7 +215,8 @@ export const costTrackingRouter = router({
 
           const totalCostUsd = trainingCost + rankCheckCost + keywordResearchCost + contentGenerationCost + otherCost;
           const lifetimeCostUsd = parseFloat(lifetimeAgg[0]?.totalCost ?? "0");
-          const monthlyRevenueUsd = getMonthlyRevenue(billingType, tierSlug);
+          // noCharge campaigns always show $0 revenue
+          const monthlyRevenueUsd = (row as any).noCharge ? 0 : getMonthlyRevenue(billingType, tierSlug);
           const netProfitUsd = monthlyRevenueUsd - totalCostUsd;
           const marginPct = monthlyRevenueUsd > 0 ? Math.round((netProfitUsd / monthlyRevenueUsd) * 100) : 0;
 
@@ -279,6 +281,7 @@ export const costTrackingRouter = router({
           createdAt: campaigns.createdAt,
           billingType: campaigns.billingType,
           packageTierId: campaigns.packageTierId,
+          noCharge: campaigns.noCharge,
         })
         .from(campaigns),
 
@@ -354,7 +357,8 @@ export const costTrackingRouter = router({
 
     for (const campaign of campaignRows) {
       const tierSlug = campaign.packageTierId ? (tierMap.get(campaign.packageTierId) ?? "starter") : "starter";
-      const billingType = campaign.billingType ?? "white_label";
+      // Pass billingType as-is — null means no billing plan (legacy/pre-existing), revenue = 0
+      const billingType = campaign.billingType ?? null;
       const window = cycleWindows.find((w) => w.campaignId === campaign.id);
       const logs = logsByCampaign.get(campaign.id) ?? [];
 
@@ -363,7 +367,9 @@ export const costTrackingRouter = router({
         .reduce((sum, l) => sum + parseFloat(String(l.costUsd ?? 0)), 0);
 
       totalCostUsd += campaignCycleCost;
-      totalRevenueUsd += getMonthlyRevenue(billingType, tierSlug);
+      // noCharge campaigns contribute $0 revenue regardless of billingType
+      const campaignRevenue = campaign.noCharge ? 0 : getMonthlyRevenue(billingType, tierSlug);
+      totalRevenueUsd += campaignRevenue;
 
       if (billingType === "white_label") whiteLabelCount++;
       else if (billingType === "direct") directCount++;
@@ -466,6 +472,48 @@ export const costTrackingRouter = router({
         cycleStart: cycleStart.toISOString(),
         cycleEnd: cycleEnd.toISOString(),
       };
+    }),
+
+  /**
+   * Backfill billingType for all campaigns that have NULL billingType.
+   * Sets white_label if the business has an agencyId, otherwise legacy.
+   * Admin only — run once after deploy to fix pre-existing campaigns.
+   */
+  backfillBillingTypes: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      if (ctx.user?.role !== "admin") throw new Error("Forbidden");
+
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      const { businesses } = await import("../drizzle/schema");
+      const { isNull } = await import("drizzle-orm");
+
+      // Fetch all campaigns with null billingType
+      const nullCampaigns = await db
+        .select({ id: campaigns.id, businessId: campaigns.businessId })
+        .from(campaigns)
+        .where(isNull(campaigns.billingType));
+
+      if (nullCampaigns.length === 0) return { updated: 0 };
+
+      // Fetch all businesses that have an agencyId
+      const agencyBusinessIds = new Set(
+        (await db.select({ id: businesses.id }).from(businesses).where(sql`"agencyId" IS NOT NULL`))
+          .map((b) => b.id)
+      );
+
+      let updated = 0;
+      for (const c of nullCampaigns) {
+        const resolvedType = c.businessId && agencyBusinessIds.has(c.businessId) ? "white_label" : "legacy";
+        await db
+          .update(campaigns)
+          .set({ billingType: resolvedType, updatedAt: new Date() })
+          .where(eq(campaigns.id, c.id));
+        updated++;
+      }
+
+      return { updated };
     }),
 
   /**

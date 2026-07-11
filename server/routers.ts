@@ -257,6 +257,9 @@ export const appRouter = router({
             if (!biz) return;
             // Resolve query-slot budget from tier (new model)
             const resolvedMaxQuerySlots = tier.maxQuerySlots || (tier.maxQueries * tier.maxLocations);
+            // Derive billingType: agency-linked → white_label, otherwise → legacy
+            const onboardBillingType: "white_label" | "direct" | "legacy" | "external" =
+              (biz as any).agencyId ? "white_label" : "legacy";
             // Create campaign
             const campaign = await createCampaign({
               userId: ownerId,
@@ -273,6 +276,7 @@ export const appRouter = router({
               maxLocations: tier.maxLocations,
               maxQuerySlots: resolvedMaxQuerySlots,
               selectedPackage: packageTier,
+              billingType: onboardBillingType,
               noCharge: input.noCharge ?? false,
             });
             // Initialize trial
@@ -1430,6 +1434,25 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           }
         }
 
+        // ── Derive billingType from business context ─────────────────────────────
+        // Priority: explicit input > business.agencyId > legacy (no billing plan)
+        // Pre-existing clients (no agency, no explicit type) are always legacy.
+        // Agency-linked businesses are always white_label — no manual package assignment needed.
+        let resolvedBillingType: "white_label" | "direct" | "legacy" | "external";
+        if (input.billingType) {
+          resolvedBillingType = input.billingType as "white_label" | "direct" | "legacy" | "external";
+        } else {
+          // Look up the business's agencyId if we haven't already
+          const { getBusinessById: _getBizForBilling } = await import("./db");
+          const bizForBilling = await _getBizForBilling(businessId);
+          if (bizForBilling?.agencyId) {
+            resolvedBillingType = "white_label";
+          } else {
+            // No agency, no explicit billing type → legacy (not on any billing plan)
+            resolvedBillingType = "legacy";
+          }
+        }
+
         // Check for existing active campaign
         const existingCampaigns = await getCampaignsByBusinessId(businessId);
         const activeCampaign = existingCampaigns.find(
@@ -1467,7 +1490,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           maxLocations: packageTier.maxLocations,
           maxQuerySlots: resolvedMaxQuerySlots,
           selectedPackage: input.selectedPackage || null,
-          billingType: input.billingType || (input.agencyId ? "white_label" : "direct"),
+          billingType: resolvedBillingType,
           campaignScope: input.campaignScope ?? "local",
           noCharge: resolvedNoCharge,
         });

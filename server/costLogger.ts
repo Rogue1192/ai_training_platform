@@ -78,8 +78,11 @@ const REVENUE_RATES: Record<BillingType, Record<PackageTier, number>> = {
   external:    { starter: 0,   growth: 0,   pro: 0   }, // billed outside platform — revenue not tracked here
 };
 
-export function getMonthlyRevenue(billingType: string, packageTier: string): number {
-  const bt = (billingType || "white_label") as BillingType;
+export function getMonthlyRevenue(billingType: string | null | undefined, packageTier: string | null | undefined): number {
+  // If billingType is not explicitly set, this campaign has no billing plan — return 0.
+  // Pre-existing / legacy clients are never counted as revenue.
+  if (!billingType) return 0;
+  const bt = billingType as BillingType;
   const pt = (packageTier || "starter") as PackageTier;
   return REVENUE_RATES[bt]?.[pt] ?? 0;
 }

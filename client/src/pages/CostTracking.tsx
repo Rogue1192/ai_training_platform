@@ -570,17 +570,36 @@ function CampaignCostTable() {
 
 export default function CostTracking() {
   const [activeTab, setActiveTab] = useState<"overview" | "campaigns">("overview");
+  const utils = trpc.useUtils();
+  const backfill = trpc.costTracking.backfillBillingTypes.useMutation({
+    onSuccess: (data) => {
+      utils.costTracking.getAggregateSummary.invalidate();
+      utils.costTracking.getCampaignCosts.invalidate();
+      alert(`Backfill complete: ${data.updated} campaign(s) updated.`);
+    },
+    onError: (err) => alert(`Backfill failed: ${err.message}`),
+  });
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "var(--font-heading)" }}>
-          Cost Tracking
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          API costs vs. revenue — P&amp;L per client, per billing cycle
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "var(--font-heading)" }}>
+            Cost Tracking
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            API costs vs. revenue — P&amp;L per client, per billing cycle
+          </p>
+        </div>
+        <button
+          onClick={() => backfill.mutate()}
+          disabled={backfill.isPending}
+          className="shrink-0 px-3 py-1.5 text-xs font-medium rounded border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20 disabled:opacity-50 transition-colors"
+          title="Set billingType=legacy for campaigns with no billing type set. Run once after deploy."
+        >
+          {backfill.isPending ? "Backfilling..." : "Fix Null Billing Types"}
+        </button>
       </div>
 
       {/* Info banner */}
