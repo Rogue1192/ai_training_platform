@@ -219,7 +219,37 @@ async function executeBaselineTest(sessionId: number, userId: number): Promise<v
   
   const session = await getTrainingSessionById(sessionId);
   if (!session) throw new Error(`Session ${sessionId} not found`);
-  
+
+  // ── Publishing gate ──────────────────────────────────────────────────────────────────
+  if (session.campaignId) {
+    try {
+      const { getDb } = await import('./db');
+      const { contentPages, campaigns } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (db) {
+        const NO_URL_REQUIRED = new Set(['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery']);
+        const pages = await db
+          .select({ pageType: contentPages.pageType, publishedUrl: contentPages.publishedUrl })
+          .from(contentPages)
+          .where(eq(contentPages.campaignId, session.campaignId));
+        const hasMissingUrl = pages.some(
+          (p: any) => !NO_URL_REQUIRED.has(p.pageType ?? '') && !p.publishedUrl
+        );
+        if (hasMissingUrl) {
+          console.warn(`[Training V2] GATE: Campaign ${session.campaignId} has unpublished content pages — pausing campaign and halting baseline session ${sessionId}`);
+          await db.update(campaigns).set({ status: 'publishing', updatedAt: new Date() } as any).where(eq(campaigns.id, session.campaignId));
+          const { updateTrainingSession } = await import('./db');
+          await updateTrainingSession(sessionId, { status: 'paused' } as any);
+          return;
+        }
+      }
+    } catch (gateErr: any) {
+      console.error(`[Training V2] Publishing gate check failed for baseline session ${sessionId}:`, gateErr.message);
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // Get linked business if available
   const business = session.businessId ? await getBusinessById(session.businessId) : null;
   const businessName = extractBusinessName(session, business);
@@ -361,7 +391,43 @@ async function executeTrainingIteration(
     console.log(`[Training V2] Session ${sessionId} is ${session.status}, skipping`);
     return;
   }
-  
+
+  // ── Publishing gate: halt if any content pages are missing a live URL ────────
+  if (session.campaignId) {
+    try {
+      const { getDb } = await import('./db');
+      const { contentPages, campaigns } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (db) {
+        const NO_URL_REQUIRED = new Set(['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery']);
+        const pages = await db
+          .select({ pageType: contentPages.pageType, publishedUrl: contentPages.publishedUrl })
+          .from(contentPages)
+          .where(eq(contentPages.campaignId, session.campaignId));
+        const hasMissingUrl = pages.some(
+          (p: any) => !NO_URL_REQUIRED.has(p.pageType ?? '') && !p.publishedUrl
+        );
+        if (hasMissingUrl) {
+          console.warn(`[Training V2] GATE: Campaign ${session.campaignId} has unpublished content pages — pausing campaign and halting session ${sessionId}`);
+          // Revert campaign to publishing status so the admin sees it blocked
+          await db
+            .update(campaigns)
+            .set({ status: 'publishing', updatedAt: new Date() } as any)
+            .where(eq(campaigns.id, session.campaignId));
+          // Mark this session as paused so it stops processing
+          const { updateTrainingSession } = await import('./db');
+          await updateTrainingSession(sessionId, { status: 'paused' } as any);
+          return;
+        }
+      }
+    } catch (gateErr: any) {
+      console.error(`[Training V2] Publishing gate check failed for session ${sessionId}:`, gateErr.message);
+      // Non-fatal: if the gate check itself errors, let training continue rather than silently stalling
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   const business = session.businessId ? await getBusinessById(session.businessId) : null;
   const businessName = extractBusinessName(session, business);
   
