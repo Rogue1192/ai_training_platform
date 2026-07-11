@@ -2577,7 +2577,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       .input(z.object({ token: z.string() }))
       .query(async ({ input }) => {
         const { getDb } = await import("./db");
-        const { queryDropoffEvents, clientDashboards } = await import("../drizzle/schema");
+        const { queryDropoffEvents, clientDashboards, campaignQueryLocations } = await import("../drizzle/schema");
         const { eq, desc, and } = await import("drizzle-orm");
         const db = await getDb();
         if (!db) return [];
@@ -2587,9 +2587,31 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           .where(and(eq(clientDashboards.accessToken, input.token), eq(clientDashboards.isActive, true)))
           .limit(1);
         if (!dashboard?.campaignId) return [];
+        // Only return drop-offs for the original paid queries (isTargetLocation=true).
+        // Bonus-win queries that later dropped are NOT re-optimized and should NOT
+        // appear on the client dashboard as a visibility drop alert.
         return db
-          .select()
+          .select({ 
+            id: queryDropoffEvents.id,
+            campaignId: queryDropoffEvents.campaignId,
+            queryLocationId: queryDropoffEvents.queryLocationId,
+            platform: queryDropoffEvents.platform,
+            searchQuery: queryDropoffEvents.searchQuery,
+            location: queryDropoffEvents.location,
+            detectedAt: queryDropoffEvents.detectedAt,
+            reoptimizationInitiated: queryDropoffEvents.reoptimizationInitiated,
+            reoptimizationInitiatedAt: queryDropoffEvents.reoptimizationInitiatedAt,
+            recoveredAt: queryDropoffEvents.recoveredAt,
+            createdAt: queryDropoffEvents.createdAt,
+          })
           .from(queryDropoffEvents)
+          .innerJoin(
+            campaignQueryLocations,
+            and(
+              eq(queryDropoffEvents.queryLocationId, campaignQueryLocations.id),
+              eq(campaignQueryLocations.isTargetLocation, true)
+            )
+          )
           .where(eq(queryDropoffEvents.campaignId, dashboard.campaignId))
           .orderBy(desc(queryDropoffEvents.detectedAt))
           .limit(200);

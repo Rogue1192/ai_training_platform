@@ -185,7 +185,12 @@ export async function getQueryLocationsByCampaignId(campaignId: number): Promise
   return db
     .select()
     .from(campaignQueryLocations)
-    .where(eq(campaignQueryLocations.campaignId, campaignId))
+    .where(
+      and(
+        eq(campaignQueryLocations.campaignId, campaignId),
+        eq(campaignQueryLocations.isTargetLocation, true)
+      )
+    )
     .orderBy(campaignQueryLocations.createdAt);
 }
 
