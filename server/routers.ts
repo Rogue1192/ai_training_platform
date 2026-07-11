@@ -3427,21 +3427,32 @@ export const agencyRouter = router({
     // Fetch all clients for this agency
     const clientRows = await db.select().from(businesses).where(eq(businesses.agencyId, agencyId));
     if (clientRows.length === 0) return [];
-    // For each client, check if they have at least one campaign (so we don't show
-    // the 'Assign Package' prompt for pre-existing/legacy clients that already have campaigns)
+    // For each client, check campaigns: count, status, and whether any are blocked
     const businessIds = clientRows.map((b) => b.id);
-    const campaignCounts = await db
+    const campaignRows = await db
       .select({
         businessId: campaigns.businessId,
-        count: sql<number>`COUNT(*)`,
+        status: campaigns.status,
       })
       .from(campaigns)
-      .where(sql`${campaigns.businessId} = ANY(ARRAY[${sql.raw(businessIds.join(','))}]::int[])`)
-      .groupBy(campaigns.businessId);
-    const campaignCountMap = new Map(campaignCounts.map((r) => [r.businessId, Number(r.count)]));
+      .where(sql`${campaigns.businessId} = ANY(ARRAY[${sql.raw(businessIds.join(','))}]::int[])`);
+    // Build per-business maps
+    const campaignCountMap = new Map<number, number>();
+    const campaignStatusMap = new Map<number, string>();
+    const campaignBlockedMap = new Map<number, boolean>();
+    for (const row of campaignRows) {
+      if (!row.businessId) continue;
+      campaignCountMap.set(row.businessId, (campaignCountMap.get(row.businessId) ?? 0) + 1);
+      // Track most recent status (last write wins — rows are ordered by insert)
+      campaignStatusMap.set(row.businessId, row.status ?? 'unknown');
+      // Mark as blocked if any campaign is in publishing status (content not yet live)
+      if (row.status === 'publishing') campaignBlockedMap.set(row.businessId, true);
+    }
     return clientRows.map((b) => ({
       ...b,
       hasCampaign: (campaignCountMap.get(b.id) ?? 0) > 0,
+      campaignStatus: campaignStatusMap.get(b.id) ?? null,
+      campaignBlocked: campaignBlockedMap.get(b.id) ?? false,
     }));
   }),
 
@@ -3887,7 +3898,9 @@ export const agencyRouter = router({
       const db = await getDb();
       if (!db) return [];
       let agencyId: number | null = null;
-      if (ctx.user.role !== 'admin') {
+      if (ctx.impersonatedAgencyId && ctx.user?.role === 'admin') {
+        agencyId = ctx.impersonatedAgencyId;
+      } else if (ctx.user.role !== 'admin') {
         const agency = await getAgencyByUserId(ctx.user.id);
         if (!agency) return [];
         agencyId = agency.id;
@@ -3933,7 +3946,9 @@ export const agencyRouter = router({
     const db = await getDb();
     if (!db) return null;
     let agencyId: number | null = null;
-    if (ctx.user.role !== 'admin') {
+    if (ctx.impersonatedAgencyId && ctx.user?.role === 'admin') {
+      agencyId = ctx.impersonatedAgencyId;
+    } else if (ctx.user.role !== 'admin') {
       const agency = await getAgencyByUserId(ctx.user.id);
       if (!agency) return null;
       agencyId = agency.id;

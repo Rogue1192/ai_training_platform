@@ -366,22 +366,40 @@ function PendingClientCard({
 }
 
 function ClientCard({ client, onClick }: { client: any; onClick: () => void }) {
+  const isBlocked = client.campaignBlocked === true;
   const status = client.trialStatus ?? "active";
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.active!;
   const StatusIcon = cfg.icon;
 
   return (
     <Card
-      className="cursor-pointer hover:border-primary/50 transition-colors"
+      className={`cursor-pointer transition-colors ${
+        isBlocked
+          ? "border-red-500 hover:border-red-400"
+          : "hover:border-primary/50"
+      }`}
       onClick={onClick}
     >
+      {isBlocked && (
+        <div className="flex items-center gap-2 bg-red-950/60 border-b border-red-500/50 px-3 py-2 rounded-t-lg">
+          <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+          <span className="text-xs font-semibold text-red-300">Action Required — content not live on client site</span>
+        </div>
+      )}
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-sm font-semibold leading-tight">{client.name}</CardTitle>
-          <Badge variant={cfg.variant} className="shrink-0 text-xs">
-            <StatusIcon className="h-3 w-3 mr-1" />
-            {cfg.label}
-          </Badge>
+          {isBlocked ? (
+            <Badge variant="destructive" className="shrink-0 text-xs">
+              <AlertCircle className="h-3 w-3 mr-1" />
+              Blocked
+            </Badge>
+          ) : (
+            <Badge variant={cfg.variant} className="shrink-0 text-xs">
+              <StatusIcon className="h-3 w-3 mr-1" />
+              {cfg.label}
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap mt-1">
           {client.businessType && (
