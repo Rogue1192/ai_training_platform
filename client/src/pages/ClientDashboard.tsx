@@ -706,17 +706,7 @@ export default function ClientDashboard() {
               <VisibilityGauge score={currentScore.overall} size={220} />
               <div className="mt-4 text-center md:text-left">
                 <h2 className="text-lg font-heading font-bold text-white">Overall AI Visibility</h2>
-                {baselineScore && (
-                  <motion.p
-                    className={`text-sm font-bold mt-1 flex items-center gap-1 justify-center md:justify-start ${overallDiff > 0 ? "text-emerald-400" : overallDiff < 0 ? "text-red-400" : "text-gray-500"}`}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 2 }}
-                  >
-                    {overallDiff > 0 ? <TrendingUp className="w-4 h-4" /> : overallDiff < 0 ? <TrendingDown className="w-4 h-4" /> : null}
-                    {overallDiff > 0 ? "+" : ""}{overallDiff} points since baseline
-                  </motion.p>
-                )}
+
               </div>
             </div>
 

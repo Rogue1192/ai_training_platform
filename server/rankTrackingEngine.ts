@@ -240,7 +240,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
     const aiOverviewMentioned = mention.llmResponses.aiOverview?.mentioned || false;
     const aiOverviewPosition = mention.llmResponses.aiOverview?.position || null;
 
-    // Create snapshot
+    // Create snapshot — isTracked=true because getQueryLocationsByCampaignId only returns isTargetLocation=true rows
     await createRankSnapshot({
       campaignId,
       queryLocationId: ql.id,
@@ -255,6 +255,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
       aiOverviewResponseSnippet: mention.llmResponses.aiOverview?.snippet || null,
       sourcesCited: null,
       checkType: "scheduled",
+      isTracked: true,
       checkedAt: new Date(),
     });
 
@@ -482,7 +483,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
     for (let i = 0; i < created.length; i++) {
       const row = created[i];
       const src = bonusToCreate[i];
-      // "Before" snapshot — nothing mentioned
+      // "Before" snapshot — nothing mentioned (bonus query, isTracked=false)
       await createRankSnapshot({
         campaignId,
         queryLocationId: row.id,
@@ -497,9 +498,10 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
         aiOverviewResponseSnippet: null,
         sourcesCited: null,
         checkType: "scheduled",
+        isTracked: false,
         checkedAt: oneMinuteAgo,
       });
-      // "After" snapshot — the actual current mention state
+      // "After" snapshot — the actual current mention state (bonus query, isTracked=false)
       await createRankSnapshot({
         campaignId,
         queryLocationId: row.id,
@@ -514,6 +516,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
         aiOverviewResponseSnippet: null,
         sourcesCited: null,
         checkType: "scheduled",
+        isTracked: false,
         checkedAt: new Date(),
       });
     }
@@ -536,9 +539,12 @@ async function getLatestSnapshots(campaignId: number): Promise<Map<number, typeo
   const db = await getDb();
   if (!db) return new Map();
 
-  // Get all snapshots ordered by date desc, then deduplicate by queryLocationId
+  // Only include tracked snapshots — bonus query snapshots (isTracked=false) MUST NEVER affect scoring
   const allSnapshots = await db.select().from(rankSnapshots)
-    .where(eq(rankSnapshots.campaignId, campaignId))
+    .where(and(
+      eq(rankSnapshots.campaignId, campaignId),
+      eq(rankSnapshots.isTracked, true)
+    ))
     .orderBy(desc(rankSnapshots.checkedAt));
 
   const latest = new Map<number, typeof rankSnapshots.$inferSelect>();
@@ -563,10 +569,12 @@ async function getBaselineSnapshots(campaignId: number): Promise<Map<number, typ
   const db = await getDb();
   if (!db) return new Map();
 
+  // Only include tracked snapshots — bonus query snapshots (isTracked=false) MUST NEVER affect baseline scoring
   // Try explicit baseline snapshots first
   const baselineSnaps = await db.select().from(rankSnapshots)
     .where(and(
       eq(rankSnapshots.campaignId, campaignId),
+      eq(rankSnapshots.isTracked, true),
       eq(rankSnapshots.checkType, "baseline")
     ))
     .orderBy(asc(rankSnapshots.checkedAt));
@@ -578,10 +586,13 @@ async function getBaselineSnapshots(campaignId: number): Promise<Map<number, typ
     }
   }
 
-  // Fallback: use the earliest scheduled snapshot per query-location
+  // Fallback: use the earliest tracked snapshot per query-location
   if (baseline.size === 0) {
     const allSnaps = await db.select().from(rankSnapshots)
-      .where(eq(rankSnapshots.campaignId, campaignId))
+      .where(and(
+        eq(rankSnapshots.campaignId, campaignId),
+        eq(rankSnapshots.isTracked, true)
+      ))
       .orderBy(asc(rankSnapshots.checkedAt));
     for (const snap of allSnaps) {
       if (!baseline.has(snap.queryLocationId)) {
@@ -608,13 +619,14 @@ export async function getVisibilityTrends(
   since.setDate(since.getDate() - days);
 
   const queryLocations = await getQueryLocationsByCampaignId(campaignId);
-  const totalQueries = queryLocations.length;
+  const totalQueries = queryLocations.length; // Only tracked query-locations
   if (totalQueries === 0) return [];
 
-  // Get all snapshots in the time range
+  // Only include tracked snapshots — bonus query snapshots MUST NEVER affect trend scoring
   const allSnapshots = await db.select().from(rankSnapshots)
     .where(and(
       eq(rankSnapshots.campaignId, campaignId),
+      eq(rankSnapshots.isTracked, true),
       gte(rankSnapshots.checkedAt, since)
     ))
     .orderBy(asc(rankSnapshots.checkedAt));

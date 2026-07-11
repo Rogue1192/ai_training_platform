@@ -591,6 +591,9 @@ export const rankSnapshots = pgTable("rankSnapshots", {
   sourcesCited: json("sourcesCited"), // Array of URLs cited in the AI response
   // Metadata
   checkType: varchar("checkType", { length: 20 }).default("scheduled").notNull(), // 'baseline' | 'scheduled' | 'recovery_check'
+  // Whether this snapshot is for a tracked (isTargetLocation=true) query-location.
+  // Bonus query snapshots have isTracked=false and MUST NEVER be included in any score calculation.
+  isTracked: boolean("isTracked").default(true).notNull(),
   checkedAt: timestamp("checkedAt").defaultNow().notNull(),
 });
 
