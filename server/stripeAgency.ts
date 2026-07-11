@@ -198,3 +198,20 @@ export async function getSubscriptionStatus(
   const sub = await stripe.subscriptions.retrieve(subscriptionId);
   return sub.status;
 }
+
+/**
+ * Create a Stripe Customer Portal session for an agency.
+ * The portal lets the agency add/update their payment method, view invoices,
+ * and manage subscriptions — all hosted by Stripe.
+ */
+export async function createBillingPortalSession(params: {
+  stripeCustomerId: string;
+  returnUrl: string;
+}): Promise<{ url: string }> {
+  const stripe = await getStripeClient();
+  const session = await stripe.billingPortal.sessions.create({
+    customer: params.stripeCustomerId,
+    return_url: params.returnUrl,
+  });
+  return { url: session.url };
+}

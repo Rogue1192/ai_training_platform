@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
@@ -83,6 +83,7 @@ export default function AgencyLLMInsights() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [collapsedInitialized, setCollapsedInitialized] = useState(false);
 
   const impersonatedAgencyId = sessionStorage.getItem('impersonatedAgencyId');
   const handleExitImpersonation = () => {
@@ -137,6 +138,14 @@ export default function AgencyLLMInsights() {
     }
     return Array.from(m.values()).sort((a, b) => a.businessName.localeCompare(b.businessName));
   }, [filtered]);
+
+  // Collapse all cards by default once data is loaded
+  useEffect(() => {
+    if (!collapsedInitialized && clients.length > 0) {
+      setCollapsed(new Set(clients.map((c) => c.campaignId)));
+      setCollapsedInitialized(true);
+    }
+  }, [clients, collapsedInitialized]);
 
   const toggle = (cid: number) =>
     setCollapsed((s) => {

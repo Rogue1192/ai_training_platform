@@ -82,9 +82,16 @@ export default function AgencyPortal() {
     );
   }
 
-  // Split clients: pending (no tier assigned) vs active
-  const pendingClients = clients?.filter((c: any) => !c.agencyPackageTier) ?? [];
-  const activeClients  = clients?.filter((c: any) =>  c.agencyPackageTier) ?? [];
+  // Split clients: pending (need tier assigned) vs active
+  // A client is "pending" only if they have NO campaign yet AND no billingType set to legacy.
+  // Pre-existing/legacy clients that already have campaigns should NEVER show the assign-package prompt.
+  const pendingClients = clients?.filter((c: any) =>
+    !c.agencyPackageTier && !c.hasCampaign && c.billingType !== 'legacy'
+  ) ?? [];
+  // Active = has a package tier assigned OR already has a campaign OR is a legacy client
+  const activeClients = clients?.filter((c: any) =>
+    c.agencyPackageTier || c.hasCampaign || c.billingType === 'legacy'
+  ) ?? [];
 
   const trialClients = clients?.filter((c: any) => c.trialStatus === "trial") ?? [];
 

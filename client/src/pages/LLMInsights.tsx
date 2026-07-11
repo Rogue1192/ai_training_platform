@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -173,6 +173,7 @@ function QueryHistoryDrawer({
 export default function LLMInsights() {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [collapsedInitialized, setCollapsedInitialized] = useState(false);
   const [drafts, setDrafts] = useState<Record<number, { q: string; loc: string }>>({});
   const [historyTarget, setHistoryTarget] = useState<{ id: number; label: string } | null>(null);
   const [billingFilter, setBillingFilter] = useState<string>("all");
@@ -263,6 +264,14 @@ export default function LLMInsights() {
     }
     return Array.from(m.values()).sort((a, b) => a.businessName.localeCompare(b.businessName));
   }, [filtered]);
+
+  // Collapse all cards by default once data is loaded
+  useEffect(() => {
+    if (!collapsedInitialized && clients.length > 0) {
+      setCollapsed(new Set(clients.map((c) => c.campaignId)));
+      setCollapsedInitialized(true);
+    }
+  }, [clients, collapsedInitialized]);
 
   const toggle = (cid: number) =>
     setCollapsed((s) => {

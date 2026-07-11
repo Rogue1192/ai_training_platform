@@ -456,6 +456,68 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
   );
 }
 
+// ─── Client Report Viewer ────────────────────────────────────────────────────
+// Fetches the first active report link for a campaign and renders it in an iframe
+// so the agency/super-admin can see exactly what the client sees.
+function ClientReportViewer({ campaignId, baseUrl }: { campaignId: number; baseUrl: string }) {
+  const { data: links = [], isLoading } = trpc.agency.getClientReportLinks.useQuery({ campaignId });
+
+  const createLink = trpc.agency.createClientReportLink.useMutation({
+    onError: (err) => toast.error(err.message),
+  });
+
+  const activeLink = links.find((l: any) => l.isActive);
+
+  if (isLoading) {
+    return (
+      <div className="border-t pt-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading report…
+      </div>
+    );
+  }
+
+  if (!activeLink) {
+    return (
+      <div className="border-t pt-3 space-y-2">
+        <p className="text-xs text-muted-foreground">No active report link yet.</p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs"
+          disabled={createLink.isPending}
+          onClick={() => createLink.mutate({ campaignId, businessId: 0 })}
+        >
+          {createLink.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+          Generate Report Link
+        </Button>
+      </div>
+    );
+  }
+
+  const reportUrl = `${baseUrl}/report/${activeLink.accessToken}`;
+
+  return (
+    <div className="border-t pt-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Client Visibility Report</p>
+        <a href={reportUrl} target="_blank" rel="noopener noreferrer">
+          <Button size="sm" variant="ghost" className="h-6 text-xs">
+            <ExternalLink className="h-3 w-3 mr-1" /> Open in new tab
+          </Button>
+        </a>
+      </div>
+      <div className="rounded-lg border overflow-hidden" style={{ height: '600px' }}>
+        <iframe
+          src={reportUrl}
+          title="Client Report"
+          className="w-full h-full"
+          style={{ border: 'none' }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ─── Campaign Row ──────────────────────────────────────────────────────────────
 function CampaignRow({ campaign, businessId, clientEmail, clientName, businessName }: {
   campaign: any;
@@ -467,6 +529,7 @@ function CampaignRow({ campaign, businessId, clientEmail, clientName, businessNa
   const isActive = campaign.isActive;
   const trialStatus = campaign.trialStatus;
   const [showLinks, setShowLinks] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [sendEmailLinkId, setSendEmailLinkId] = useState<number | null>(null);
   const [emailInput, setEmailInput] = useState(clientEmail ?? '');
 
@@ -536,7 +599,16 @@ function CampaignRow({ campaign, businessId, clientEmail, clientName, businessNa
               onClick={() => setShowLinks((v) => !v)}
             >
               <Link2 className="h-3 w-3 mr-1" />
-              {showLinks ? "Hide" : "Report Links"}
+              {showLinks ? "Hide Links" : "Report Links"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-7 px-2 text-blue-600 hover:text-blue-700"
+              onClick={() => setShowReport((v) => !v)}
+            >
+              <ExternalLink className="h-3 w-3 mr-1" />
+              {showReport ? "Hide Report" : "View Report"}
             </Button>
           </div>
         </div>
@@ -552,6 +624,11 @@ function CampaignRow({ campaign, businessId, clientEmail, clientName, businessNa
             </p>
             <ContentPublishPanel campaignId={campaign.id} campaignStatus={campaign.status} />
           </div>
+        )}
+
+        {/* Inline client report viewer — loads the first active report link in an iframe */}
+        {showReport && (
+          <ClientReportViewer campaignId={campaign.id} baseUrl={baseUrl} />
         )}
 
         {/* Report links panel */}

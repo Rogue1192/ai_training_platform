@@ -3403,8 +3403,8 @@ export const agencyRouter = router({
   // Agency user: get their own clients (businesses linked to their agency)
   myClients: protectedProcedure.query(async ({ ctx }) => {
     const { getAgencyByUserId, getAgencyById } = await import('./dbAgencies');
-    const { businesses } = await import('../drizzle/schema');
-    const { eq } = await import('drizzle-orm');
+    const { businesses, campaigns } = await import('../drizzle/schema');
+    const { eq, sql } = await import('drizzle-orm');
     const { getDb } = await import('./db');
     const db = await getDb();
     if (!db) return [];
@@ -3417,7 +3417,25 @@ export const agencyRouter = router({
       if (!agency) return [];
       agencyId = agency.id;
     }
-    return db.select().from(businesses).where(eq(businesses.agencyId, agencyId));
+    // Fetch all clients for this agency
+    const clientRows = await db.select().from(businesses).where(eq(businesses.agencyId, agencyId));
+    if (clientRows.length === 0) return [];
+    // For each client, check if they have at least one campaign (so we don't show
+    // the 'Assign Package' prompt for pre-existing/legacy clients that already have campaigns)
+    const businessIds = clientRows.map((b) => b.id);
+    const campaignCounts = await db
+      .select({
+        businessId: campaigns.businessId,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(campaigns)
+      .where(sql`${campaigns.businessId} = ANY(ARRAY[${sql.raw(businessIds.join(','))}]::int[])`)
+      .groupBy(campaigns.businessId);
+    const campaignCountMap = new Map(campaignCounts.map((r) => [r.businessId, Number(r.count)]));
+    return clientRows.map((b) => ({
+      ...b,
+      hasCampaign: (campaignCountMap.get(b.id) ?? 0) > 0,
+    }));
   }),
 
   // Admin: get clients for a specific agency
@@ -4183,6 +4201,25 @@ export const agencyRouter = router({
         await updateAgency(agencyId, { brandLogoUrl: url });
       }
 
+      return { url };
+    }),
+
+  // Agency: create a Stripe Customer Portal session so the agency can manage their billing
+  billingPortal: protectedProcedure
+    .input(z.object({ returnUrl: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const agency = await getAgencyByUserId(ctx.user.id);
+      if (!agency) throw new Error('Agency not found');
+      if (!agency.stripeCustomerId) {
+        throw new Error('No Stripe customer on file. Please contact support to set up billing.');
+      }
+      const { createBillingPortalSession } = await import('./stripeAgency');
+      const returnUrl = input.returnUrl ?? 'https://app.roguebusinessmarketing.com/agency/settings';
+      const { url } = await createBillingPortalSession({
+        stripeCustomerId: agency.stripeCustomerId,
+        returnUrl,
+      });
       return { url };
     }),
 

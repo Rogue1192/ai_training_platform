@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -252,25 +252,55 @@ export default function AgencySettings() {
             <CardTitle className="text-base">Billing</CardTitle>
           </div>
           <CardDescription>
-            Payment method on file for client package charges.
+            Manage your payment method and view invoices for client package charges.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          {agency.hasPaymentMethod ? (
-            <div className="flex items-center gap-2 text-sm">
-              <CheckCircle className="h-4 w-4 text-green-500" />
-              <span>Payment method on file</span>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <AlertCircle className="h-4 w-4" />
-                <span>No payment method on file. Contact your administrator to add billing.</span>
-              </div>
-            </div>
-          )}
+        <CardContent className="space-y-4">
+          {/* Payment method status */}
+          <div className="flex items-center gap-2 text-sm">
+            {agency.hasPaymentMethod ? (
+              <>
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span className="text-green-700 dark:text-green-400 font-medium">Payment method on file</span>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="h-4 w-4 text-orange-500" />
+                <span className="text-orange-700 dark:text-orange-400">No payment method on file</span>
+              </>
+            )}
+          </div>
+          {/* Stripe Customer Portal button */}
+          <BillingPortalButton />
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ─── Billing Portal Button ────────────────────────────────────────────────────
+// Opens the Stripe Customer Portal in a new tab so the agency can add/update
+// their payment method, download invoices, and manage subscriptions.
+function BillingPortalButton() {
+  const billingPortalMutation = trpc.agency.billingPortal.useMutation({
+    onSuccess: ({ url }) => {
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={billingPortalMutation.isPending}
+      onClick={() => billingPortalMutation.mutate({ returnUrl: window.location.href })}
+    >
+      {billingPortalMutation.isPending ? (
+        <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Opening…</>
+      ) : (
+        <><CreditCard className="h-4 w-4 mr-2" /> Manage Billing &amp; Payment Method</>
+      )}
+    </Button>
   );
 }
