@@ -98,25 +98,11 @@ export const appRouter = router({
           differentiators: z.string().optional(),
           specialties: z.string().optional(),
           credibilityUrls: z.string().optional(), // JSON string: [{label,url}]
-          clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
-          siteAdminUrl: z.string().optional(),
-          siteUsername: z.string().optional(),
-          sitePassword: z.string().optional(),
-          useWebhookForContent: z.boolean().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
         const { createBusiness } = await import("./db");
-        const { encrypt } = await import("./encryption");
-        
-        const { sitePassword, ...restInput } = input;
-        const businessData: any = { ...restInput, userId: ctx.user.id };
-        
-        if (sitePassword) {
-          businessData.sitePasswordEncrypted = encrypt(sitePassword);
-        }
-        
-        // userId stored for audit trail only — nullable, not used for access control
+        const businessData: any = { ...input, userId: ctx.user.id };
         const business = await createBusiness(businessData);
         return { success: true, businessId: business.id };
       }),
@@ -143,11 +129,6 @@ export const appRouter = router({
           differentiators: z.string().optional(),
           specialties: z.string().optional(),
           credibilityUrls: z.string().optional(), // JSON string: [{label,url}]
-          clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
-          siteAdminUrl: z.string().optional(),
-          siteUsername: z.string().optional(),
-          sitePassword: z.string().optional(),
-          useWebhookForContent: z.boolean().optional(),
           // Agency assignment
           agencyId: z.number().nullable().optional(),
           billingType: z.enum(["white_label", "direct", "legacy", "external"]).optional(),
@@ -157,16 +138,8 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         const { updateBusiness } = await import("./db");
-        const { encrypt } = await import("./encryption");
-        
-        const { id, sitePassword, ...updates } = input;
-        const updateData: any = { ...updates };
-        
-        if (sitePassword) {
-          updateData.sitePasswordEncrypted = encrypt(sitePassword);
-        }
-        
-        await updateBusiness(id, updateData);
+        const { id, ...updates } = input;
+        await updateBusiness(id, updates);
         return { success: true };
       }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
@@ -217,7 +190,6 @@ export const appRouter = router({
         differentiators: z.string().optional(),
         specialties: z.string().optional(),
         credibilityUrls: z.string().optional(), // JSON string: [{label,url}]
-        clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
         internalSource: z.enum(["rogue", "ranklocal"]).optional(),
         packageTier: z.enum(["starter", "growth", "pro"]),
         noCharge: z.boolean().default(false),
@@ -269,7 +241,6 @@ export const appRouter = router({
               packageTierId: tier.id,
               campaignName: `${biz.name} - AI Visibility`,
               status: 'pending',
-              clientType: input.clientType || 'ai_only',
               trainingAggressiveness: 'aggressive',
               rankCheckFrequency: 'weekly',
               errorCount: 0,
@@ -1268,10 +1239,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         state: z.string().optional(),
         packageTierSlug: z.string().optional(),
         packageTierId: z.number().optional(),
-        clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).default("ai_only"),
-        siteAdminUrl: z.string().optional(),
-        siteUsername: z.string().optional(),
-        sitePassword: z.string().optional(),
         searchQueries: z.array(z.string()).optional(),
         locationQueryMap: z.array(z.object({
           location: z.string().min(1),
@@ -1297,7 +1264,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { businesses } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
         const { serializeLocations } = await import("@shared/location");
-        const { encrypt } = await import("./encryption");
         const {
           createCampaign,
           getPackageTierBySlug,
@@ -1397,10 +1363,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
             if (input.certifications) updateFields.certifications = input.certifications.join(", ");
             if (input.awards) updateFields.awards = input.awards.join(", ");
             if (input.bbbRating) updateFields.bbbRating = input.bbbRating;
-            if (input.clientType) updateFields.clientType = input.clientType;
-            if (input.siteAdminUrl) updateFields.siteAdminUrl = input.siteAdminUrl;
-            if (input.siteUsername) updateFields.siteUsername = input.siteUsername;
-            if (input.sitePassword) updateFields.sitePasswordEncrypted = encrypt(input.sitePassword);
             if (input.source) updateFields.internalSource = input.source;
             if (input.specialties) updateFields.specialties = input.specialties;
 
@@ -1418,14 +1380,10 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
                 phone: input.contactPhone || null,
                 location: serializeLocations(finalLocations),
                 description: null,
-                clientType: input.clientType,
                 yearsInBusiness: input.yearsFounded || null,
                 certifications: input.certifications?.join(", ") || null,
                 awards: input.awards?.join(", ") || null,
                 bbbRating: input.bbbRating || null,
-                siteAdminUrl: input.siteAdminUrl || null,
-                siteUsername: input.siteUsername || null,
-                sitePasswordEncrypted: input.sitePassword ? encrypt(input.sitePassword) : null,
                 internalSource: input.source || null,
                 specialties: input.specialties || null,
                 createdAt: new Date(),
@@ -1486,7 +1444,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           packageTierId: packageTier.id,
           campaignName: `${resolvedBusinessName} - AI Visibility`,
           status: "pending",
-          clientType: input.clientType,
           trainingAggressiveness: "aggressive",
           rankCheckFrequency: "weekly",
           errorCount: 0,
@@ -2061,7 +2018,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
             schemaMarkup: JSON.stringify(schemaPkg.siteWideSchema),
             status: "draft",
             deliveryType: "inject_existing",
-            placementInstructions: `Paste the SITE-WIDE SCHEMA block into the <head> of every page on the client's site (or use Insert Headers and Footers plugin in WordPress). Paste each per-page schema block into the corresponding page. Summary: ${schemaPkg.summary}`,
+            placementInstructions: `Paste the SITE-WIDE SCHEMA block into the <head> of every page on the client's site. Paste each per-page schema block into the corresponding page. Summary: ${schemaPkg.summary}`,
             generationModel: "system",
             generationPrompt: `Schema package for ${businessName}`,
           });
@@ -2338,63 +2295,6 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       // Seed defaults
       return seedDefaultPromptTemplates();
     }),
-  }),
-
-  // ============= AI ANSWER FORGE — WordPress Publisher (Sprint 6) =============
-  wpPublisher: router({
-    testConnection: protectedProcedure
-      .input(z.object({ businessId: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        const { getDb } = await import("./db");
-        const { businesses } = await import("../drizzle/schema");
-        const { eq } = await import("drizzle-orm");
-        const { decrypt } = await import("./encryption");
-        const { testSiteConnection } = await import("./contentPublisher");
-        
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        const biz = (await db.select().from(businesses).where(eq(businesses.id, input.businessId)).limit(1))[0];
-        if (!biz) throw new Error("Business not found");
-        if (!biz.siteAdminUrl || !biz.siteUsername || !biz.sitePasswordEncrypted) {
-          throw new Error("Site credentials not configured for this business");
-        }
-        return testSiteConnection({
-          siteUrl: biz.siteAdminUrl.replace(/\/wp-admin.*$/, ""),
-          adminUrl: biz.siteAdminUrl,
-          username: biz.siteUsername,
-          password: decrypt(biz.sitePasswordEncrypted),
-        });
-      }),
-    storeCredentials: protectedProcedure
-      .input(z.object({
-        businessId: z.number(),
-        siteAdminUrl: z.string().url(),
-        siteUsername: z.string().min(1),
-        wpAppPassword: z.string().min(1),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        const { storeSiteCredentials } = await import("./contentPublisher");
-        await storeSiteCredentials(input.businessId, input.siteAdminUrl, input.siteUsername, input.wpAppPassword);
-        return { success: true };
-      }),
-    publishCampaign: protectedProcedure
-      .input(z.object({ campaignId: z.number(), businessId: z.number(), dryRun: z.boolean().optional() }))
-      .mutation(async ({ ctx, input }) => {
-        const { publishCampaignContent } = await import("./contentPublisher");
-        return publishCampaignContent(input);
-      }),
-    publishLlmTxt: protectedProcedure
-      .input(z.object({ campaignId: z.number(), businessId: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        const { publishLlmTxt } = await import("./contentPublisher");
-        return publishLlmTxt(input);
-      }),
-    getPublishedUrls: protectedProcedure
-      .input(z.object({ campaignId: z.number() }))
-      .query(async ({ ctx, input }) => {
-        const { getPublishedUrls } = await import("./contentPublisher");
-        return getPublishedUrls(input.campaignId);
-      }),
   }),
 
   // ============= AI ANSWER FORGE — Monkey Indexer (replaces SinByte) =============
@@ -3921,7 +3821,6 @@ export const agencyRouter = router({
             packageTierId: packageTier.id,
             campaignName: `${business.name} - AI Visibility`,
             status: 'pending',
-            clientType: 'ai_only',
             trainingAggressiveness: 'aggressive',
             rankCheckFrequency: 'weekly',
             errorCount: 0,
@@ -4372,13 +4271,13 @@ export const agencyRouter = router({
         if (p.pageType === 'llm_txt' && !p.placementInstructions) {
           return {
             ...p,
-            placementInstructions: 'Upload this file to the root of the client\'s domain at /llm.txt (e.g., https://clientsite.com/llm.txt). In WordPress, use a plugin like "Add Any Extension to Pages" or upload via FTP/cPanel to the public_html folder.',
+            placementInstructions: 'Upload this file to the root of the client\'s domain at /llm.txt (e.g., https://clientsite.com/llm.txt). Upload via FTP/cPanel to the public_html folder, or use your hosting file manager.',
           };
         }
         if (p.pageType === 'schema_delivery' && !p.placementInstructions) {
           return {
             ...p,
-            placementInstructions: 'Follow the delivery plan below. For each block marked "inject", paste the JSON-LD into the <head> of the corresponding page. In WordPress, use the "Insert Headers and Footers" plugin or the page\'s Yoast/RankMath schema tab.',
+            placementInstructions: 'Follow the delivery plan below. For each block marked "inject", paste the JSON-LD into the <head> of the corresponding page.',
           };
         }
         return p;

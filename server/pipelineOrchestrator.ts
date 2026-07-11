@@ -7,7 +7,7 @@
  * 1. Keyword Research (Sprint 3) — already built
  * 2. Credibility Research (Sprint 4) — already built
  * 3. Content Generation (Sprint 5) — already built
- * 4. WordPress Publishing (Sprint 6) — just built
+ * 4. Content Publishing — manual copy workflow (content generated, team notified, URLs entered in dashboard)
  * 5. Monkey Indexer Indexing Submission — replaces SinByte
  * 6. Wait 3-4 days for indexing
  * 7. Baseline Rank Check (Sprint 3) — already built
@@ -212,25 +212,7 @@ export async function runPipelineStep(
           credibilityResult: credData.researchResults as any,
           campaignScope: (campaign as any).campaignScope ?? "local",
         });
-        // Fire outbound webhook to companion platform — ONLY for clients where we are building
-        // their website (useWebhookForContent = true). For clients with their own existing site,
-        // Playwright handles publishing in the next step.
-        if (business.useWebhookForContent) {
-          try {
-            const { sendCredibilityWebhook } = await import("./credibilityWebhook");
-            const webhookResult = await sendCredibilityWebhook({
-              campaignId,
-              businessId: campaign.businessId,
-            });
-            if (webhookResult.sent) {
-              console.log(`[Pipeline] Credibility webhook sent successfully.`);
-            } else {
-              console.log(`[Pipeline] Credibility webhook skipped: ${webhookResult.error}`);
-            }
-          } catch (webhookErr: any) {
-            console.warn(`[Pipeline] Credibility webhook error (non-fatal): ${webhookErr.message}`);
-          }
-        }
+
 
         result = {
           step,
@@ -243,78 +225,45 @@ export async function runPipelineStep(
       }
       
       case "publishing": {
-        // Check client type — only publish to WP for ai_only and ai_plus_seo
-        if (campaign.clientType === "ai_plus_seo_plus_build") {
-          // For new builds, skip WP publishing — content will be used in SiteForge Ultra
-          await db.update(campaigns).set({
-            status: "indexing",
-            publishingCompletedAt: new Date(),
-            updatedAt: new Date(),
-          }).where(eq(campaigns.id, campaignId));
-          
-          result = {
-            step,
-            success: true,
-            message: "Skipped WordPress publishing — client is Scenario C (new SiteForge Ultra build). Content stored for handoff.",
-            nextStep: "indexing",
-          };
-        } else if (business.useWebhookForContent) {
-          // Content was already delivered via outbound webhook in the content_generation step.
-          // Skip Playwright entirely and move straight to indexing.
-          await db.update(campaigns).set({
-            status: "indexing",
-            publishingCompletedAt: new Date(),
-            updatedAt: new Date(),
-          }).where(eq(campaigns.id, campaignId));
-
-          result = {
-            step,
-            success: true,
-            message: "Skipped Playwright publishing — content delivered via outbound webhook to website builder platform.",
-            nextStep: "indexing",
-          };
-        } else {
-          // Manual-copy workflow: content is already generated and stored in the DB.
-          // Notify the team that pages are ready to be copied into the client's site.
-          const { contentPages: cpTable } = await import("../drizzle/schema");
-          const { eq: eqOp } = await import("drizzle-orm");
-          const pages = await db.select().from(cpTable).where(eqOp(cpTable.campaignId, campaignId));
-          const NON_PUBLISHABLE_TYPES = new Set(["llm_txt", "schema_package", "schema_audit", "schema_delivery"]);
-          const pageCount = pages.filter(p => !NON_PUBLISHABLE_TYPES.has(p.pageType)).length;
-          const adminUrl = `${process.env.APP_BASE_URL ?? ""}/campaigns/${campaignId}`;
-          try {
-            const { notifyOwner } = await import("./_core/notification");
-            await notifyOwner({
-              title: `Content Ready for Manual Publishing: ${business.name}`,
-              content: [
-                `${pageCount} credibility page(s) have been generated for ${business.name} and are ready to be copied into the client's website.`,
-                "",
-                "Action required:",
-                "1. Open the campaign in the dashboard (link below).",
-                "2. Go to the Content tab — each page shows its placement instructions and a Copy button.",
-                "3. Paste the content into the correct page on the client's site.",
-                "4. Enter the live URL for each page in the dashboard.",
-                "5. Indexing will start automatically once all URLs are saved.",
-                "",
-                `Campaign: ${adminUrl}`,
-              ].join("\n"),
-            });
-          } catch (emailErr: any) {
-            console.error("[Pipeline] Failed to send content-ready notification:", emailErr.message);
-          }
-          // Mark publishing complete — the pipeline continues; URL entry happens async via the UI.
-          await db.update(campaigns).set({
-            status: "publishing",
-            updatedAt: new Date(),
-          }).where(eq(campaigns.id, campaignId));
-          result = {
-            step,
-            success: true,
-            message: `Content ready for manual publishing. ${pageCount} page(s) generated — team notified. Enter live URLs in the Content tab to trigger indexing.`,
-            data: { pageCount },
-            // nextStep intentionally omitted — pipeline pauses here until admin enters URLs
-          };
+        // Content is generated and stored in the DB. Notify the team and pause here.
+        // Pipeline resumes automatically once all live URLs are entered in the Content tab.
+        const { contentPages: cpTable } = await import("../drizzle/schema");
+        const { eq: eqOp } = await import("drizzle-orm");
+        const pages = await db.select().from(cpTable).where(eqOp(cpTable.campaignId, campaignId));
+        const NON_PUBLISHABLE_TYPES = new Set(["llm_txt", "schema_package", "schema_audit", "schema_delivery"]);
+        const pageCount = pages.filter(p => !NON_PUBLISHABLE_TYPES.has(p.pageType)).length;
+        const adminUrl = `${process.env.APP_BASE_URL ?? ""}/campaigns/${campaignId}`;
+        try {
+          const { notifyOwner } = await import("./_core/notification");
+          await notifyOwner({
+            title: `Content Ready for Publishing: ${business.name}`,
+            content: [
+              `${pageCount} credibility page(s) have been generated for ${business.name} and are ready to be copied into the client's website.`,
+              "",
+              "Action required:",
+              "1. Open the campaign in the dashboard (link below).",
+              "2. Go to the Content tab — each page shows its placement instructions and a Copy button.",
+              "3. Paste the content into the correct page on the client's site.",
+              "4. Enter the live URL for each page in the dashboard.",
+              "5. Indexing will start automatically once all URLs are saved.",
+              "",
+              `Campaign: ${adminUrl}`,
+            ].join("\n"),
+          });
+        } catch (emailErr: any) {
+          console.error("[Pipeline] Failed to send content-ready notification:", emailErr.message);
         }
+        await db.update(campaigns).set({
+          status: "publishing",
+          updatedAt: new Date(),
+        }).where(eq(campaigns.id, campaignId));
+        result = {
+          step,
+          success: true,
+          message: `Content ready for publishing. ${pageCount} page(s) generated — team notified. Enter live URLs in the Content tab to trigger indexing.`,
+          data: { pageCount },
+          // nextStep intentionally omitted — pipeline pauses here until admin enters URLs
+        };
         break;
       }
       
@@ -731,7 +680,7 @@ export function getPipelineStepLabels(): Array<{ step: PipelineStep; label: stri
     { step: "baseline_check", label: "Baseline Visibility Report", description: "Measure clean-slate AI visibility before any content is added" },
     { step: "credibility_research", label: "Credibility Research", description: "Research business credentials, awards, and trust signals" },
     { step: "content_generation", label: "Content Generation", description: "Generate optimized content pages for AI citation" },
-    { step: "publishing", label: "WordPress Publishing", description: "Auto-publish content pages to client website" },
+    { step: "publishing", label: "Content Publishing", description: "Copy generated content pages to client website and enter live URLs" },
     { step: "indexing", label: "Indexing Submission", description: "Submit URLs to Monkey Indexer for fast Google indexing" },
     { step: "indexing_verification", label: "Indexing Verification", description: "Verify published URLs are accessible (auto-advances within minutes)" },
     { step: "training", label: "AI Training", description: "Train AI models to cite the business" },

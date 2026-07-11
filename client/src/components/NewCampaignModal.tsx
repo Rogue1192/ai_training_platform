@@ -104,13 +104,9 @@ export default function NewCampaignModal({
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [packageTierSlug, setPackageTierSlug] = useState<"starter" | "growth" | "pro">("starter");
   const [campaignScope, setCampaignScope] = useState<"local" | "national" | "ecommerce">("local");
-  const [clientType, setClientType] = useState<"ai_only" | "ai_plus_seo" | "ai_plus_seo_plus_build">("ai_only");
   const [billingType, setBillingType] = useState<"direct" | "white_label" | "legacy">("direct");
   const [agencyId, setAgencyId] = useState("");
   const [source, setSource] = useState<"" | "rogue" | "ranklocal">("");
-  const [siteAdminUrl, setSiteAdminUrl] = useState("");
-  const [siteUsername, setSiteUsername] = useState("");
-  const [sitePassword, setSitePassword] = useState("");
 
   // ── Step 3: queries ──
   const [searchQueriesRaw, setSearchQueriesRaw] = useState("");
@@ -190,13 +186,9 @@ export default function NewCampaignModal({
     setSelectedLocations([]);
     setPackageTierSlug("starter");
     setCampaignScope("local");
-    setClientType("ai_only");
     setBillingType("direct");
     setAgencyId("");
     setSource("");
-    setSiteAdminUrl("");
-    setSiteUsername("");
-    setSitePassword("");
     setSearchQueriesRaw("");
     setQueriesLoaded(false);
     setCreatedInfo(null);
@@ -266,13 +258,9 @@ export default function NewCampaignModal({
       locations: selectedLocations.length > 0 ? selectedLocations : undefined,
       packageTierSlug,
       campaignScope,
-      clientType,
       billingType: isNoCharge ? undefined : billingType,
       agencyId: agencyId ? parseInt(agencyId, 10) : undefined,
       source: source || undefined,
-      siteAdminUrl: siteAdminUrl.trim() || undefined,
-      siteUsername: siteUsername.trim() || undefined,
-      sitePassword: sitePassword.trim() || undefined,
       searchQueries: searchQueries.length > 0 ? searchQueries : undefined,
       noCharge: isNoCharge,
     });
@@ -607,20 +595,6 @@ export default function NewCampaignModal({
               </div>
             </div>
 
-            {/* Client Type */}
-            <div className="space-y-1.5">
-              <Label>Client Type</Label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={clientType}
-                onChange={(e) => setClientType(e.target.value as typeof clientType)}
-              >
-                <option value="ai_only">AI Only</option>
-                <option value="ai_plus_seo">AI + SEO</option>
-                <option value="ai_plus_seo_plus_build">AI + SEO + Build</option>
-              </select>
-            </div>
-
             {/* Billing — hidden when business is marked No Charge */}
             {!isNoCharge ? (
               <div className="grid grid-cols-2 gap-4">
@@ -678,47 +652,7 @@ export default function NewCampaignModal({
               </select>
             </div>
 
-            {/* WordPress credentials (optional) */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 pb-1 border-b">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  WordPress Auto-Publish Credentials (Optional)
-                </p>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                If provided, the platform will auto-publish content pages directly to the client's WordPress site.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2 space-y-1.5">
-                  <Label className="text-xs">WP Admin URL</Label>
-                  <Input
-                    value={siteAdminUrl}
-                    onChange={(e) => setSiteAdminUrl(e.target.value)}
-                    placeholder="https://acmehvac.com/wp-admin"
-                    className="text-xs h-8"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">WP Username</Label>
-                  <Input
-                    value={siteUsername}
-                    onChange={(e) => setSiteUsername(e.target.value)}
-                    placeholder="admin"
-                    className="text-xs h-8"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">WP Password / App Password</Label>
-                  <Input
-                    type="password"
-                    value={sitePassword}
-                    onChange={(e) => setSitePassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="text-xs h-8"
-                  />
-                </div>
-              </div>
-            </div>
+
           </div>
         )}
 
@@ -800,8 +734,6 @@ export default function NewCampaignModal({
                 <span className="text-foreground capitalize">{campaignScope}</span>
                 <span>Package:</span>
                 <span className="text-foreground">{selectedPackage.name} ({selectedPackage.maxQuerySlots} slots)</span>
-                <span>Client Type:</span>
-                <span className="text-foreground">{clientType.replace(/_/g, " ")}</span>
                 <span>Billing:</span>
                 <span className="text-foreground">
                   {isNoCharge ? "No Charge (Bundled)" : billingType.replace(/_/g, " ")}

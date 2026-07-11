@@ -2,7 +2,6 @@ import { Router, Request, Response } from "express";
 import { serializeLocations } from "@shared/location";
 import { z } from "zod";
 import crypto from "crypto";
-import { encrypt } from "./encryption";
 import {
   createWebhookLog,
   updateWebhookLog,
@@ -48,14 +47,6 @@ const onboardingPayloadSchema = z.object({
   packageTierSlug: z.string().optional(),
   packageTierId: z.number().optional(),
 
-  // Client type for the campaign
-  clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).default("ai_only"),
-
-  // Optional: WordPress credentials for auto-publishing
-  siteAdminUrl: z.string().optional(),
-  siteUsername: z.string().optional(),
-  sitePassword: z.string().optional(),
-
   // Optional: specific search queries (if client/salesperson already knows them)
   // These will be distributed across all provided locations up to the plan's maxQuerySlots.
   searchQueries: z.array(z.string()).optional(),
@@ -98,6 +89,14 @@ const onboardingPayloadSchema = z.object({
 
   // Optional: specialties / unique expertise — hammered into every MiniMax training iteration
   specialties: z.string().optional(),
+
+  // Optional: credibility verification URLs — BBB profile, certification body pages, award listings, etc.
+  // Accept either a pre-serialized JSON string '[{"label":"BBB","url":"https://..."}]'
+  // or a structured array of {label, url} objects. Normalized to JSON string for storage.
+  credibilityUrls: z.union([
+    z.string(),
+    z.array(z.object({ label: z.string(), url: z.string().url() })),
+  ]).optional(),
 
   // Optional: webhook secret for authentication
   webhookSecret: z.string().optional(),
@@ -159,10 +158,6 @@ async function verifyWebhookAuth(req: Request): Promise<{ valid: boolean; error?
 }
 
 // ============= Webhook Router =============
-// NOTE: siteUsername is stored PLAINTEXT (not a secret).
-// sitePassword is encrypted using the canonical AES-256-GCM encrypt() from encryption.ts.
-// The old local encryptWpCredentials() (AES-256-CBC) has been removed — it was
-// incompatible with the app's decrypt() function and caused WordPress publish failures.
 
 export function createWebhookRouter(): Router {
   const router = Router();
@@ -339,16 +334,14 @@ export function createWebhookRouter(): Router {
         if (payload.certifications) updateFields.certifications = payload.certifications.join(", ");
         if (payload.awards) updateFields.awards = payload.awards.join(", ");
         if (payload.bbbRating) updateFields.bbbRating = payload.bbbRating;
-        if (payload.clientType) updateFields.clientType = payload.clientType;
-        // ISSUE-014 FIX: Store ALL locations, ";"-delimited so a "City, ST"
-        // location is never re-split on its internal comma.
+        // Store ALL locations, ";" -delimited
         updateFields.location = serializeLocations(finalLocations);
-        // ISSUE-010 FIX: Store WP credentials (encrypted)
-        if (payload.siteAdminUrl) updateFields.siteAdminUrl = payload.siteAdminUrl;
-        // siteUsername stored plaintext — it is not a secret
-        if (payload.siteUsername) updateFields.siteUsername = payload.siteUsername;
-        // sitePassword encrypted with canonical AES-256-GCM encrypt() from encryption.ts
-        if (payload.sitePassword) updateFields.sitePasswordEncrypted = encrypt(payload.sitePassword);
+        // credibilityUrls: normalize to JSON string for storage
+        if (payload.credibilityUrls !== undefined) {
+          updateFields.credibilityUrls = typeof payload.credibilityUrls === 'string'
+            ? payload.credibilityUrls
+            : JSON.stringify(payload.credibilityUrls);
+        }
         // Internal source tag for filtering
         if (payload.source) updateFields.internalSource = payload.source;
         // Specialties — hammered into every MiniMax training iteration
@@ -371,15 +364,14 @@ export function createWebhookRouter(): Router {
             // location is never re-split on its internal comma.
             location: serializeLocations(finalLocations),
             description: null,
-            clientType: payload.clientType,
             yearsInBusiness: payload.yearsFounded || null,
             certifications: payload.certifications?.join(", ") || null,
             awards: payload.awards?.join(", ") || null,
             bbbRating: payload.bbbRating || null,
-            // siteUsername stored plaintext; sitePassword encrypted with canonical encrypt()
-            siteAdminUrl: payload.siteAdminUrl || null,
-            siteUsername: payload.siteUsername || null,
-            sitePasswordEncrypted: payload.sitePassword ? encrypt(payload.sitePassword) : null,
+            // credibilityUrls: normalize to JSON string for storage
+            credibilityUrls: payload.credibilityUrls !== undefined
+              ? (typeof payload.credibilityUrls === 'string' ? payload.credibilityUrls : JSON.stringify(payload.credibilityUrls))
+              : null,
             // Internal source tag for filtering ("rogue", "ranklocal", or null)
             internalSource: payload.source || null,
             // Specialties — hammered into every MiniMax training iteration
@@ -438,7 +430,6 @@ export function createWebhookRouter(): Router {
         packageTierId: packageTier.id,
         campaignName: `${payload.businessName} - AI Visibility`,
         status: "pending",
-        clientType: payload.clientType,
         trainingAggressiveness: "aggressive",
         rankCheckFrequency: "weekly",
         sourceWebhookId: webhookLog.id,

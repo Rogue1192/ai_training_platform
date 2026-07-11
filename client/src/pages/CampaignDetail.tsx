@@ -657,10 +657,6 @@ export default function CampaignDetail() {
                   <span className="text-foreground font-medium">{(campaign as any).businessName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Package</span>
-                  <span className="text-foreground">{campaign.clientType?.replace(/_/g, " ") || "N/A"}</span>
-                </div>
-                <div className="flex justify-between">
                   <span className="text-muted-foreground">Queries</span>
                   <span className="text-foreground">{queryLocations?.length || 0}</span>
                 </div>
@@ -1592,8 +1588,7 @@ function ContentTab({ campaignId }: { campaignId: number }) {
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground mb-1">
-              Copy the <strong>SITE-WIDE SCHEMA</strong> block and paste it into the <code className="text-orange-400">&lt;head&gt;</code> of every page
-              (use the <em>Insert Headers and Footers</em> plugin in WordPress). Each per-page block goes on its corresponding page.
+              Copy the <strong>SITE-WIDE SCHEMA</strong> block and paste it into the <code className="text-orange-400">&lt;head&gt;</code> of every page on the client's site. Each per-page block goes on its corresponding page.
             </p>
             {schemaPackagePage.placementInstructions && (
               <p className="text-xs text-orange-300/80 mb-3 bg-orange-500/10 rounded p-2">

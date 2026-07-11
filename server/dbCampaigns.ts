@@ -527,7 +527,6 @@ export async function getAllCampaignsWithBusinessInfo(): Promise<
       packageTierId: campaigns.packageTierId,
       campaignName: campaigns.campaignName,
       status: campaigns.status,
-      clientType: campaigns.clientType,
       keywordResearchCompletedAt: campaigns.keywordResearchCompletedAt,
       credibilityResearchCompletedAt: campaigns.credibilityResearchCompletedAt,
       contentGenerationCompletedAt: campaigns.contentGenerationCompletedAt,

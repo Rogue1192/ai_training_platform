@@ -219,11 +219,7 @@ export default function Campaigns() {
                               {campaign.website}
                             </span>
                           )}
-                          {campaign.clientType && (
-                            <Badge variant="secondary" className="text-xs">
-                              {campaign.clientType.replace(/_/g, " ")}
-                            </Badge>
-                          )}
+
                         </div>
                       </div>
                     </div>

@@ -274,15 +274,10 @@ export default function Businesses() {
     licenses: "",
     warranties: "",
     differentiators: "",
-    clientType: "ai_only",
     internalSource: "none",
     packageTier: "starter",
     specialties: "",
     credibilityUrls: [] as Array<{ label: string; url: string }>,
-    siteAdminUrl: "",
-    siteUsername: "",
-    sitePassword: "",
-    useWebhookForContent: false,
     // Agency assignment
     agencyId: null as number | null,
     billingType: "direct" as string,
@@ -308,15 +303,10 @@ export default function Businesses() {
       licenses: "",
       warranties: "",
       differentiators: "",
-      clientType: "ai_only",
       internalSource: "",
       packageTier: "starter",
       specialties: "",
       credibilityUrls: [],
-      siteAdminUrl: "",
-      siteUsername: "",
-      sitePassword: "",
-      useWebhookForContent: false,
       agencyId: null,
       billingType: "direct",
       noCharge: false,
@@ -415,17 +405,12 @@ export default function Businesses() {
       licenses: business.licenses || "",
       warranties: business.warranties || "",
       differentiators: business.differentiators || "",
-      clientType: business.clientType || "ai_only",
       internalSource: business.internalSource || "none",
       packageTier: business.packageTier || "starter",
       specialties: business.specialties || "",
       credibilityUrls: (() => {
         try { return JSON.parse(business.credibilityUrls || "[]"); } catch { return []; }
       })(),
-      siteAdminUrl: business.siteAdminUrl || "",
-      siteUsername: business.siteUsername || "",
-      sitePassword: "",
-      useWebhookForContent: business.useWebhookForContent ?? false,
       agencyId: business.agencyId ?? null,
       billingType: business.billingType || "direct",
       noCharge: business.noCharge ?? false,
@@ -456,7 +441,6 @@ export default function Businesses() {
     } else {
       delete payload.yearsInBusiness;
     }
-    if (!payload.sitePassword) delete payload.sitePassword;
     if (!payload.internalSource || payload.internalSource === 'none') delete payload.internalSource;
     // Serialize credibilityUrls array to JSON string, filtering out blank entries
     const filledCredUrls = (payload.credibilityUrls as Array<{ label: string; url: string }>)
@@ -649,24 +633,9 @@ export default function Businesses() {
                       <Input id="phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="e.g., (555) 123-4567" className="bg-background border-input" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="website">Website</Label>
-                      <Input id="website" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} placeholder="e.g., https://example.com" className="bg-background border-input" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="clientType">Client Type</Label>
-                      <Select value={formData.clientType} onValueChange={(value) => setFormData({ ...formData, clientType: value })}>
-                        <SelectTrigger className="bg-background border-input">
-                          <SelectValue placeholder="Select client type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ai_only">AI Answer Forge Only</SelectItem>
-                          <SelectItem value="ai_plus_seo">AI + SEO (Existing Site)</SelectItem>
-                          <SelectItem value="ai_plus_seo_plus_build">AI + SEO + New Build</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="website">Website</Label>
+                    <Input id="website" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} placeholder="e.g., https://example.com" className="bg-background border-input" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">

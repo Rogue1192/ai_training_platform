@@ -20,7 +20,6 @@ export const scheduleTypeEnum = pgEnum("schedule_type", ["hourly", "daily", "wee
 // Valid values: 'clean' | 'suggestive' | 'follow_up' | 'category_based'
 
 // New enums for AI Answer Forge
-export const clientTypeEnum = pgEnum("client_type", ["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]);
 export const campaignStatusEnum = pgEnum("campaign_status", [
   "pending",           // Just created from webhook
   "keyword_research",  // Running keyword research
@@ -133,22 +132,12 @@ export const businesses = pgTable("businesses", {
   angiesUrl: varchar("angiesUrl", { length: 500 }),
   thumbtackUrl: varchar("thumbtackUrl", { length: 500 }),
   houzzUrl: varchar("houzzUrl", { length: 500 }),
-  // WordPress credentials (encrypted) for auto-publishing
-  siteAdminUrl: text("siteAdminUrl"),
-  siteUsername: text("siteUsername"),
-  sitePasswordEncrypted: text("sitePasswordEncrypted"),
-  // Client type determines the publishing workflow
-  clientType: clientTypeEnum("clientType"),
   // Agency billing — Stripe subscription for this client (billed to the agency)
   stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
   agencyPackageTier: varchar("agencyPackageTier", { length: 50 }),
   // Agency notification preference — if false, win emails are sent to the business only,
   // not to the agency. Defaults to true (agency receives all win emails by default).
   agencyWinEmailsEnabled: boolean("agencyWinEmailsEnabled").default(true).notNull(),
-  // Content delivery method — if true, credibility content is sent via outbound webhook
-  // to the website builder platform (we are building their site). If false (default),
-  // Playwright logs into their existing site and publishes directly.
-  useWebhookForContent: boolean("useWebhookForContent").default(false).notNull(),
   // Archive flag — soft-delete for test/inactive clients
   isArchived: boolean("isArchived").default(false).notNull(),
   // Billing type — how this business is billed. Flows down to all campaigns created for this business.
@@ -405,7 +394,6 @@ export const campaigns = pgTable("campaigns", {
   // Campaign identification
   campaignName: varchar("campaignName", { length: 255 }).notNull(),
   status: campaignStatusEnum("status").default("pending").notNull(),
-  clientType: clientTypeEnum("clientType").notNull(),
   // Pipeline tracking — which phase has been completed
   keywordResearchCompletedAt: timestamp("keywordResearchCompletedAt"),
   credibilityResearchCompletedAt: timestamp("credibilityResearchCompletedAt"),
