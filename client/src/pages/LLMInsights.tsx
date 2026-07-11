@@ -3,11 +3,12 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
   Loader2, Search, TrendingUp, MessageSquare, Brain, Globe, Target,
   Plus, Trash2, ChevronDown, ChevronRight, Building2, RefreshCw,
-  Clock, History, X, CheckCircle2,
+  Clock, History, X, CheckCircle2, Filter,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -174,10 +175,17 @@ export default function LLMInsights() {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [drafts, setDrafts] = useState<Record<number, { q: string; loc: string }>>({});
   const [historyTarget, setHistoryTarget] = useState<{ id: number; label: string } | null>(null);
+  const [billingFilter, setBillingFilter] = useState<string>("all");
+  const [agencyFilter, setAgencyFilter] = useState<string>("all");
 
   const utils = trpc.useUtils();
-  const { data: queries, isLoading: queriesLoading } = trpc.llmInsights.topQueries.useQuery({ limit: 500 });
+  const { data: queries, isLoading: queriesLoading } = trpc.llmInsights.topQueries.useQuery({
+    limit: 500,
+    billingType: billingFilter !== "all" ? billingFilter : undefined,
+    agencyId: agencyFilter !== "all" ? parseInt(agencyFilter) : undefined,
+  });
   const { data: stats, isLoading: statsLoading } = trpc.llmInsights.aggregateStats.useQuery();
+  const { data: agencies } = trpc.agency.list.useQuery();
 
   const invalidate = () => {
     utils.llmInsights.topQueries.invalidate();
@@ -366,16 +374,49 @@ export default function LLMInsights() {
       )}
 
       {/* Clients */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-foreground">Clients &amp; Tracked Queries</h2>
-        <div className="relative w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Filter by client, query, location…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-background border-input"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Billing type filter */}
+          <div className="flex items-center gap-1.5">
+            <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+            <Select value={billingFilter} onValueChange={setBillingFilter}>
+              <SelectTrigger className="w-40 h-8 text-xs bg-background border-input">
+                <SelectValue placeholder="All billing types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All billing types</SelectItem>
+                <SelectItem value="white_label">White Label</SelectItem>
+                <SelectItem value="direct">Direct</SelectItem>
+                <SelectItem value="legacy">Legacy</SelectItem>
+                <SelectItem value="no_charge">No Charge</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Agency filter */}
+          {agencies && agencies.length > 0 && (
+            <Select value={agencyFilter} onValueChange={setAgencyFilter}>
+              <SelectTrigger className="w-44 h-8 text-xs bg-background border-input">
+                <SelectValue placeholder="All agencies" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All agencies</SelectItem>
+                {agencies.map((a) => (
+                  <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {/* Text search */}
+          <div className="relative w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Filter by client, query, location…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 h-8 text-xs bg-background border-input"
+            />
+          </div>
         </div>
       </div>
 

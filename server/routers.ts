@@ -3040,13 +3040,26 @@ export const llmInsightsRouter = router({
     .input(z.object({
       limit: z.number().min(1).max(500).default(100),
       campaignId: z.number().optional(), // Filter to a single campaign
+      billingType: z.string().optional(), // Filter by billing type
+      agencyId: z.number().optional(), // Filter by agency
     }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
-      const { campaignQueryLocations, campaigns, businesses } = await import("../drizzle/schema");
-      const { eq, sql } = await import("drizzle-orm");
+      const { campaignQueryLocations, campaigns, businesses, agencies } = await import("../drizzle/schema");
+      const { eq, sql, and } = await import("drizzle-orm");
       const db = await getDb();
       if (!db) return [];
+
+      const conditions = [];
+      if (input.campaignId) conditions.push(eq(campaignQueryLocations.campaignId, input.campaignId));
+      if (input.billingType === 'no_charge') {
+        const { isNotNull } = await import("drizzle-orm");
+        // noCharge is a runtime-added column; use sql cast
+        conditions.push(sql`${campaigns.noCharge} = true`);
+      } else if (input.billingType) {
+        conditions.push(eq(campaigns.billingType, input.billingType as any));
+      }
+      if (input.agencyId) conditions.push(eq(businesses.agencyId, input.agencyId));
 
       const query = db
         .select({
@@ -3067,20 +3080,21 @@ export const llmInsightsRouter = router({
           businessName: businesses.name,
           campaignName: campaigns.campaignName,
           businessType: businesses.businessType,
+          billingType: campaigns.billingType,
+          noCharge: campaigns.noCharge,
+          agencyId: businesses.agencyId,
+          agencyName: agencies.name,
         })
         .from(campaignQueryLocations)
         .leftJoin(campaigns, eq(campaignQueryLocations.campaignId, campaigns.id))
         .leftJoin(businesses, eq(campaigns.businessId, businesses.id))
+        .leftJoin(agencies, eq(businesses.agencyId, agencies.id))
         // Show ALL tracked queries. Previously this hid any query whose
         // aiSearchVolume was null, which made a campaign read "N queries tracked"
         // in the summary but show an empty table (queries created without AI-volume
         // data, e.g. via the intake webhook). Order by volume with nulls last so
         // volume-ranked queries stay on top and no-volume ones still appear.
-        .where(
-          input.campaignId
-            ? eq(campaignQueryLocations.campaignId, input.campaignId)
-            : undefined
-        )
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(sql`${campaignQueryLocations.aiSearchVolume} desc nulls last`)
         .limit(input.limit);
 

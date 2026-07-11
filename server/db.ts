@@ -469,7 +469,34 @@ export async function getAllTrainingSessions(): Promise<TrainingSession[]> {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select().from(trainingSessions).orderBy(desc(trainingSessions.createdAt));
+  const rows = await db
+    .select({
+      id: trainingSessions.id,
+      businessId: trainingSessions.businessId,
+      trainingName: trainingSessions.trainingName,
+      topic: trainingSessions.topic,
+      targetAiProvider: trainingSessions.targetAiProvider,
+      targetAiModel: trainingSessions.targetAiModel,
+      influencerAiProvider: trainingSessions.influencerAiProvider,
+      influencerAiModel: trainingSessions.influencerAiModel,
+      trainingPrompts: trainingSessions.trainingPrompts,
+      trainingContext: trainingSessions.trainingContext,
+      trainingGoal: trainingSessions.trainingGoal,
+      iterations: trainingSessions.iterations,
+      currentProgress: trainingSessions.currentProgress,
+      retryInterval: trainingSessions.retryInterval,
+      status: trainingSessions.status,
+      trainingPhase: trainingSessions.trainingPhase,
+      errorMessage: trainingSessions.errorMessage,
+      isArchived: trainingSessions.isArchived,
+      createdAt: trainingSessions.createdAt,
+      updatedAt: trainingSessions.updatedAt,
+      businessName: businesses.name,
+    })
+    .from(trainingSessions)
+    .leftJoin(businesses, eq(trainingSessions.businessId, businesses.id))
+    .orderBy(desc(trainingSessions.createdAt));
+  return rows as any[];
 }
 
 export async function getAllTodayMetrics(): Promise<{

@@ -73,7 +73,7 @@ export default function AgencyClientDetail() {
 
   const handleExitImpersonation = () => {
     sessionStorage.removeItem('impersonatedAgencyId');
-    navigate('/admin/agencies');
+    navigate('/agencies');
   };
 
   return (

@@ -98,7 +98,7 @@ export default function AgencyPortal() {
 
   const handleExitImpersonation = () => {
     sessionStorage.removeItem('impersonatedAgencyId');
-    navigate('/admin/agencies');
+    navigate('/agencies');
   };
 
   return (

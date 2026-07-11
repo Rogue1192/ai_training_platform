@@ -14,7 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Check, ChevronsUpDown, Square, CheckSquare, MinusSquare, Pencil, Clock, AlertTriangle, Activity } from "lucide-react";
+import { Loader2, Plus, Play, Pause, RotateCcw, Trash2, MessageSquare, Brain, ChevronLeft, ChevronRight, ChevronDown, ChevronsLeft, ChevronsRight, Check, ChevronsUpDown, Square, CheckSquare, MinusSquare, Pencil, Clock, AlertTriangle, Activity } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { ConversationViewer } from "@/components/ConversationViewer";
@@ -345,7 +345,30 @@ export default function TrainingSessions() {
     return true;
   }) || [];
 
-  // Paginate sessions
+  // Group sessions by business for the accordion view
+  const groupedSessions = useMemo(() => {
+    const groups = new Map<string, { businessId: number | null; businessName: string; sessions: typeof filteredSessions }>();
+    for (const session of filteredSessions) {
+      const key = session.businessId?.toString() ?? "unknown";
+      const name = (session as any).businessName ?? `Business #${session.businessId ?? "Unknown"}`;
+      if (!groups.has(key)) groups.set(key, { businessId: session.businessId ?? null, businessName: name, sessions: [] });
+      groups.get(key)!.sessions.push(session);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.businessName.localeCompare(b.businessName));
+  }, [filteredSessions]);
+
+  const [collapsedBusinesses, setCollapsedBusinesses] = useState<Set<string>>(new Set());
+  const toggleBusinessCollapse = (key: string) => {
+    setCollapsedBusinesses(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  const collapseAllBusinesses = () => setCollapsedBusinesses(new Set(groupedSessions.map(g => g.businessId?.toString() ?? "unknown")));
+  const expandAllBusinesses = () => setCollapsedBusinesses(new Set());
+
+  // Paginate sessions (kept for legacy bulk-action count)
   const paginatedSessions = filteredSessions.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
@@ -988,20 +1011,49 @@ export default function TrainingSessions() {
         </div>
       )}
 
-      {/* Sessions Grid */}
+      {/* Sessions Grid — grouped by business */}
       {isLoading ? (
         <div className="text-center py-12">
           <Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" />
         </div>
-      ) : paginatedSessions.length === 0 ? (
+      ) : filteredSessions.length === 0 ? (
         <Card className="bg-card border-border">
           <CardContent className="pt-6 text-center">
             <p className="text-muted-foreground">No matching sessions</p>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4">
-          {paginatedSessions.map((session) => (
+        <div className="space-y-4">
+          {/* Expand / Collapse all */}
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" size="sm" onClick={expandAllBusinesses} className="text-xs text-muted-foreground">Expand All</Button>
+            <Button variant="ghost" size="sm" onClick={collapseAllBusinesses} className="text-xs text-muted-foreground">Collapse All</Button>
+          </div>
+          {groupedSessions.map((group) => {
+            const groupKey = group.businessId?.toString() ?? "unknown";
+            const isCollapsed = collapsedBusinesses.has(groupKey);
+            const errorCount = group.sessions.filter(s => s.status === "error").length;
+            const activeCount = group.sessions.filter(s => s.status === "in_progress").length;
+            return (
+              <div key={groupKey} className="rounded-lg border border-border bg-card overflow-hidden">
+                {/* Business header row */}
+                <button
+                  type="button"
+                  onClick={() => toggleBusinessCollapse(groupKey)}
+                  className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    {isCollapsed ? <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+                    <span className="font-semibold text-foreground">{group.businessName}</span>
+                    <Badge variant="outline" className="text-xs">{group.sessions.length} session{group.sessions.length !== 1 ? "s" : ""}</Badge>
+                    {activeCount > 0 && <Badge className="text-xs bg-green-500/20 text-green-400 border-green-500/30">{activeCount} running</Badge>}
+                    {errorCount > 0 && <Badge className="text-xs bg-red-500/20 text-red-400 border-red-500/30">{errorCount} error</Badge>}
+                  </div>
+                </button>
+                {/* Sessions inside this business */}
+                {!isCollapsed && (
+                  <div className="divide-y divide-border border-t border-border">
+                    {group.sessions.map((session) => (
             <Card
               key={session.id}
               className={cn(
@@ -1197,10 +1249,15 @@ export default function TrainingSessions() {
               </CardContent>
             </Card>
           ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Pagination */}
+      {/* Pagination — hidden in grouped view; kept for session count display */}
       {totalPages > 1 && (
         <div className="flex justify-between items-center">
           <p className="text-sm text-muted-foreground">
