@@ -251,6 +251,34 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
   const [expandedPages, setExpandedPages] = useState<Record<number, boolean>>({});
   const [urlInputs, setUrlInputs] = useState<Record<number, string>>({});
 
+  // Verification state — tracks scan results for llm.txt and schema checkboxes
+  const [llmVerified, setLlmVerified] = useState(false);
+  const [schemaVerified, setSchemaVerified] = useState(false);
+  const [llmError, setLlmError] = useState<string | null>(null);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  const verifyMutation = trpc.verifyCampaignContent.useMutation({
+    onSuccess: (result) => {
+      setLlmVerified(result.llmTxt.detected);
+      setSchemaVerified(result.schema.detected);
+      setLlmError(result.llmTxt.detected ? null : (result.llmTxt.error ?? 'Not detected'));
+      setSchemaError(result.schema.detected ? null : (result.schema.error ?? 'Not detected'));
+      setScanning(false);
+    },
+    onError: (err) => {
+      setScanning(false);
+      toast.error(`Scan failed: ${err.message}`);
+    },
+  });
+
+  const handleVerifyCheck = () => {
+    setScanning(true);
+    setLlmError(null);
+    setSchemaError(null);
+    verifyMutation.mutate({ campaignId });
+  };
+
   const { data, isLoading, isError } = trpc.agency.getClientContentPages.useQuery(
     { campaignId },
     { refetchOnWindowFocus: false }
@@ -283,37 +311,94 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
   }
 
   const { pages } = data;
-  const allUrlsEntered = pages.length > 0 && pages.every((p: any) => !!p.publishedUrl);
+  // Pages that require a URL (exclude schema/llm_txt types — those are verified by scan)
+  const NO_URL_REQUIRED_TYPES = new Set(['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery']);
+  const urlPages = pages.filter((p: any) => !NO_URL_REQUIRED_TYPES.has(p.pageType));
+  const allUrlsEntered = urlPages.length > 0 && urlPages.every((p: any) => !!p.publishedUrl);
+  const allVerified = allUrlsEntered && llmVerified && schemaVerified;
+  const hasAnyIssue = !allUrlsEntered || !llmVerified || !schemaVerified;
 
   return (
     <div className="space-y-3">
-      {/* Status banner */}
-      {!allUrlsEntered && pages.length > 0 && (
-        <div className="flex items-start gap-2 rounded-md bg-indigo-500/10 border border-indigo-500/30 px-3 py-2">
-          <FileText className="h-4 w-4 text-indigo-400 mt-0.5 shrink-0" />
-          <div className="text-xs text-indigo-300">
-            {['training', 'monitoring', 'completed', 'active'].includes(campaignStatus) ? (
-              <>
-                <p className="font-medium">Action needed — add content to client site</p>
-                <p className="text-indigo-300/70 mt-0.5">
-                  This client was set up before the self-publishing workflow. Copy each item below into the client's website and paste the live URLs back here to complete the setup.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="font-medium">Content ready — add to your client's site</p>
-                <p className="text-indigo-300/70 mt-0.5">
-                  Copy each page below into the client's website, then paste the live URL back here. Indexing and training start automatically once all URLs are submitted.
-                </p>
-              </>
-            )}
+      {/* RED WARNING BANNER — shown whenever anything is incomplete */}
+      {hasAnyIssue && pages.length > 0 && (
+        <div className="flex items-start gap-2 rounded-md bg-red-500/15 border border-red-500/50 px-3 py-2.5">
+          <AlertCircle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+          <div className="text-xs text-red-300 space-y-1">
+            <p className="font-semibold text-red-200">⛔ Campaign blocked — content not yet live on client site</p>
+            <p className="text-red-300/80">
+              The campaign cannot advance to indexing or training until ALL items below are confirmed live.
+              Enter the URL for each content page, then check the boxes to verify llm.txt and schema are installed.
+            </p>
+            <ul className="mt-1 space-y-0.5 text-red-300/70">
+              {!allUrlsEntered && (
+                <li>• {urlPages.filter((p: any) => !p.publishedUrl).length} content page(s) still need a live URL</li>
+              )}
+              {!llmVerified && <li>• llm.txt not yet verified on client site</li>}
+              {!schemaVerified && <li>• JSON-LD schema not yet verified on client site</li>}
+            </ul>
           </div>
         </div>
       )}
-      {allUrlsEntered && (
+
+      {/* ALL CLEAR banner */}
+      {allVerified && (
         <div className="flex items-center gap-2 rounded-md bg-green-500/10 border border-green-500/30 px-3 py-2">
           <CheckCircle className="h-4 w-4 text-green-400 shrink-0" />
-          <p className="text-xs text-green-300 font-medium">All content URLs recorded — setup complete.</p>
+          <p className="text-xs text-green-300 font-medium">✅ All content verified live — campaign can advance.</p>
+        </div>
+      )}
+
+      {/* LLM.TXT + SCHEMA VERIFICATION CHECKBOXES */}
+      {pages.some((p: any) => p.pageType === 'llm_txt' || p.pageType === 'schema_package' || p.pageType === 'schema_delivery') && (
+        <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Site Verification</p>
+          <p className="text-xs text-muted-foreground mb-2">Check each box to scan the client's site and confirm these assets are live. The scan runs automatically when you check.</p>
+
+          {/* Single verify checkbox — scans both llm.txt and schema at once */}
+          <div
+            className={`flex items-start gap-3 p-2 rounded-md border cursor-pointer select-none transition-colors ${
+              allVerified
+                ? 'border-green-500/40 bg-green-500/5'
+                : scanning
+                ? 'border-amber-500/40 bg-amber-500/5'
+                : (llmError || schemaError)
+                ? 'border-red-500/40 bg-red-500/5'
+                : 'border-border hover:border-muted-foreground/40'
+            }`}
+            onClick={() => { if (!scanning && !allVerified) handleVerifyCheck(); }}
+          >
+            <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
+              allVerified ? 'border-green-500 bg-green-500' : scanning ? 'border-amber-400' : (llmError || schemaError) ? 'border-red-500' : 'border-muted-foreground'
+            }`}>
+              {scanning && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
+              {!scanning && allVerified && <CheckCircle className="h-2.5 w-2.5 text-white" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium">
+                {scanning ? 'Scanning site…' : allVerified ? 'llm.txt + Schema verified ✓' : 'Verify llm.txt and JSON-LD schema are live on site'}
+              </p>
+              {!scanning && !allVerified && (
+                <p className="text-xs text-muted-foreground mt-0.5">Click to scan the client's website now</p>
+              )}
+              {/* Per-item results */}
+              {!scanning && (llmVerified || llmError) && (
+                <div className={`text-xs mt-1 flex items-center gap-1 ${llmVerified ? 'text-green-400' : 'text-red-400'}`}>
+                  {llmVerified ? <CheckCircle className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                  llm.txt: {llmVerified ? 'Detected' : `Not detected — ${llmError}`}
+                </div>
+              )}
+              {!scanning && (schemaVerified || schemaError) && (
+                <div className={`text-xs mt-0.5 flex items-center gap-1 ${schemaVerified ? 'text-green-400' : 'text-red-400'}`}>
+                  {schemaVerified ? <CheckCircle className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                  Schema: {schemaVerified ? 'Detected' : `Not detected — ${schemaError}`}
+                </div>
+              )}
+              {!scanning && (llmError || schemaError) && (
+                <p className="text-xs text-amber-400/80 mt-1">Fix the issue on the client's site, then click again to re-scan.</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

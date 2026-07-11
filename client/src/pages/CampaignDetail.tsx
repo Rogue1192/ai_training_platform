@@ -1177,6 +1177,35 @@ function ContentTab({ campaignId }: { campaignId: number }) {
   const [expandedPages, setExpandedPages] = useState<Record<number, boolean>>({});
   const [toastFired, setToastFired] = useState(false);
 
+  // Publishing gate verification state
+  const [llmVerified, setLlmVerified] = useState(false);
+  const [schemaVerified, setSchemaVerified] = useState(false);
+  const [llmScanError, setLlmScanError] = useState<string | null>(null);
+  const [schemaScanError, setSchemaScanError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  const verifyContent = trpc.verifyCampaignContent.useMutation({
+    onSuccess: (result) => {
+      setLlmVerified(result.llmTxt.detected);
+      setSchemaVerified(result.schema.detected);
+      setLlmScanError(result.llmTxt.detected ? null : (result.llmTxt.error ?? 'Not detected'));
+      setSchemaScanError(result.schema.detected ? null : (result.schema.error ?? 'Not detected'));
+      setScanning(false);
+    },
+    onError: (err) => {
+      setScanning(false);
+      toast.error(`Scan failed: ${err.message}`);
+    },
+  });
+
+  const handleVerifyCheck = () => {
+    if (scanning) return;
+    setScanning(true);
+    setLlmScanError(null);
+    setSchemaScanError(null);
+    verifyContent.mutate({ campaignId });
+  };
+
   const currentCount = contentPages?.length ?? 0;
 
   const regenerateLlmTxt = trpc.campaign.regenerateLlmTxt.useMutation({
@@ -1248,6 +1277,9 @@ function ContentTab({ campaignId }: { campaignId: number }) {
   const llmTxtPage = contentPages?.find((p: any) => p.pageType === "llm_txt");
   const schemaPackagePage = contentPages?.find((p: any) => p.pageType === "schema_package");
   const allUrlsEntered = visiblePages.length > 0 && visiblePages.every((p: any) => !!p.publishedUrl);
+  const hasSpecialAssets = !!(llmTxtPage || schemaPackagePage);
+  const allVerified = allUrlsEntered && (!hasSpecialAssets || (llmVerified && schemaVerified));
+  const hasAnyIssue = visiblePages.length > 0 && (!allUrlsEntered || (hasSpecialAssets && (!llmVerified || !schemaVerified)));
 
   return (
     <div className="space-y-4">
@@ -1256,30 +1288,93 @@ function ContentTab({ campaignId }: { campaignId: number }) {
         <CredibilityResearchCard credData={credData} />
       )}
 
-      {/* Workflow banner — shown when pages exist but not all URLs are saved */}
-      {visiblePages.length > 0 && !allUrlsEntered && (
-        <Card className="bg-indigo-500/10 border-indigo-500/30">
+      {/* RED WARNING BANNER — campaign blocked until all content is live */}
+      {hasAnyIssue && (
+        <Card className="bg-red-500/15 border-red-500/50">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-start gap-3">
-              <FileText className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
-              <div className="text-sm text-indigo-200">
-                <p className="font-medium">Content ready — copy into the client's site</p>
-                <p className="text-xs text-indigo-300/80 mt-0.5">
-                  Each page below shows where it goes and has a Copy button. Paste the content into the client's site, then enter the live URL here. Indexing starts automatically once all URLs are saved.
+              <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-semibold text-red-200">⛔ Campaign blocked — content not yet live on client site</p>
+                <p className="text-xs text-red-300/80 mt-0.5">
+                  The campaign cannot advance to indexing or training until ALL items are confirmed live on the client's website.
+                  Enter the URL for each content page, then check the verification box to confirm llm.txt and schema are installed.
                 </p>
+                <ul className="mt-2 space-y-0.5 text-xs text-red-300/70">
+                  {!allUrlsEntered && (
+                    <li>• {visiblePages.filter((p: any) => !p.publishedUrl).length} content page(s) still need a live URL</li>
+                  )}
+                  {hasSpecialAssets && !llmVerified && <li>• llm.txt not yet verified on client site</li>}
+                  {hasSpecialAssets && !schemaVerified && <li>• JSON-LD schema not yet verified on client site</li>}
+                </ul>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* All done banner */}
-      {allUrlsEntered && (
+      {/* ALL CLEAR banner */}
+      {allVerified && visiblePages.length > 0 && (
         <Card className="bg-green-500/10 border-green-500/30">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-3">
               <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
-              <p className="text-sm text-green-300 font-medium">All pages published — indexing in progress.</p>
+              <p className="text-sm text-green-300 font-medium">✅ All content verified live — campaign can advance to indexing.</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* LLM.TXT + SCHEMA VERIFICATION CHECKBOX — auto-scans on click */}
+      {hasSpecialAssets && visiblePages.length > 0 && (
+        <Card className="bg-card border-border">
+          <CardContent className="pt-4 pb-3">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Site Verification</p>
+            <p className="text-xs text-muted-foreground mb-3">
+              Check the box below to scan the client's site and confirm llm.txt and JSON-LD schema are live.
+              The scan runs automatically when you click — you cannot manually override it.
+            </p>
+            <div
+              className={`flex items-start gap-3 p-3 rounded-md border cursor-pointer select-none transition-colors ${
+                allVerified
+                  ? 'border-green-500/40 bg-green-500/5'
+                  : scanning
+                  ? 'border-amber-500/40 bg-amber-500/5'
+                  : (llmScanError || schemaScanError)
+                  ? 'border-red-500/40 bg-red-500/5'
+                  : 'border-border hover:border-muted-foreground/40'
+              }`}
+              onClick={() => { if (!scanning && !allVerified) handleVerifyCheck(); }}
+            >
+              <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                allVerified ? 'border-green-500 bg-green-500' : scanning ? 'border-amber-400' : (llmScanError || schemaScanError) ? 'border-red-500' : 'border-muted-foreground'
+              }`}>
+                {scanning && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
+                {!scanning && allVerified && <CheckCircle2 className="h-2.5 w-2.5 text-white" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">
+                  {scanning ? 'Scanning site…' : allVerified ? 'llm.txt + Schema verified ✓' : 'Verify llm.txt and JSON-LD schema are live on site'}
+                </p>
+                {!scanning && !allVerified && (
+                  <p className="text-xs text-muted-foreground mt-0.5">Click to scan the client's website now</p>
+                )}
+                {!scanning && (llmVerified || llmScanError) && (
+                  <div className={`text-xs mt-1 flex items-center gap-1 ${llmVerified ? 'text-green-400' : 'text-red-400'}`}>
+                    {llmVerified ? <CheckCircle2 className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                    llm.txt: {llmVerified ? 'Detected' : `Not detected — ${llmScanError}`}
+                  </div>
+                )}
+                {!scanning && (schemaVerified || schemaScanError) && (
+                  <div className={`text-xs mt-0.5 flex items-center gap-1 ${schemaVerified ? 'text-green-400' : 'text-red-400'}`}>
+                    {schemaVerified ? <CheckCircle2 className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                    Schema: {schemaVerified ? 'Detected' : `Not detected — ${schemaScanError}`}
+                  </div>
+                )}
+                {!scanning && (llmScanError || schemaScanError) && (
+                  <p className="text-xs text-amber-400/80 mt-1">Fix the issue on the client's site, then click again to re-scan.</p>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>

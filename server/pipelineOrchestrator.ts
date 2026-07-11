@@ -319,6 +319,24 @@ export async function runPipelineStep(
       }
       
       case "indexing": {
+        // ── Publishing gate ───────────────────────────────────────────────────
+        // Block advancement if content pages are missing URLs or llm.txt / schema
+        // are not yet live on the client's site. Applies to ALL campaigns including
+        // legacy/pre-existing clients.
+        try {
+          const { enforcePublishingGate } = await import("./contentVerifier");
+          await enforcePublishingGate({
+            campaignId,
+            websiteUrl: business.website || "",
+          });
+        } catch (gateErr: any) {
+          // Set campaign status back to 'publishing' so the UI shows the warning
+          await db.update(campaigns)
+            .set({ status: "publishing", updatedAt: new Date() })
+            .where(eq(campaigns.id, campaignId));
+          throw gateErr;
+        }
+
         const { submitCampaignForIndexing } = await import("./monkeyIndexer");
         const indexResult = await submitCampaignForIndexing({
           campaignId,
@@ -380,6 +398,22 @@ export async function runPipelineStep(
       }
       
       case "training": {
+        // ── Publishing gate ───────────────────────────────────────────────────
+        // Double-check gate at training entry too — catches campaigns that were
+        // manually advanced or existed before the gate was introduced.
+        try {
+          const { enforcePublishingGate } = await import("./contentVerifier");
+          await enforcePublishingGate({
+            campaignId,
+            websiteUrl: business.website || "",
+          });
+        } catch (gateErr: any) {
+          await db.update(campaigns)
+            .set({ status: "publishing", updatedAt: new Date() })
+            .where(eq(campaigns.id, campaignId));
+          throw gateErr;
+        }
+
         // Apply aggressive training mode via smart scheduler
         const { applyCampaignModeChange } = await import("./smartScheduler");
         try {

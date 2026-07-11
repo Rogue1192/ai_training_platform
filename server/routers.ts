@@ -3034,6 +3034,91 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         };
       }),
    }),
+
+  // ── Content Publishing Gate ──────────────────────────────────────────────────
+  // Verify that llm.txt, schema, and all content page URLs are live on the client site.
+  // Called automatically when the agency/admin checks the verification checkbox.
+  verifyCampaignContent: protectedProcedure
+    .input(z.object({ campaignId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const { getDb } = await import('./db');
+      const { campaigns, businesses } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+
+      const [campaign] = await db
+        .select({ id: campaigns.id, businessId: campaigns.businessId })
+        .from(campaigns)
+        .where(eq(campaigns.id, input.campaignId))
+        .limit(1);
+      if (!campaign) throw new Error('Campaign not found');
+
+      const [business] = await db
+        .select({ id: businesses.id, website: businesses.website, agencyId: businesses.agencyId })
+        .from(businesses)
+        .where(eq(businesses.id, campaign.businessId))
+        .limit(1);
+      if (!business) throw new Error('Business not found');
+
+      if (ctx.user.role !== 'admin') {
+        const { getAgencyByUserId } = await import('./dbAgencies');
+        const agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency || agency.id !== business.agencyId) throw new Error('Forbidden');
+      }
+
+      const { verifyCampaignContent } = await import('./contentVerifier');
+      const result = await verifyCampaignContent({
+        campaignId: input.campaignId,
+        websiteUrl: business.website || '',
+      });
+      return result;
+    }),
+
+  // Super admin only: pause all campaigns that are in training/monitoring but have
+  // unpublished content pages (no URL entered). Run once after deploy.
+  pauseCampaignsWithUnpublishedContent: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Forbidden — super admin only');
+      const { getDb } = await import('./db');
+      const { campaigns, contentPages } = await import('../drizzle/schema');
+      const { eq, inArray } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+
+      const NO_URL_REQUIRED = ['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery'];
+
+      const activeCampaigns = await db
+        .select({ id: campaigns.id, status: campaigns.status })
+        .from(campaigns)
+        .where(
+          inArray(campaigns.status as any, ['training', 'monitoring', 'indexing', 'indexing_verification'])
+        );
+
+      const toPause: number[] = [];
+
+      for (const c of activeCampaigns) {
+        const pages = await db
+          .select({ id: contentPages.id, pageType: contentPages.pageType, publishedUrl: contentPages.publishedUrl })
+          .from(contentPages)
+          .where(eq(contentPages.campaignId, c.id));
+
+        const hasMissing = pages.some(
+          (p: any) => !NO_URL_REQUIRED.includes(p.pageType ?? '') && !p.publishedUrl
+        );
+
+        if (hasMissing) toPause.push(c.id);
+      }
+
+      if (toPause.length > 0) {
+        await db
+          .update(campaigns)
+          .set({ status: 'publishing', updatedAt: new Date() } as any)
+          .where(inArray(campaigns.id, toPause));
+      }
+
+      return { paused: toPause.length, campaignIds: toPause };
+    }),
 });
 // ============= LLM Insights — Query Volume Dashboard =============
 export const llmInsightsRouter = router({
