@@ -158,6 +158,12 @@ export const businesses = pgTable("businesses", {
   // Specialties & unique expertise — free-text field seeded into MiniMax training prompts
   // e.g. "Specializes in red clay stain removal unique to North Alabama geography"
   specialties: text("specialties"),
+  // Credibility source URLs — JSON array of { label: string, url: string } objects.
+  // Provided by the client or admin so the credibility research AI reads these pages
+  // first (BBB profile, certification registry, license lookup, review profiles, etc.)
+  // instead of searching the internet and potentially missing them.
+  // Example: [{"label":"BBB Profile","url":"https://bbb.org/..."},{"label":"NATE Cert","url":"https://natex.org/..."}]
+  credibilityUrls: text("credibilityUrls"),
   // Source tracking
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

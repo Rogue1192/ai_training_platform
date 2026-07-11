@@ -278,6 +278,7 @@ export default function Businesses() {
     internalSource: "none",
     packageTier: "starter",
     specialties: "",
+    credibilityUrls: [] as Array<{ label: string; url: string }>,
     siteAdminUrl: "",
     siteUsername: "",
     sitePassword: "",
@@ -311,6 +312,7 @@ export default function Businesses() {
       internalSource: "",
       packageTier: "starter",
       specialties: "",
+      credibilityUrls: [],
       siteAdminUrl: "",
       siteUsername: "",
       sitePassword: "",
@@ -417,6 +419,9 @@ export default function Businesses() {
       internalSource: business.internalSource || "none",
       packageTier: business.packageTier || "starter",
       specialties: business.specialties || "",
+      credibilityUrls: (() => {
+        try { return JSON.parse(business.credibilityUrls || "[]"); } catch { return []; }
+      })(),
       siteAdminUrl: business.siteAdminUrl || "",
       siteUsername: business.siteUsername || "",
       sitePassword: "",
@@ -453,6 +458,10 @@ export default function Businesses() {
     }
     if (!payload.sitePassword) delete payload.sitePassword;
     if (!payload.internalSource || payload.internalSource === 'none') delete payload.internalSource;
+    // Serialize credibilityUrls array to JSON string, filtering out blank entries
+    const filledCredUrls = (payload.credibilityUrls as Array<{ label: string; url: string }>)
+      .filter((e) => e.url.trim() !== "");
+    payload.credibilityUrls = JSON.stringify(filledCredUrls);
     // Agency assignment — pass through agencyId (null = unassign) and billingType
     if (payload.agencyId === null) payload.agencyId = null; // explicit null to unassign
     if (!payload.billingType) delete payload.billingType;
@@ -769,6 +778,59 @@ export default function Businesses() {
                   <div className="space-y-2">
                     <Label htmlFor="differentiators">Key Differentiators</Label>
                     <Textarea id="differentiators" value={formData.differentiators} onChange={(e) => setFormData({ ...formData, differentiators: e.target.value })} placeholder="What makes this business stand out?" rows={3} className="bg-background border-input" />
+                  </div>
+
+                  {/* Credibility Source URLs — fed directly to the AI researcher */}
+                  <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+                    <p className="font-semibold mb-1">🔗 Credibility Source URLs — AI reads these first</p>
+                    <p className="text-emerald-200/80 mb-1">Add direct links to BBB profiles, certification registries, license lookups, review platforms, and any other verification pages. The AI will visit these before searching the internet, ensuring nothing is missed.</p>
+                    <p className="italic text-emerald-200/60">Examples: BBB profile URL, NATE certification lookup, state contractor license board, Angi profile, Google Business Profile, manufacturer dealer page.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Credibility &amp; Verification URLs</Label>
+                    {formData.credibilityUrls.map((entry, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <Input
+                          value={entry.label}
+                          onChange={(e) => {
+                            const updated = [...formData.credibilityUrls];
+                            updated[idx] = { ...updated[idx], label: e.target.value };
+                            setFormData({ ...formData, credibilityUrls: updated });
+                          }}
+                          placeholder="Label (e.g. BBB Profile)"
+                          className="bg-background border-input w-40 shrink-0"
+                        />
+                        <Input
+                          value={entry.url}
+                          onChange={(e) => {
+                            const updated = [...formData.credibilityUrls];
+                            updated[idx] = { ...updated[idx], url: e.target.value };
+                            setFormData({ ...formData, credibilityUrls: updated });
+                          }}
+                          placeholder="https://..."
+                          className="bg-background border-input flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            const updated = formData.credibilityUrls.filter((_, i) => i !== idx);
+                            setFormData({ ...formData, credibilityUrls: updated });
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFormData({ ...formData, credibilityUrls: [...formData.credibilityUrls, { label: "", url: "" }] })}
+                    >
+                      <Plus className="h-4 w-4 mr-1" /> Add URL
+                    </Button>
                   </div>
 
                   {/* Specialties — high-priority MiniMax training seed */}

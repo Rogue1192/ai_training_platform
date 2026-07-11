@@ -167,6 +167,12 @@ export async function runPipelineStep(
       
       case "credibility_research": {
         const { runCredibilityResearch } = await import("./credibilityResearchEngine");
+        // Parse pre-supplied credibility URLs from the business record (BBB, certs, etc.)
+        let parsedCredibilityUrls: Array<{ label: string; url: string }> | undefined;
+        try {
+          const raw = (business as any).credibilityUrls;
+          if (raw) parsedCredibilityUrls = JSON.parse(raw);
+        } catch { /* ignore parse errors */ }
         const credResult = await runCredibilityResearch({
           userId,
           businessId: campaign.businessId,
@@ -175,6 +181,7 @@ export async function runPipelineStep(
           websiteUrl: business.website || "",
           industry: business.businessType || "",
           location: business.location || "",
+          credibilityUrls: parsedCredibilityUrls,
         });
         result = {
           step,

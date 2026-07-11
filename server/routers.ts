@@ -97,6 +97,7 @@ export const appRouter = router({
           warranties: z.string().optional(),
           differentiators: z.string().optional(),
           specialties: z.string().optional(),
+          credibilityUrls: z.string().optional(), // JSON string: [{label,url}]
           clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
           siteAdminUrl: z.string().optional(),
           siteUsername: z.string().optional(),
@@ -141,6 +142,7 @@ export const appRouter = router({
           warranties: z.string().optional(),
           differentiators: z.string().optional(),
           specialties: z.string().optional(),
+          credibilityUrls: z.string().optional(), // JSON string: [{label,url}]
           clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
           siteAdminUrl: z.string().optional(),
           siteUsername: z.string().optional(),
@@ -214,6 +216,7 @@ export const appRouter = router({
         warranties: z.string().optional(),
         differentiators: z.string().optional(),
         specialties: z.string().optional(),
+        credibilityUrls: z.string().optional(), // JSON string: [{label,url}]
         clientType: z.enum(["ai_only", "ai_plus_seo", "ai_plus_seo_plus_build"]).optional(),
         internalSource: z.enum(["rogue", "ranklocal"]).optional(),
         packageTier: z.enum(["starter", "growth", "pro"]),
@@ -1668,6 +1671,12 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         if (!business) throw new Error("Business not found for this campaign");
         
         const { runCredibilityResearch } = await import("./credibilityResearchEngine");
+        // Parse pre-supplied credibility URLs from the business record (BBB, certs, etc.)
+        let parsedCredibilityUrls: Array<{ label: string; url: string }> | undefined;
+        try {
+          const raw = (business as any).credibilityUrls;
+          if (raw) parsedCredibilityUrls = JSON.parse(raw);
+        } catch { /* ignore parse errors */ }
         return runCredibilityResearch({
           userId: ctx.user.id,
           businessId: campaign.businessId,
@@ -1676,6 +1685,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           websiteUrl: business.website || "",
           industry: business.businessType || "",
           location: business.location || "",
+          credibilityUrls: parsedCredibilityUrls,
         });
       }),
     getCredibilityData: protectedProcedure
@@ -3406,6 +3416,8 @@ export const agencyRouter = router({
       warranties: z.string().optional(),
       bbbRating: z.string().optional(),
       differentiators: z.string().optional(),
+      specialties: z.string().optional(),
+      credibilityUrls: z.string().optional(), // JSON string: [{label,url}]
       // ── Social profiles ──
       facebookUrl: z.string().optional(),
       instagramUrl: z.string().optional(),
@@ -3598,6 +3610,8 @@ export const agencyRouter = router({
       warranties: z.string().optional(),
       bbbRating: z.string().optional(),
       differentiators: z.string().optional(),
+      specialties: z.string().optional(),
+      credibilityUrls: z.string().optional(), // JSON string: [{label,url}]
       // ── Social profiles ──
       facebookUrl: z.string().optional(),
       instagramUrl: z.string().optional(),

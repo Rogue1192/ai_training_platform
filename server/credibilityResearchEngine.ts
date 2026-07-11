@@ -140,7 +140,8 @@ function buildResearchPrompt(
   websiteUrl: string,
   industry: string,
   location: string,
-  existingData?: Record<string, any>
+  existingData?: Record<string, any>,
+  credibilityUrls?: Array<{ label: string; url: string }>
 ): string {
   let prompt = `Research the credibility and trust signals for the following business:
 
@@ -149,6 +150,24 @@ Website: ${websiteUrl}
 Industry: ${industry}
 Location: ${location}
 `;
+
+  // ── Priority: provided credibility source URLs ──────────────────────────────
+  // These URLs were supplied by the business owner and point directly to their
+  // certification registries, BBB profile, license boards, review platforms, etc.
+  // The AI MUST visit and extract data from these first before doing any other
+  // open-ended research. Facts sourced from these URLs should be marked "high"
+  // confidence because they come from authoritative first-party or registry sources.
+  if (credibilityUrls && credibilityUrls.length > 0) {
+    prompt += `
+⚠️  PRIORITY SOURCES — visit and extract data from these URLs FIRST:
+`;
+    for (const entry of credibilityUrls) {
+      const label = entry.label ? `${entry.label}: ` : "";
+      prompt += `  - ${label}${entry.url}\n`;
+    }
+    prompt += `
+For any fact you find at one of the above URLs, set confidence to "high" and set verificationUrl to the exact URL where you found it. Do NOT skip these URLs — they are the most reliable source of truth for this business.\n`;
+  }
 
   if (existingData) {
     const dataPoints: string[] = [];
@@ -165,7 +184,7 @@ Location: ${location}
     }
   }
 
-  prompt += `\nBased on what you know about this business and businesses in the ${industry} industry in ${location}, provide comprehensive credibility research. Include both confirmed facts and reasonable inferences based on the business type and location.
+  prompt += `\nAfter reviewing the priority sources above, supplement with any additional credibility data you can find about this business and businesses in the ${industry} industry in ${location}. Include both confirmed facts and reasonable inferences based on the business type and location.
 
 For suggested pages, only suggest pages where we have enough data to create meaningful content. Each suggested page should have at least 2-3 supporting facts.
 
@@ -260,8 +279,10 @@ export async function runCredibilityResearch(params: {
   industry: string;
   location: string;
   existingCredibilityData?: Record<string, any>;
+  /** Pre-supplied verification URLs from the business record (BBB, certifications, etc.) */
+  credibilityUrls?: Array<{ label: string; url: string }>;
 }): Promise<CredibilityResearchResult> {
-  const { userId, businessId, campaignId, businessName, websiteUrl, industry, location, existingCredibilityData } = params;
+  const { userId, businessId, campaignId, businessName, websiteUrl, industry, location, existingCredibilityData, credibilityUrls } = params;
   
   // Get the global Anthropic API key
   const apiKeyRecord = await getApiKeyByProvider("anthropic");
@@ -272,7 +293,7 @@ export async function runCredibilityResearch(params: {
   const apiKey = decrypt(apiKeyRecord.encryptedKey);
   
   // Build the research prompt
-  const researchPrompt = buildResearchPrompt(businessName, websiteUrl, industry, location, existingCredibilityData);
+  const researchPrompt = buildResearchPrompt(businessName, websiteUrl, industry, location, existingCredibilityData, credibilityUrls);
   
   const messages: AIMessage[] = [
     { role: "system", content: CREDIBILITY_RESEARCH_SYSTEM_PROMPT },

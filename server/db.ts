@@ -1496,3 +1496,27 @@ export async function ensureCampaignColumns(): Promise<void> {
     }
   }
 }
+
+/**
+ * ensureBusinessCredibilityUrlsColumn
+ *
+ * Adds the credibilityUrls TEXT column to the businesses table if it does not
+ * already exist. Stores a JSON array of { label, url } objects that the
+ * credibility research AI reads first before doing open-ended web research.
+ *
+ * Safe to call on every startup — uses ADD COLUMN IF NOT EXISTS.
+ */
+export async function ensureBusinessCredibilityUrlsColumn(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE "businesses"
+      ADD COLUMN IF NOT EXISTS "credibilityUrls" text
+    `;
+    console.log('[DB] businesses.credibilityUrls column ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureBusinessCredibilityUrlsColumn:', err.message);
+  }
+}

@@ -13,7 +13,7 @@ import { trainingWorker } from "../trainingQueue";
 import { startTrainingWorkerV2 } from "../trainingQueueV2";
 import { startScheduler } from "../scheduler";
 import { createWebhookRouter } from "../webhookHandler";
-import { ensureMonkeyIndexerEnumValue, ensureIsTargetLocationColumn, ensureModelConfigEnumValue, ensureCampaignScopeColumn, ensureNoChargeColumn, ensureBusinessNoChargeColumn, ensureCampaignColumns } from "../db";
+import { ensureMonkeyIndexerEnumValue, ensureIsTargetLocationColumn, ensureModelConfigEnumValue, ensureCampaignScopeColumn, ensureNoChargeColumn, ensureBusinessNoChargeColumn, ensureCampaignColumns, ensureBusinessCredibilityUrlsColumn } from "../db";
 
 // Combined router with all sub-routers including llmInsights, agency, and costTracking
 const combinedRouter = router({
@@ -124,6 +124,9 @@ ensureBusinessNoChargeColumn().catch((err) =>
 // but may be missing from the live database due to missing migrations.
 ensureCampaignColumns().catch((err) =>
   console.warn("[Startup] ensureCampaignColumns failed (non-fatal):", err.message)
+);
+ensureBusinessCredibilityUrlsColumn().catch((err) =>
+  console.warn("[Startup] ensureBusinessCredibilityUrlsColumn failed (non-fatal):", err.message)
 );
 
 startServer().catch(console.error);
