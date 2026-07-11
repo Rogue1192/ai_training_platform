@@ -397,23 +397,11 @@ function CostLogDialog({
 function CampaignCostTable() {
   const [billingFilter, setBillingFilter] = useState<"all" | "white_label" | "direct" | "legacy" | "external">("all");
   const [selectedCampaign, setSelectedCampaign] = useState<{ id: number; name: string } | null>(null);
-  const updateBillingType = trpc.costTracking.updateCampaignBillingType.useMutation();
-  const utils = trpc.useUtils();
-
   const { data, isLoading, isFetching } = trpc.costTracking.getCampaignCosts.useQuery({
     billingType: billingFilter,
     limit: 100,
     offset: 0,
   });
-
-  const handleBillingTypeChange = async (campaignId: number, newType: string) => {
-    await updateBillingType.mutateAsync({
-      campaignId,
-      billingType: newType as "white_label" | "direct" | "legacy" | "external",
-    });
-    utils.costTracking.getCampaignCosts.invalidate();
-    utils.costTracking.getAggregateSummary.invalidate();
-  };
 
   return (
     <div className="space-y-4">
@@ -494,20 +482,7 @@ function CampaignCostTable() {
                     {c.packageTierName}
                   </TableCell>
                   <TableCell>
-                    <Select
-                      value={c.billingType}
-                      onValueChange={(v) => handleBillingTypeChange(c.campaignId, v)}
-                    >
-                      <SelectTrigger className="h-6 w-32 text-xs bg-transparent border-transparent hover:border-border p-1">
-                        <SelectValue>{billingTypeBadge(c.billingType)}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent className="bg-background border-border">
-                        <SelectItem value="white_label">White Label</SelectItem>
-                        <SelectItem value="direct">Direct</SelectItem>
-                        <SelectItem value="legacy">Legacy</SelectItem>
-                        <SelectItem value="external">External (billed outside)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {billingTypeBadge(c.billingType)}
                   </TableCell>
                   <TableCell>{statusBadge(c.campaignStatus)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">

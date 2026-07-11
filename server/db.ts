@@ -170,6 +170,17 @@ export async function updateBusiness(id: number, updates: Partial<InsertBusiness
   if (!db) throw new Error("Database not available");
 
   await db.update(businesses).set(updates).where(eq(businesses.id, id));
+
+  // Cascade: if billingType is being changed on the business, propagate it to ALL
+  // campaigns for that business so the Cost Tracking page stays in sync automatically.
+  // The business record is the single source of truth for billing type.
+  if (updates.billingType != null) {
+    const { campaigns } = await import('../drizzle/schema');
+    await db
+      .update(campaigns)
+      .set({ billingType: updates.billingType as string, updatedAt: new Date() })
+      .where(eq(campaigns.businessId, id));
+  }
 }
 
 export async function deleteBusiness(id: number): Promise<void> {
