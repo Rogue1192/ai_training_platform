@@ -41,6 +41,7 @@ import {
   Video,
   Play,
   Star,
+  Anchor,
 } from "lucide-react";
 
 // ============= Score Color Utilities =============
@@ -735,6 +736,45 @@ export default function ClientDashboard() {
             </div>
           </div>
         </motion.section>
+
+        {/* Static Baseline — locked-in starting scores, never changes */}
+        {baselineScore && (
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.15 }}
+            className="rounded-2xl border border-white/5 bg-gradient-to-br from-white/[0.02] to-transparent p-5 sm:p-6"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-heading font-bold text-white flex items-center gap-2">
+                <Anchor className="w-4 h-4 text-blue-400" />
+                Starting Baseline
+              </h2>
+              {report.baselineCheckAt && (
+                <span className="text-xs text-muted-foreground">
+                  Established {new Date(report.baselineCheckAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {([
+                { label: "Overall", value: baselineScore.overall, color: getScoreColor(baselineScore.overall) },
+                { label: "ChatGPT", value: baselineScore.chatgpt, color: "#22c55e" },
+                { label: "Gemini", value: baselineScore.gemini, color: "#a855f7" },
+                { label: "AI Overview", value: baselineScore.aiOverview, color: "#f97316" },
+              ] as { label: string; value: number; color: string }[]).map(({ label, value, color }) => (
+                <div key={label} className="rounded-xl border border-white/5 bg-white/[0.02] p-4 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">{label}</p>
+                  <p className="text-2xl font-heading font-bold" style={{ color }}>{value}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">at start</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-3 opacity-60">
+              These numbers reflect your AI visibility when we first started. They are locked and will never change.
+            </p>
+          </motion.section>
+        )}
 
         {/* Before/After Comparison */}
         {baselineScore && (
