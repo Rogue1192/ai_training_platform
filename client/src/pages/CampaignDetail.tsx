@@ -1153,18 +1153,23 @@ export default function CampaignDetail() {
 // Separate component for content tab to keep things clean
 function ContentTab({ campaignId }: { campaignId: number }) {
   const utils = trpc.useUtils();
-  const { data: contentPages, isLoading } = trpc.campaign.getContentPages.useQuery(
+  const { data: contentPagesData, isLoading } = trpc.campaign.getContentPages.useQuery(
     { campaignId },
     {
       enabled: !!campaignId,
       refetchInterval: (query) => {
         // Poll every 5s while content is still being generated
-        const pages = query.state.data;
+        const d = query.state.data as any;
+        const pages = d?.pages ?? d;
         if (!pages || pages.length === 0) return 5000;
         return false;
       },
     }
   );
+  // Support both old array shape and new { pages, llmTxtVerified, schemaVerified } shape
+  const contentPages: any[] | undefined = contentPagesData
+    ? ((contentPagesData as any).pages ?? (contentPagesData as any))
+    : undefined;
   const { data: credData } = trpc.campaign.getCredibilityData.useQuery(
     { campaignId },
     { enabled: !!campaignId }
@@ -1173,12 +1178,23 @@ function ContentTab({ campaignId }: { campaignId: number }) {
   const [expandedPages, setExpandedPages] = useState<Record<number, boolean>>({});
   const [toastFired, setToastFired] = useState(false);
 
-  // Publishing gate verification state
+  // Publishing gate verification state — seeded from DB on load
   const [llmVerified, setLlmVerified] = useState(false);
   const [schemaVerified, setSchemaVerified] = useState(false);
   const [llmScanError, setLlmScanError] = useState<string | null>(null);
   const [schemaScanError, setSchemaScanError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [verificationSeeded, setVerificationSeeded] = useState(false);
+
+  // Seed from DB on first load
+  useEffect(() => {
+    if (contentPagesData && !verificationSeeded) {
+      const d = contentPagesData as any;
+      setLlmVerified(d.llmTxtVerified ?? false);
+      setSchemaVerified(d.schemaVerified ?? false);
+      setVerificationSeeded(true);
+    }
+  }, [contentPagesData, verificationSeeded]);
 
   const verifyContent = trpc.verifyCampaignContent.useMutation({
     onSuccess: (result) => {
@@ -1187,6 +1203,11 @@ function ContentTab({ campaignId }: { campaignId: number }) {
       setLlmScanError(result.llmTxt.detected ? null : (result.llmTxt.error ?? 'Not detected'));
       setSchemaScanError(result.schema.detected ? null : (result.schema.error ?? 'Not detected'));
       setScanning(false);
+      if (result.llmTxt.detected && result.schema.detected) {
+        toast.success('✅ llm.txt and schema verified — campaign unblocked.');
+      } else {
+        toast.error('Scan failed: fix the issues on the client site and try again.');
+      }
     },
     onError: (err) => {
       setScanning(false);

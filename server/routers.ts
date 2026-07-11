@@ -1727,7 +1727,12 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           throw new Error("Campaign not found");
         }
         const { getContentPagesForCampaign } = await import("./contentGenerationEngine");
-        return getContentPagesForCampaign(input.campaignId);
+        const pages = await getContentPagesForCampaign(input.campaignId);
+        return {
+          pages,
+          llmTxtVerified: (campaign as any).llmTxtVerified ?? false,
+          schemaVerified: (campaign as any).schemaVerified ?? false,
+        };
       }),
     setContentPageUrl: protectedProcedure
       .input(z.object({
@@ -2994,6 +2999,18 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         campaignId: input.campaignId,
         websiteUrl: business.website || '',
       });
+
+      // Persist verification results to the campaign record so the blocked check
+      // on myClients cards reflects real scan state, not just client-side state.
+      await db
+        .update(campaigns)
+        .set({
+          llmTxtVerified: result.llmTxt.detected,
+          schemaVerified: result.schema.detected,
+          updatedAt: new Date(),
+        })
+        .where(eq(campaigns.id, input.campaignId));
+
       return result;
     }),
 
@@ -3433,6 +3450,8 @@ export const agencyRouter = router({
       .select({
         businessId: campaigns.businessId,
         status: campaigns.status,
+        llmTxtVerified: campaigns.llmTxtVerified,
+        schemaVerified: campaigns.schemaVerified,
       })
       .from(campaigns)
       .where(sql`${campaigns.businessId} = ANY(ARRAY[${sql.raw(businessIds.join(','))}]::int[])`);
@@ -3445,8 +3464,12 @@ export const agencyRouter = router({
       campaignCountMap.set(row.businessId, (campaignCountMap.get(row.businessId) ?? 0) + 1);
       // Track most recent status (last write wins — rows are ordered by insert)
       campaignStatusMap.set(row.businessId, row.status ?? 'unknown');
-      // Mark as blocked if any campaign is in publishing status (content not yet live)
-      if (row.status === 'publishing') campaignBlockedMap.set(row.businessId, true);
+      // Blocked if: publishing status (content URLs missing) OR llm.txt/schema not yet verified
+      const isBlocked =
+        row.status === 'publishing' ||
+        row.llmTxtVerified === false ||
+        row.schemaVerified === false;
+      if (isBlocked) campaignBlockedMap.set(row.businessId, true);
     }
     return clientRows.map((b) => ({
       ...b,
@@ -4311,7 +4334,7 @@ export const agencyRouter = router({
       }
       // Verify the campaign belongs to a business owned by this agency
       const [campaign] = await db
-        .select({ id: campaigns.id, businessId: campaigns.businessId, status: campaigns.status })
+        .select({ id: campaigns.id, businessId: campaigns.businessId, status: campaigns.status, llmTxtVerified: campaigns.llmTxtVerified, schemaVerified: campaigns.schemaVerified })
         .from(campaigns)
         .innerJoin(businesses, eq(businesses.id, campaigns.businessId))
         .where(and(eq(campaigns.id, input.campaignId), eq(businesses.agencyId, agencyId)))
@@ -4343,6 +4366,8 @@ export const agencyRouter = router({
       });
       return {
         campaignStatus: campaign.status,
+        llmTxtVerified: campaign.llmTxtVerified ?? false,
+        schemaVerified: campaign.schemaVerified ?? false,
         pages: enriched,
       };
     }),

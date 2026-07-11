@@ -24,6 +24,7 @@ import AgencyPortal from "./pages/AgencyPortal";
 import AgencySettings from "./pages/AgencySettings";
 import AgencyClientDetail from "./pages/AgencyClientDetail";
 import AgencyLLMInsights from "./pages/AgencyLLMInsights";
+import AgencyClientReports from "./pages/AgencyClientReports";
 import ClientIntakeForm from "./pages/ClientIntakeForm";
 import CostTracking from "./pages/CostTracking";
 import { useAuth } from "./_core/hooks/useAuth";
@@ -43,6 +44,7 @@ import {
   BarChart3,
   Users,
   DollarSign,
+  FileBarChart,
 } from "lucide-react";
 
 // Admin navigation — full platform access
@@ -66,6 +68,7 @@ const adminNavigationItems = [
 // Base agency nav — alertCount is injected dynamically by AgencyNavWrapper
 const BASE_AGENCY_NAV = [
   { href: "/agency", label: "My Clients", icon: Building2 },
+  { href: "/agency/client-reports", label: "Client Reports", icon: FileBarChart },
   { href: "/agency/llm-insights", label: "LLM Insights", icon: BarChart3 },
   { href: "/agency/settings", label: "Settings", icon: SettingsIcon },
 ];
@@ -210,6 +213,9 @@ function Router() {
       </Route>
       <Route path="/agency/clients/:id">
         <AgencyRoute><AgencyClientDetail /></AgencyRoute>
+      </Route>
+      <Route path="/agency/client-reports">
+        <AgencyRoute><AgencyClientReports /></AgencyRoute>
       </Route>
       <Route path="/agency/llm-insights">
         <AgencyRoute><AgencyLLMInsights /></AgencyRoute>

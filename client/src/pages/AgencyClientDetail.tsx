@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -251,12 +251,13 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
   const [expandedPages, setExpandedPages] = useState<Record<number, boolean>>({});
   const [urlInputs, setUrlInputs] = useState<Record<number, string>>({});
 
-  // Verification state — tracks scan results for llm.txt and schema checkboxes
+  // Verification state — seeded from DB on load, updated after each scan
   const [llmVerified, setLlmVerified] = useState(false);
   const [schemaVerified, setSchemaVerified] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
   const [schemaError, setSchemaError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [verificationSeeded, setVerificationSeeded] = useState(false);
 
   const verifyMutation = trpc.verifyCampaignContent.useMutation({
     onSuccess: (result) => {
@@ -265,6 +266,13 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
       setLlmError(result.llmTxt.detected ? null : (result.llmTxt.error ?? 'Not detected'));
       setSchemaError(result.schema.detected ? null : (result.schema.error ?? 'Not detected'));
       setScanning(false);
+      // Invalidate myClients so the nav badge and card update immediately
+      utils.agency.myClients.invalidate();
+      if (result.llmTxt.detected && result.schema.detected) {
+        toast.success('✅ llm.txt and schema verified — campaign unblocked.');
+      } else {
+        toast.error('Scan failed: fix the issues on the client site and try again.');
+      }
     },
     onError: (err) => {
       setScanning(false);
@@ -283,6 +291,15 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
     { campaignId },
     { refetchOnWindowFocus: false }
   );
+
+  // Seed verification state from DB on first load
+  useEffect(() => {
+    if (data && !verificationSeeded) {
+      setLlmVerified((data as any).llmTxtVerified ?? false);
+      setSchemaVerified((data as any).schemaVerified ?? false);
+      setVerificationSeeded(true);
+    }
+  }, [data, verificationSeeded]);
 
   const setUrl = trpc.agency.setClientContentPageUrl.useMutation({
     onSuccess: (result) => {

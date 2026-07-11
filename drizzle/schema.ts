@@ -440,6 +440,10 @@ export const campaigns = pgTable("campaigns", {
   // The pipeline reads this to know it should re-queue from the next incomplete stage.
   // Cleared automatically once the pipeline picks it up and starts running.
   resumeRequestedAt: timestamp("resumeRequestedAt"),
+  // Site verification — set to true when the scan confirms llm.txt / schema are live.
+  // Checkbox in the publishing panel auto-triggers the scan; campaign stays blocked until both pass.
+  llmTxtVerified: boolean("llmTxtVerified").default(false).notNull(),
+  schemaVerified: boolean("schemaVerified").default(false).notNull(),
   // Metadata
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
