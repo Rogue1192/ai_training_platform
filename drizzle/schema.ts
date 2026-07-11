@@ -151,6 +151,10 @@ export const businesses = pgTable("businesses", {
   useWebhookForContent: boolean("useWebhookForContent").default(false).notNull(),
   // Archive flag — soft-delete for test/inactive clients
   isArchived: boolean("isArchived").default(false).notNull(),
+  // Billing type — how this business is billed. Flows down to all campaigns created for this business.
+  // white_label = agency reseller client, direct = direct platform subscriber,
+  // legacy = pre-existing client (no billing), external = billed outside platform
+  billingType: varchar("billingType", { length: 20 }).default("direct"),
   // Bundled billing flag — when true, campaigns created for this business should default to no-charge
   noCharge: boolean("noCharge").default(false).notNull(),
   // Internal source tag — "rogue", "ranklocal", or null (white-label/unknown)

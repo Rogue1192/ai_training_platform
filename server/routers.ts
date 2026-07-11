@@ -257,9 +257,11 @@ export const appRouter = router({
             if (!biz) return;
             // Resolve query-slot budget from tier (new model)
             const resolvedMaxQuerySlots = tier.maxQuerySlots || (tier.maxQueries * tier.maxLocations);
-            // Derive billingType: agency-linked → white_label, otherwise → legacy
+            // Derive billingType: business.billingType first, then agency-linked → white_label, otherwise → legacy
             const onboardBillingType: "white_label" | "direct" | "legacy" | "external" =
-              (biz as any).agencyId ? "white_label" : "legacy";
+              (biz as any).billingType
+                ? (biz as any).billingType as "white_label" | "direct" | "legacy" | "external"
+                : (biz as any).agencyId ? "white_label" : "legacy";
             // Create campaign
             const campaign = await createCampaign({
               userId: ownerId,
@@ -1435,17 +1437,20 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         }
 
         // ── Derive billingType from business context ─────────────────────────────
-        // Priority: explicit input > business.agencyId > legacy (no billing plan)
-        // Pre-existing clients (no agency, no explicit type) are always legacy.
-        // Agency-linked businesses are always white_label — no manual package assignment needed.
+        // Priority: explicit input > business.billingType > business.agencyId > legacy
+        // If the business record already has a billingType set (e.g. "legacy" for a
+        // pre-existing client), that value flows down to the campaign automatically.
         let resolvedBillingType: "white_label" | "direct" | "legacy" | "external";
         if (input.billingType) {
           resolvedBillingType = input.billingType as "white_label" | "direct" | "legacy" | "external";
         } else {
-          // Look up the business's agencyId if we haven't already
+          // Look up the business record to read its billingType and agencyId
           const { getBusinessById: _getBizForBilling } = await import("./db");
           const bizForBilling = await _getBizForBilling(businessId);
-          if (bizForBilling?.agencyId) {
+          if (bizForBilling?.billingType) {
+            // Business-level billingType takes precedence — this is the source of truth
+            resolvedBillingType = bizForBilling.billingType as "white_label" | "direct" | "legacy" | "external";
+          } else if (bizForBilling?.agencyId) {
             resolvedBillingType = "white_label";
           } else {
             // No agency, no explicit billing type → legacy (not on any billing plan)
@@ -3636,9 +3641,9 @@ export const agencyRouter = router({
       address: z.string().optional(),
       phone: z.string().optional(),
       description: z.string().optional(),
-      // ── Contact info ──
-      contactName: z.string().optional(),
-      contactEmail: z.string().optional(),
+      // ── Contact info ── (required so reports can be delivered)
+      contactName: z.string().min(1, "Contact name is required"),
+      contactEmail: z.string().email("A valid contact email is required"),
       // ── Credibility data ──
       yearsInBusiness: z.number().int().positive().optional(),
       certifications: z.string().optional(),

@@ -1547,3 +1547,26 @@ export async function ensureBusinessCredibilityUrlsColumn(): Promise<void> {
     console.warn('[DB] ensureBusinessCredibilityUrlsColumn:', err.message);
   }
 }
+
+/**
+ * Adds the billingType VARCHAR(20) column to the businesses table if it does not
+ * already exist. Defaults to NULL so that existing businesses without an explicit
+ * billing type are treated as "no billing plan" (revenue = $0) rather than
+ * accidentally being counted as direct-billed clients.
+ *
+ * Safe to call on every startup — uses ADD COLUMN IF NOT EXISTS.
+ */
+export async function ensureBusinessBillingTypeColumn(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE "businesses"
+      ADD COLUMN IF NOT EXISTS "billingType" varchar(20)
+    `;
+    console.log('[DB] businesses.billingType column ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureBusinessBillingTypeColumn:', err.message);
+  }
+}

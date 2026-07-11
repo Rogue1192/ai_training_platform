@@ -15,7 +15,7 @@ import {
   packageTiers,
   agencies,
 } from "../drizzle/schema";
-import { eq, and, gte, lte, sql, desc, sum } from "drizzle-orm";
+import { eq, and, gte, lte, sql, desc, sum, inArray, isNull } from "drizzle-orm";
 import {
   getMonthlyRevenue,
   getCurrentBillingCycleStart,
@@ -139,11 +139,11 @@ export const costTrackingRouter = router({
 
       const [tierRows, agencyRows] = await Promise.all([
         tierIds.length > 0
-          ? db.select().from(packageTiers).where(sql`${packageTiers.id} = ANY(${tierIds})`)
-          : [],
+          ? db.select().from(packageTiers).where(inArray(packageTiers.id, tierIds))
+          : Promise.resolve([]),
         agencyIds.length > 0
-          ? db.select({ id: agencies.id, brandName: agencies.brandName }).from(agencies).where(sql`${agencies.id} = ANY(${agencyIds})`)
-          : [],
+          ? db.select({ id: agencies.id, brandName: agencies.brandName }).from(agencies).where(inArray(agencies.id, agencyIds))
+          : Promise.resolve([]),
       ]);
 
       const tierMap = new Map(tierRows.map((t) => [t.id, t]));
@@ -487,33 +487,50 @@ export const costTrackingRouter = router({
       if (!db) throw new Error("Database not available");
 
       const { businesses } = await import("../drizzle/schema");
-      const { isNull } = await import("drizzle-orm");
 
+      // ── Step 1: backfill businesses that have no billingType set ─────────────
+      // Fetch all businesses with their agencyId so we can derive the correct type
+      const allBusinesses = await db
+        .select({ id: businesses.id, agencyId: businesses.agencyId, billingType: businesses.billingType })
+        .from(businesses);
+
+      let businessesUpdated = 0;
+      for (const biz of allBusinesses) {
+        // Only backfill if billingType is null — don't overwrite explicit choices
+        if (biz.billingType === null || biz.billingType === undefined) {
+          const resolvedType = biz.agencyId ? "white_label" : "legacy";
+          await db
+            .update(businesses)
+            .set({ billingType: resolvedType })
+            .where(eq(businesses.id, biz.id));
+          businessesUpdated++;
+        }
+      }
+
+      // ── Step 2: backfill campaigns that have null billingType ────────────────
       // Fetch all campaigns with null billingType
       const nullCampaigns = await db
         .select({ id: campaigns.id, businessId: campaigns.businessId })
         .from(campaigns)
         .where(isNull(campaigns.billingType));
 
-      if (nullCampaigns.length === 0) return { updated: 0 };
-
-      // Fetch all businesses that have an agencyId
+      // Fetch all businesses that have an agencyId (for campaign derivation)
       const agencyBusinessIds = new Set(
         (await db.select({ id: businesses.id }).from(businesses).where(sql`"agencyId" IS NOT NULL`))
           .map((b) => b.id)
       );
 
-      let updated = 0;
+      let campaignsUpdated = 0;
       for (const c of nullCampaigns) {
         const resolvedType = c.businessId && agencyBusinessIds.has(c.businessId) ? "white_label" : "legacy";
         await db
           .update(campaigns)
           .set({ billingType: resolvedType, updatedAt: new Date() })
           .where(eq(campaigns.id, c.id));
-        updated++;
+        campaignsUpdated++;
       }
 
-      return { updated };
+      return { updated: campaignsUpdated + businessesUpdated, businessesUpdated, campaignsUpdated };
     }),
 
   /**

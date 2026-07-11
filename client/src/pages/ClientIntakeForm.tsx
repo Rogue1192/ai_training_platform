@@ -142,6 +142,11 @@ export default function ClientIntakeForm() {
 
   const handleSubmit = () => {
     setError(null);
+    // Guard: contact name and email are required for report delivery
+    if (!form.contactName.trim() || !form.contactEmail.trim()) {
+      setError("Contact name and email are required so we can deliver your reports.");
+      return;
+    }
     submitMutation.mutate({
       token,
       name: form.name.trim(),
@@ -151,8 +156,8 @@ export default function ClientIntakeForm() {
       address: form.address || undefined,
       phone: form.phone || undefined,
       description: form.description || undefined,
-      contactName: form.contactName || undefined,
-      contactEmail: form.contactEmail || undefined,
+      contactName: form.contactName.trim(),
+      contactEmail: form.contactEmail.trim(),
       yearsInBusiness: form.yearsInBusiness ? parseInt(form.yearsInBusiness) : undefined,
       certifications: form.certifications || undefined,
       licenses: form.licenses || undefined,
@@ -525,7 +530,7 @@ export default function ClientIntakeForm() {
               ) : (
                 <Button
                   onClick={handleSubmit}
-                  disabled={submitMutation.isPending}
+                  disabled={submitMutation.isPending || !form.contactName.trim() || !form.contactEmail.trim()}
                   className="bg-green-600 hover:bg-green-700"
                 >
                   {submitMutation.isPending ? (
