@@ -4083,18 +4083,9 @@ export const agencyRouter = router({
       fileName: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { getAgencyByUserId, getAgencyById } = await import('./dbAgencies');
-      // Determine which agency this upload is for
-      let agencyId: number;
-      if (input.agencyId !== undefined) {
-        if (ctx.user.role !== 'admin') throw new Error('Forbidden — only super admin can upload for other agencies');
-        agencyId = input.agencyId;
-      } else {
-        const myAgency = await getAgencyByUserId(ctx.user.id);
-        if (!myAgency) throw new Error('Agency not found');
-        agencyId = myAgency.id;
-      }
-      // Parse the base64 data URL
+      const { getAgencyByUserId, updateAgency } = await import('./dbAgencies');
+
+      // Parse the base64 data URL first (cheap validation before any DB work)
       const match = input.dataUrl.match(/^data:([a-zA-Z0-9/+]+);base64,(.+)$/);
       if (!match) throw new Error('Invalid data URL format');
       const [, mimeType, base64Data] = match;
@@ -4102,11 +4093,40 @@ export const agencyRouter = router({
       if (!allowedTypes.includes(mimeType!)) throw new Error(`Unsupported image type: ${mimeType}`);
       const buffer = Buffer.from(base64Data!, 'base64');
       if (buffer.length > 5 * 1024 * 1024) throw new Error('Image too large — maximum 5MB');
+
+      // Determine which agency this upload is for.
+      // agencyId is provided when editing an existing agency (admin flow).
+      // When creating a new agency the agencyId is not yet known — we upload the
+      // file to a temporary path and return the URL; the caller stores it in form
+      // state and it gets persisted when the agency is created/saved.
+      let agencyId: number | null = null;
+      if (input.agencyId !== undefined) {
+        if (ctx.user.role !== 'admin') throw new Error('Forbidden — only super admin can upload for other agencies');
+        agencyId = input.agencyId;
+      } else {
+        // Try to find the caller's own agency (agency-owner self-service path)
+        const myAgency = await getAgencyByUserId(ctx.user.id);
+        if (myAgency) agencyId = myAgency.id;
+        // If still null the caller is an admin creating a brand-new agency —
+        // we'll upload to a temp path and skip the DB persist step below.
+        if (!agencyId && ctx.user.role !== 'admin') throw new Error('Agency not found');
+      }
+
       const ext = mimeType!.split('/')[1]!.replace('svg+xml', 'svg');
       const fileName = input.fileName?.replace(/[^a-zA-Z0-9._-]/g, '_') || `logo.${ext}`;
-      const storageKey = `agency-logos/${agencyId}/${Date.now()}-${fileName}`;
+      // Use agencyId in the path when known, otherwise use a temp folder keyed by userId.
+      const pathSegment = agencyId ? `agency-logos/${agencyId}` : `agency-logos/tmp-user-${ctx.user.id}`;
+      const storageKey = `${pathSegment}/${Date.now()}-${fileName}`;
+
       const { storagePut } = await import('./storage');
       const { url } = await storagePut(storageKey, buffer, mimeType!);
+
+      // Immediately persist the logo URL on the agency record so it survives
+      // even if the admin closes the form without clicking Save.
+      if (agencyId) {
+        await updateAgency(agencyId, { brandLogoUrl: url });
+      }
+
       return { url };
     }),
 
