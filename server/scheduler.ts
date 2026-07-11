@@ -1099,14 +1099,34 @@ async function checkBonusQueryScans(): Promise<void> {
     const { campaignQueryLocations: cqlTable, bonusQueryResults: bqrTable, campaigns: campaignsTable, businesses: businessesTable } = await import("../drizzle/schema");
     const { eq: eqBonus } = await import('drizzle-orm');
 
-    // Every campaign that has at least one query-location is a bonus scan target,
-    // UNLESS the parent business is archived.
+    // Bonus scans only run AFTER the initial 4-day training phase is complete.
+    // Rules:
+    //   1. Never run during the initial daily rank-check phase (first 4 days of training).
+    //   2. Only eligible if: campaign status is 'monitoring' OR status is 'training' and
+    //      trainingStartedAt is at least 4 days ago (initial 4-run cycle is done).
+    //   3. Business must not be archived.
+    //   4. Per-campaign 14-day gap guard enforced below.
+    const FOUR_DAYS_MS = 4 * 24 * 60 * 60 * 1000;
+    const fourDaysAgo = new Date(Date.now() - FOUR_DAYS_MS);
+    const { or: orBonus, and: andBonus, lte: lteBonus, inArray: inArrayBonus } = await import('drizzle-orm');
     const targets = await db
       .selectDistinct({ campaignId: cqlTable.campaignId })
       .from(cqlTable)
       .innerJoin(campaignsTable, eqBonus(cqlTable.campaignId, campaignsTable.id))
       .innerJoin(businessesTable, eqBonus(campaignsTable.businessId, businessesTable.id))
-      .where(eqBonus(businessesTable.isArchived, false));
+      .where(
+        andBonus(
+          eqBonus(businessesTable.isArchived, false),
+          // Only campaigns past the initial 4-day phase
+          orBonus(
+            eqBonus(campaignsTable.status, 'monitoring'),
+            andBonus(
+              eqBonus(campaignsTable.status, 'training'),
+              lteBonus(campaignsTable.trainingStartedAt, fourDaysAgo)
+            )
+          )
+        )
+      );
 
     if (targets.length === 0) return;
 
