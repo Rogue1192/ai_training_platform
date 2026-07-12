@@ -28,6 +28,9 @@ import AgencyClientReports from "./pages/AgencyClientReports";
 import ClientIntakeForm from "./pages/ClientIntakeForm";
 import CostTracking from "./pages/CostTracking";
 import ProspectAudit from "./pages/ProspectAudit";
+import AuditHistory from "./pages/AuditHistory";
+import PublicAuditReport from "./pages/PublicAuditReport";
+import AuditOverageSuccess from "./pages/AuditOverageSuccess";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Redirect } from "wouter";
 import { useEffect, useRef, useMemo } from "react";
@@ -65,6 +68,7 @@ const adminNavigationItems = [
   { href: "/agencies", label: "Agencies", icon: Users },
   { href: "/cost-tracking", label: "Cost Tracking", icon: DollarSign },
   { href: "/prospect-audit", label: "AI Visibility Audit", icon: FileBarChart, openInNewWindow: true },
+  { href: "/audit-history", label: "Audit History", icon: BarChart3 },
 ];
 
 // Base agency nav — alertCount is injected dynamically by AgencyNavWrapper
@@ -208,6 +212,19 @@ function Router() {
 
       {/* Prospect Audit — opens in new window, no platform chrome */}
       <Route path="/prospect-audit" component={ProspectAudit} />
+
+      {/* Audit History — inside platform chrome */}
+      <Route path="/audit-history">
+        <DashboardLayout navigationItems={navItems}>
+          <AuditHistory />
+        </DashboardLayout>
+      </Route>
+
+      {/* Stripe overage success landing page */}
+      <Route path="/audit-overage-success" component={AuditOverageSuccess} />
+
+      {/* Public shareable audit report — no auth required */}
+      <Route path="/audit/:token" component={PublicAuditReport} />
 
       {/* ── Agency portal routes ── */}
       <Route path="/agency">

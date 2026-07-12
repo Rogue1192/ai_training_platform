@@ -830,6 +830,8 @@ export const prospectAudits = pgTable("prospectAudits", {
   seedKeywords: text("seedKeywords"), // comma-separated seed keywords provided by user
   // Normalized domain for prospect-to-client matching (e.g. "titancleaningco.com")
   normalizedDomain: varchar("normalizedDomain", { length: 253 }),
+  // Public share token — allows viewing the audit report without login
+  shareToken: varchar("shareToken", { length: 64 }),
   // Contact info (lead capture)
   contactFirstName: varchar("contactFirstName", { length: 100 }),
   contactLastName: varchar("contactLastName", { length: 100 }),
@@ -877,8 +879,8 @@ export const agencyAuditQuota = pgTable("agencyAuditQuota", {
   agencyId: integer("agencyId").notNull().references(() => agencies.id, { onDelete: "cascade" }),
   // Billing period (YYYY-MM)
   periodMonth: varchar("periodMonth", { length: 7 }).notNull(), // e.g. "2026-07"
-  // Included quota (default 10 for white-label)
-  includedQuota: integer("includedQuota").default(10).notNull(),
+  // Included quota (default 20 for white-label)
+  includedQuota: integer("includedQuota").default(20).notNull(),
   // Extra audits purchased as overage blocks (5 per block)
   overageBlocksPurchased: integer("overageBlocksPurchased").default(0).notNull(),
   // How many audits have been used this period
