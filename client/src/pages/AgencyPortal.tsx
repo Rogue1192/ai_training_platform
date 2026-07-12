@@ -182,10 +182,9 @@ export default function AgencyPortal() {
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <StatCard label="Total Clients"   value={clients?.length ?? 0}   icon={Users}        />
         <StatCard label="Active"          value={activeClients.length}    icon={CheckCircle}  color="text-green-500" />
-        <StatCard label="On Trial"        value={trialClients.length}     icon={Clock}        color="text-yellow-500" />
         <StatCard label="Awaiting Setup"  value={pendingClients.length}   icon={AlertCircle}  color={pendingClients.length > 0 ? "text-orange-500" : "text-foreground"} />
       </div>
 

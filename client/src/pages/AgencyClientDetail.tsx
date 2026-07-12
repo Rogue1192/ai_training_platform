@@ -489,7 +489,7 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
                   className="h-7 text-xs gap-1"
                   onClick={() => setExpandedPages(prev => ({ ...prev, [page.id]: !isExpanded }))}
                 >
-                  {isExpanded ? "Hide" : "View"}
+                  {isExpanded ? "Hide Content" : "Copy Content to Paste"}
                 </Button>
               </div>
             </div>
