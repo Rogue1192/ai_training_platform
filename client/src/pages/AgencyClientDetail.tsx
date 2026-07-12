@@ -248,7 +248,7 @@ export default function AgencyClientDetail() {
 // ─── Content Publish Panel ────────────────────────────────────────────────────
 function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: number; campaignStatus: string }) {
   const utils = trpc.useUtils();
-  const [expandedPages, setExpandedPages] = useState<Record<number, boolean>>({});
+  const [expandedPages, setExpandedPages] = useState<Record<number | string, boolean | string>>({});
   const [urlInputs, setUrlInputs] = useState<Record<number, string>>({});
 
   // Verification state — seeded from DB on load, updated after each scan
@@ -256,35 +256,58 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
   const [schemaVerified, setSchemaVerified] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
   const [schemaError, setSchemaError] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const [scanningLlm, setScanningLlm] = useState(false);
+  const [scanningSchema, setScanningSchema] = useState(false);
   const [verificationSeeded, setVerificationSeeded] = useState(false);
 
-  const verifyMutation = trpc.verifyCampaignContent.useMutation({
+  const verifyLlmMutation = trpc.verifyCampaignContent.useMutation({
     onSuccess: (result) => {
       setLlmVerified(result.llmTxt.detected);
-      setSchemaVerified(result.schema.detected);
       setLlmError(result.llmTxt.detected ? null : (result.llmTxt.error ?? 'Not detected'));
-      setSchemaError(result.schema.detected ? null : (result.schema.error ?? 'Not detected'));
-      setScanning(false);
-      // Invalidate myClients so the nav badge and card update immediately
+      setScanningLlm(false);
       utils.agency.myClients.invalidate();
-      if (result.llmTxt.detected && result.schema.detected) {
-        toast.success('✅ llm.txt and schema verified — campaign unblocked.');
+      if (result.llmTxt.detected) {
+        toast.success('✅ llm.txt detected — verified!');
       } else {
-        toast.error('Scan failed: fix the issues on the client site and try again.');
+        toast.error('llm.txt not found — fix the issue on the client site and try again.');
       }
     },
     onError: (err) => {
-      setScanning(false);
+      setScanningLlm(false);
       toast.error(`Scan failed: ${err.message}`);
     },
   });
 
-  const handleVerifyCheck = () => {
-    setScanning(true);
+  const verifySchemaMutation = trpc.verifyCampaignContent.useMutation({
+    onSuccess: (result) => {
+      setSchemaVerified(result.schema.detected);
+      setSchemaError(result.schema.detected ? null : (result.schema.error ?? 'Not detected'));
+      setScanningSchema(false);
+      utils.agency.myClients.invalidate();
+      if (result.schema.detected) {
+        toast.success('✅ JSON-LD schema detected — verified!');
+      } else {
+        toast.error('Schema not found — fix the issue on the client site and try again.');
+      }
+    },
+    onError: (err) => {
+      setScanningSchema(false);
+      toast.error(`Scan failed: ${err.message}`);
+    },
+  });
+
+  const handleLlmCheck = () => {
+    if (scanningLlm || llmVerified) return;
+    setScanningLlm(true);
     setLlmError(null);
+    verifyLlmMutation.mutate({ campaignId, scanType: 'llm' });
+  };
+
+  const handleSchemaCheck = () => {
+    if (scanningSchema || schemaVerified) return;
+    setScanningSchema(true);
     setSchemaError(null);
-    verifyMutation.mutate({ campaignId });
+    verifySchemaMutation.mutate({ campaignId, scanType: 'schema' });
   };
 
   const { data, isLoading, isError } = trpc.agency.getClientContentPages.useQuery(
@@ -334,6 +357,7 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
   const allUrlsEntered = urlPages.length > 0 && urlPages.every((p: any) => !!p.publishedUrl);
   const allVerified = allUrlsEntered && llmVerified && schemaVerified;
   const hasAnyIssue = !allUrlsEntered || !llmVerified || !schemaVerified;
+  const scanning = scanningLlm || scanningSchema; // legacy alias for banner
 
   return (
     <div className="space-y-3">
@@ -366,53 +390,84 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
         </div>
       )}
 
-      {/* LLM.TXT + SCHEMA VERIFICATION CHECKBOXES */}
+      {/* LLM.TXT + SCHEMA VERIFICATION CHECKBOXES — two independent scans */}
       {pages.some((p: any) => p.pageType === 'llm_txt' || p.pageType === 'schema_package' || p.pageType === 'schema_delivery') && (
         <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Site Verification</p>
-          <p className="text-xs text-muted-foreground mb-2">Check each box to scan the client's site and confirm these assets are live. The scan runs automatically when you check.</p>
+          <p className="text-xs text-muted-foreground mb-2">Check each box once you've added the asset to the client's site. Each checkbox scans independently — both must pass before the campaign unblocks.</p>
 
-          {/* Single verify checkbox — scans both llm.txt and schema at once */}
+          {/* Checkbox 1: llm.txt */}
           <div
             className={`flex items-start gap-3 p-2 rounded-md border cursor-pointer select-none transition-colors ${
-              allVerified
+              llmVerified
                 ? 'border-green-500/40 bg-green-500/5'
-                : scanning
+                : scanningLlm
                 ? 'border-amber-500/40 bg-amber-500/5'
-                : (llmError || schemaError)
+                : llmError
                 ? 'border-red-500/40 bg-red-500/5'
                 : 'border-border hover:border-muted-foreground/40'
             }`}
-            onClick={() => { if (!scanning && !allVerified) handleVerifyCheck(); }}
+            onClick={handleLlmCheck}
           >
             <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
-              allVerified ? 'border-green-500 bg-green-500' : scanning ? 'border-amber-400' : (llmError || schemaError) ? 'border-red-500' : 'border-muted-foreground'
+              llmVerified ? 'border-green-500 bg-green-500' : scanningLlm ? 'border-amber-400' : llmError ? 'border-red-500' : 'border-muted-foreground'
             }`}>
-              {scanning && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
-              {!scanning && allVerified && <CheckCircle className="h-2.5 w-2.5 text-white" />}
+              {scanningLlm && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
+              {!scanningLlm && llmVerified && <CheckCircle className="h-2.5 w-2.5 text-white" />}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium">
-                {scanning ? 'Scanning site…' : allVerified ? 'llm.txt + Schema verified ✓' : 'Verify llm.txt and JSON-LD schema are live on site'}
+                {scanningLlm ? 'Scanning for llm.txt…' : llmVerified ? "I've added llm.txt to the site ✓" : "I've added llm.txt to the client's site"}
               </p>
-              {!scanning && !allVerified && (
-                <p className="text-xs text-muted-foreground mt-0.5">Click to scan the client's website now</p>
+              {!scanningLlm && !llmVerified && !llmError && (
+                <p className="text-xs text-muted-foreground mt-0.5">Click to scan {'{domain}'}/llm.txt now</p>
               )}
-              {/* Per-item results */}
-              {!scanning && (llmVerified || llmError) && (
-                <div className={`text-xs mt-1 flex items-center gap-1 ${llmVerified ? 'text-green-400' : 'text-red-400'}`}>
-                  {llmVerified ? <CheckCircle className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
-                  llm.txt: {llmVerified ? 'Detected' : `Not detected — ${llmError}`}
+              {!scanningLlm && llmError && (
+                <div className="text-xs mt-0.5 flex items-center gap-1 text-red-400">
+                  <AlertCircle className="h-3 w-3" />
+                  Not detected — {llmError}
                 </div>
               )}
-              {!scanning && (schemaVerified || schemaError) && (
-                <div className={`text-xs mt-0.5 flex items-center gap-1 ${schemaVerified ? 'text-green-400' : 'text-red-400'}`}>
-                  {schemaVerified ? <CheckCircle className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
-                  Schema: {schemaVerified ? 'Detected' : `Not detected — ${schemaError}`}
+              {!scanningLlm && llmError && (
+                <p className="text-xs text-amber-400/80 mt-1">Fix the issue, then click again to re-scan.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Checkbox 2: JSON-LD schema */}
+          <div
+            className={`flex items-start gap-3 p-2 rounded-md border cursor-pointer select-none transition-colors ${
+              schemaVerified
+                ? 'border-green-500/40 bg-green-500/5'
+                : scanningSchema
+                ? 'border-amber-500/40 bg-amber-500/5'
+                : schemaError
+                ? 'border-red-500/40 bg-red-500/5'
+                : 'border-border hover:border-muted-foreground/40'
+            }`}
+            onClick={handleSchemaCheck}
+          >
+            <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
+              schemaVerified ? 'border-green-500 bg-green-500' : scanningSchema ? 'border-amber-400' : schemaError ? 'border-red-500' : 'border-muted-foreground'
+            }`}>
+              {scanningSchema && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
+              {!scanningSchema && schemaVerified && <CheckCircle className="h-2.5 w-2.5 text-white" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium">
+                {scanningSchema ? 'Scanning homepage for JSON-LD schema…' : schemaVerified ? "I've injected the JSON-LD schema ✓" : "I've injected the JSON-LD schema on the client's site"}
+              </p>
+              {!scanningSchema && !schemaVerified && !schemaError && (
+                <p className="text-xs text-muted-foreground mt-0.5">Click to scan the homepage for a JSON-LD &#x3C;script&#x3E; block</p>
+              )}
+              {!scanningSchema && schemaError && (
+                <div className="text-xs mt-0.5 flex items-center gap-1 text-red-400">
+                  <AlertCircle className="h-3 w-3" />
+                  Not detected — {schemaError}
                 </div>
               )}
-              {!scanning && (llmError || schemaError) && (
-                <p className="text-xs text-amber-400/80 mt-1">Fix the issue on the client's site, then click again to re-scan.</p>
+              {!scanningSchema && schemaError && (
+                <p className="text-xs text-amber-400/80 mt-1">Fix the issue, then click again to re-scan.</p>
               )}
             </div>
           </div>

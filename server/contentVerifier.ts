@@ -68,46 +68,57 @@ async function fetchWithTimeout(url: string, timeoutMs = 8000): Promise<{ ok: bo
 export async function verifyCampaignContent(params: {
   campaignId: number;
   websiteUrl: string;
+  /** Which checks to run. Defaults to 'both'. */
+  scanType?: 'llm' | 'schema' | 'both';
 }): Promise<ContentVerificationResult> {
-  const { campaignId, websiteUrl } = params;
+  const { campaignId, websiteUrl, scanType = 'both' } = params;
   const base = normaliseUrl(websiteUrl).replace(/\/$/, "");
+
+  const runLlm = scanType === 'llm' || scanType === 'both';
+  const runSchema = scanType === 'schema' || scanType === 'both';
 
   // ── 1. llm.txt ───────────────────────────────────────────────────────────
   const llmUrl = `${base}/llm.txt`;
   let llmDetected = false;
   let llmError: string | undefined;
-  if (base) {
-    const r = await fetchWithTimeout(llmUrl);
-    if (r.ok && r.text.trim().length > 50) {
-      llmDetected = true;
-    } else if (!r.ok) {
-      llmError = r.status === 0 ? r.text : `HTTP ${r.status}`;
+
+  if (runLlm) {
+    if (base) {
+      const r = await fetchWithTimeout(llmUrl);
+      if (r.ok && r.text.trim().length > 50) {
+        llmDetected = true;
+      } else if (!r.ok) {
+        llmError = r.status === 0 ? r.text : `HTTP ${r.status}`;
+      } else {
+        llmError = "File found but appears empty";
+      }
     } else {
-      llmError = "File found but appears empty";
+      llmError = "No website URL on file";
     }
-  } else {
-    llmError = "No website URL on file";
   }
 
   // ── 2. Schema ────────────────────────────────────────────────────────────
   const homeUrl = base || "";
   let schemaDetected = false;
   let schemaError: string | undefined;
-  if (base) {
-    const r = await fetchWithTimeout(homeUrl);
-    if (r.ok) {
-      // Look for any JSON-LD block with @type
-      const hasJsonLd = /<script[^>]+type=["']application\/ld\+json["'][^>]*>[\s\S]*?"@type"[\s\S]*?<\/script>/i.test(r.text);
-      if (hasJsonLd) {
-        schemaDetected = true;
+
+  if (runSchema) {
+    if (base) {
+      const r = await fetchWithTimeout(homeUrl);
+      if (r.ok) {
+        // Look for any JSON-LD block with @type
+        const hasJsonLd = /<script[^>]+type=["']application\/ld\+json["'][^>]*>[\s\S]*?"@type"[\s\S]*?<\/script>/i.test(r.text);
+        if (hasJsonLd) {
+          schemaDetected = true;
+        } else {
+          schemaError = "No JSON-LD schema found in page <head>";
+        }
       } else {
-        schemaError = "No JSON-LD schema found in page <head>";
+        schemaError = r.status === 0 ? r.text : `HTTP ${r.status}`;
       }
     } else {
-      schemaError = r.status === 0 ? r.text : `HTTP ${r.status}`;
+      schemaError = "No website URL on file";
     }
-  } else {
-    schemaError = "No website URL on file";
   }
 
   // ── 3. Content pages ─────────────────────────────────────────────────────

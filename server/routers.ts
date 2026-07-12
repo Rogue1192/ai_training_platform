@@ -2966,7 +2966,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
   // Verify that llm.txt, schema, and all content page URLs are live on the client site.
   // Called automatically when the agency/admin checks the verification checkbox.
   verifyCampaignContent: protectedProcedure
-    .input(z.object({ campaignId: z.number() }))
+    .input(z.object({ campaignId: z.number(), scanType: z.enum(['llm', 'schema', 'both']).default('both') }))
     .mutation(async ({ ctx, input }) => {
       const { getDb } = await import('./db');
       const { campaigns, businesses } = await import('../drizzle/schema');
@@ -2975,7 +2975,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       if (!db) throw new Error('Database not available');
 
       const [campaign] = await db
-        .select({ id: campaigns.id, businessId: campaigns.businessId })
+        .select({ id: campaigns.id, businessId: campaigns.businessId, llmTxtVerified: campaigns.llmTxtVerified, schemaVerified: campaigns.schemaVerified })
         .from(campaigns)
         .where(eq(campaigns.id, input.campaignId))
         .limit(1);
@@ -2998,17 +2998,20 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       const result = await verifyCampaignContent({
         campaignId: input.campaignId,
         websiteUrl: business.website || '',
+        scanType: input.scanType,
       });
 
-      // Persist verification results to the campaign record so the blocked check
-      // on myClients cards reflects real scan state, not just client-side state.
+      // Persist only the fields that were scanned — don't overwrite the other
+      const updateFields: Record<string, any> = { updatedAt: new Date() };
+      if (input.scanType === 'llm' || input.scanType === 'both') {
+        updateFields.llmTxtVerified = result.llmTxt.detected;
+      }
+      if (input.scanType === 'schema' || input.scanType === 'both') {
+        updateFields.schemaVerified = result.schema.detected;
+      }
       await db
         .update(campaigns)
-        .set({
-          llmTxtVerified: result.llmTxt.detected,
-          schemaVerified: result.schema.detected,
-          updatedAt: new Date(),
-        })
+        .set(updateFields)
         .where(eq(campaigns.id, input.campaignId));
 
       return result;
