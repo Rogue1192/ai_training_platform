@@ -579,30 +579,7 @@ export default function LLMInsights() {
                       </table>
                     </div>
 
-                    {/* Add a query */}
-                    <div className="flex items-center gap-2 mt-4 pt-3 border-t border-border">
-                      <Input
-                        placeholder='Add a query to track (e.g. "emergency plumber near me")'
-                        value={draft.q}
-                        onChange={(e) => setDrafts((d) => ({ ...d, [client.campaignId]: { q: e.target.value, loc: draft.loc } }))}
-                        onKeyDown={(e) => { if (e.key === "Enter") handleAdd(client.campaignId, client.primaryLocation); }}
-                        className="flex-1 bg-background border-input"
-                      />
-                      <Input
-                        placeholder="Location"
-                        value={draft.loc}
-                        onChange={(e) => setDrafts((d) => ({ ...d, [client.campaignId]: { q: draft.q, loc: e.target.value } }))}
-                        onKeyDown={(e) => { if (e.key === "Enter") handleAdd(client.campaignId, client.primaryLocation); }}
-                        className="w-44 bg-background border-input"
-                      />
-                      <Button
-                        size="sm"
-                        disabled={addMutation.isPending || !draft.q.trim()}
-                        onClick={() => handleAdd(client.campaignId, client.primaryLocation)}
-                      >
-                        <Plus className="w-4 h-4 mr-1" /> Add
-                      </Button>
-                    </div>
+
                   </CardContent>
                 )}
               </Card>
