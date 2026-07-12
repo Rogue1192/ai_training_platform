@@ -61,6 +61,7 @@ function BusinessInfoForm({
     location: string;
     industry: string;
     seedKeywords: string;
+    avgJobValue: string;
   }) => void;
 }) {
   const [form, setForm] = useState({
@@ -69,6 +70,7 @@ function BusinessInfoForm({
     location: "",
     industry: "",
     seedKeywords: "",
+    avgJobValue: "",
   });
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -156,6 +158,27 @@ function BusinessInfoForm({
             false,
             "Comma-separated keywords — the AI will use these to generate 15 targeted queries"
           )}
+
+          {/* Average Job Value */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+              Average Job Value
+              <span className="text-gray-500 font-normal ml-1">(optional)</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">$</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={form.avgJobValue}
+                onChange={(e) => setForm((f) => ({ ...f, avgJobValue: e.target.value }))}
+                placeholder="e.g. 350"
+                className="w-full bg-white/[0.04] border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/60 focus:bg-white/[0.06] transition-all"
+              />
+            </div>
+            <p className="text-xs text-gray-600 mt-1">Used to calculate estimated annual revenue gap on the results page</p>
+          </div>
 
           <button
             type="submit"
@@ -426,6 +449,7 @@ function ResultsStep({
   scores,
   snapshots,
   completedAt,
+  avgJobValue,
 }: {
   businessName: string;
   website?: string | null;
@@ -443,12 +467,21 @@ function ResultsStep({
   };
   snapshots: any[];
   completedAt: Date;
+  avgJobValue?: number;
 }) {
   const totalAISearches = scores.totalAISearches ?? 0;
   const visibleSearches = scores.visibleSearches ?? 0;
   const lostOpportunities = scores.lostOpportunities ?? 0;
   const volumeUsedFallback = scores.volumeUsedFallback ?? false;
   const visibilityPct = totalAISearches > 0 ? Math.round((visibleSearches / totalAISearches) * 100) : 0;
+
+  // Revenue gap: lost opportunities × avg job value × 12 months
+  // We assume 1 in 10 AI searches converts to a booked job (conservative 10% conversion)
+  const CONVERSION_RATE = 0.10;
+  const annualRevenueGap =
+    avgJobValue && avgJobValue > 0 && lostOpportunities > 0
+      ? Math.round(lostOpportunities * CONVERSION_RATE * avgJobValue * 12)
+      : null;
   // Shape snapshots into the format QueryDetailsTable expects
   const queryDetails = snapshots.map((s) => ({
     queryLocationId: s.searchQuery,
@@ -513,19 +546,40 @@ function ResultsStep({
                 </p>
               </div>
 
-              {/* Card 3: Lost Opportunities */}
-              <div className="rounded-2xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-transparent p-6 text-center">
-                <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">
-                  Potential Lost Opportunities
-                </p>
-                <p className="text-4xl font-heading font-bold text-white">
-                  {lostOpportunities.toLocaleString()}
-                </p>
-                <p className="text-xs text-gray-400 mt-2">
-                  Searches per month where you weren't visible
-                </p>
-              </div>
+              {/* Card 3: Lost Opportunities or Revenue Gap */}
+              {annualRevenueGap !== null ? (
+                <div className="rounded-2xl border border-red-500/30 bg-gradient-to-br from-red-600/15 to-red-900/10 p-6 text-center relative overflow-hidden">
+                  {/* Subtle glow */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 to-transparent pointer-events-none" />
+                  <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">
+                    Est. Annual Revenue Gap
+                  </p>
+                  <p className="text-4xl font-heading font-bold text-white">
+                    ${annualRevenueGap.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    {lostOpportunities.toLocaleString()} missed searches/mo × ${avgJobValue!.toLocaleString()} avg job
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-transparent p-6 text-center">
+                  <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">
+                    Potential Lost Opportunities
+                  </p>
+                  <p className="text-4xl font-heading font-bold text-white">
+                    {lostOpportunities.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Searches per month where you weren't visible
+                  </p>
+                </div>
+              )}
             </div>
+            {annualRevenueGap !== null && (
+              <p className="text-[10px] text-gray-600 text-center mt-1">
+                * Revenue gap estimate assumes a 10% search-to-booked-job conversion rate and 12 months.
+              </p>
+            )}
             {volumeUsedFallback && (
               <p className="text-[10px] text-gray-600 text-center mt-2">
                 * Search volume estimates based on available AI search data. Where direct AI search data is unavailable, estimates reflect approximately 25% of Google search volume — consistent with current AI search adoption rates for local service queries.
@@ -652,6 +706,7 @@ export default function ProspectAudit() {
     location: string;
     industry: string;
     seedKeywords: string;
+    avgJobValue: string;
   } | null>(null);
   const [queries, setQueries] = useState<QueryItem[]>([]);
   const [auditId, setAuditId] = useState<number | null>(null);
@@ -781,6 +836,7 @@ export default function ProspectAudit() {
               scores={results.scores}
               snapshots={results.snapshots}
               completedAt={results.completedAt}
+              avgJobValue={formData?.avgJobValue ? parseFloat(formData.avgJobValue) : undefined}
             />
           </motion.div>
         )}
