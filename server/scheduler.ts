@@ -1029,17 +1029,44 @@ async function checkScheduledRankTracking(): Promise<void> {
   try {
     const { runScheduledRankCheck } = await import("./rankTrackingEngine");
     const { campaignQueryLocations: cqlTable, rankSnapshots: rsTable, campaigns: campaignsTable, businesses: businessesTable } = await import("../drizzle/schema");
-    const { eq: eqRank } = await import('drizzle-orm');
+    const { eq: eqRank, and: andRank, inArray: inArrayRank, or: orRank } = await import('drizzle-orm');
 
-    // Every campaign that has at least one query-location is a rank-tracking target,
-    // UNLESS the parent business is archived — archived clients must not incur
-    // DataForSEO rank-check costs or produce new snapshots.
+    // Only run rank checks for campaigns that are actively in the pipeline past the
+    // baseline check. Campaigns waiting on keyword approval (query_review), credibility
+    // research, content generation, or blocked waiting on llm.txt/schema verification
+    // should NOT burn API credits on rank checks — the data would be meaningless anyway
+    // since no content has been published yet.
+    //
+    // Eligible statuses: publishing, indexing, indexing_verification, baseline_check,
+    // training, monitoring, paused (paused = was active, manually paused).
+    // Ineligible: pending, keyword_research, query_review, credibility_research,
+    //             content_generation, error.
+    //
+    // Additionally, skip campaigns that are blocked waiting on llm.txt or schema
+    // verification (llmTxtVerified=false OR schemaVerified=false) AND have not yet
+    // reached the publishing stage — they haven't gone live yet.
+    // Only statuses that exist in the DB campaignStatusEnum AND indicate the campaign
+    // is live/active. Excludes: pending, keyword_research, query_review,
+    // credibility_research, content_generation, error.
+    const RANK_ELIGIBLE_STATUSES = [
+      "publishing",
+      "indexing",
+      "training",
+      "monitoring",
+      "paused",
+    ] as ("error" | "pending" | "keyword_research" | "query_review" | "credibility_research" | "content_generation" | "publishing" | "indexing" | "baseline_check" | "training" | "monitoring" | "paused")[];
+
     const targets = await db
       .selectDistinct({ campaignId: cqlTable.campaignId })
       .from(cqlTable)
       .innerJoin(campaignsTable, eqRank(cqlTable.campaignId, campaignsTable.id))
       .innerJoin(businessesTable, eqRank(campaignsTable.businessId, businessesTable.id))
-      .where(eqRank(businessesTable.isArchived, false));
+      .where(
+        andRank(
+          eqRank(businessesTable.isArchived, false),
+          inArrayRank(campaignsTable.status, RANK_ELIGIBLE_STATUSES)
+        )
+      );
 
     if (targets.length === 0) return;
 

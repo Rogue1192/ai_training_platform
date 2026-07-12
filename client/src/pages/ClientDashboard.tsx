@@ -102,7 +102,7 @@ function getChangeBadge(change: string) {
   const labels: Record<string, string> = {
     new: "NEW",
     improved: "UP",
-    same: "HOLD",
+    same: "MAINTAINED",
     declined: "DOWN",
     lost: "LOST",
     never: "--",
