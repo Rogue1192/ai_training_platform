@@ -38,6 +38,8 @@ interface NavigationItem {
   icon: React.ComponentType<{ className?: string }>;
   /** Optional alert count shown as a red badge on the nav item */
   alertCount?: number;
+  /** If true, clicking this item opens the route in a new browser tab */
+  openInNewWindow?: boolean;
 }
 
 export default function DashboardLayout({
@@ -177,7 +179,13 @@ function DashboardLayoutContent({
                   <SidebarMenuItem key={itemPath}>
                     <SidebarMenuButton
                       isActive={isActive}
-                      onClick={() => setLocation(itemPath)}
+                      onClick={() => {
+                        if ((item as any).openInNewWindow) {
+                          window.open(itemPath, '_blank', 'noopener,noreferrer');
+                        } else {
+                          setLocation(itemPath);
+                        }
+                      }}
                       tooltip={item.alertCount ? `${item.label} (${item.alertCount} action required)` : item.label}
                       className={`h-10 transition-all font-normal`}
                     >

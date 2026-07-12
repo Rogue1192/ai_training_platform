@@ -804,3 +804,86 @@ export const queryDropoffEvents = pgTable("queryDropoffEvents", {
 
 export type QueryDropoffEvent = typeof queryDropoffEvents.$inferSelect;
 export type InsertQueryDropoffEvent = typeof queryDropoffEvents.$inferInsert;
+
+// ─── Prospect Visibility Audits ──────────────────────────────────────────────
+// Stores AI visibility audits run for prospects (sales tool).
+// Each audit runs 15 queries across ChatGPT, Gemini, and AI Overview.
+// Results are cached and can be promoted to a campaign baseline if the
+// prospect signs up, avoiding a redundant re-run.
+
+export const prospectAuditStatusEnum = pgEnum("prospect_audit_status", [
+  "pending",    // Form submitted, audit queued
+  "running",    // Audit in progress
+  "completed",  // Audit done, PDF delivered
+  "failed",     // Audit failed
+]);
+
+export const prospectAudits = pgTable("prospectAudits", {
+  id: serial("id").primaryKey(),
+  // Which agency ran this audit (null = super admin / direct)
+  agencyId: integer("agencyId").references(() => agencies.id, { onDelete: "set null" }),
+  // Business info
+  businessName: varchar("businessName", { length: 255 }).notNull(),
+  website: varchar("website", { length: 500 }),
+  location: varchar("location", { length: 255 }).notNull(),
+  industry: varchar("industry", { length: 100 }),
+  seedKeywords: text("seedKeywords"), // comma-separated seed keywords provided by user
+  // Contact info (lead capture)
+  contactFirstName: varchar("contactFirstName", { length: 100 }),
+  contactLastName: varchar("contactLastName", { length: 100 }),
+  contactEmail: varchar("contactEmail", { length: 320 }),
+  contactPhone: varchar("contactPhone", { length: 50 }),
+  // The 15 queries that were generated and checked
+  queries: json("queries"), // Array of { searchQuery, location }
+  // Snapshot results — same shape as rankSnapshots but stored inline as JSON
+  snapshotResults: json("snapshotResults"), // Array of per-query results
+  // Computed scores
+  overallScore: integer("overallScore"),
+  chatgptScore: integer("chatgptScore"),
+  geminiScore: integer("geminiScore"),
+  aiOverviewScore: integer("aiOverviewScore"),
+  queriesMentioned: integer("queriesMentioned"),
+  // Delivery
+  pdfUrl: varchar("pdfUrl", { length: 1000 }), // URL to generated PDF
+  emailSentAt: timestamp("emailSentAt"),
+  // GHL webhook
+  ghlWebhookSentAt: timestamp("ghlWebhookSentAt"),
+  ghlWebhookStatus: varchar("ghlWebhookStatus", { length: 20 }), // 'sent' | 'failed' | null
+  // Booking link shown after results (configurable per agency)
+  bookingLink: varchar("bookingLink", { length: 500 }),
+  // If this prospect signed up, link to their campaign so baseline can be reused
+  campaignId: integer("campaignId").references(() => campaigns.id, { onDelete: "set null" }),
+  baselinePromotedAt: timestamp("baselinePromotedAt"), // When results were copied to campaign baseline
+  // Status
+  status: prospectAuditStatusEnum("status").default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type ProspectAudit = typeof prospectAudits.$inferSelect;
+export type InsertProspectAudit = typeof prospectAudits.$inferInsert;
+
+// ─── Agency Audit Quota ───────────────────────────────────────────────────────
+// Tracks monthly prospect audit usage per agency.
+// Resets on the 1st of each month. Overage can be purchased in blocks.
+
+export const agencyAuditQuota = pgTable("agencyAuditQuota", {
+  id: serial("id").primaryKey(),
+  agencyId: integer("agencyId").notNull().references(() => agencies.id, { onDelete: "cascade" }),
+  // Billing period (YYYY-MM)
+  periodMonth: varchar("periodMonth", { length: 7 }).notNull(), // e.g. "2026-07"
+  // Included quota (default 10 for white-label)
+  includedQuota: integer("includedQuota").default(10).notNull(),
+  // Extra audits purchased as overage blocks (5 per block)
+  overageBlocksPurchased: integer("overageBlocksPurchased").default(0).notNull(),
+  // How many audits have been used this period
+  auditsUsed: integer("auditsUsed").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type AgencyAuditQuota = typeof agencyAuditQuota.$inferSelect;
+export type InsertAgencyAuditQuota = typeof agencyAuditQuota.$inferInsert;

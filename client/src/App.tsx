@@ -27,6 +27,7 @@ import AgencyLLMInsights from "./pages/AgencyLLMInsights";
 import AgencyClientReports from "./pages/AgencyClientReports";
 import ClientIntakeForm from "./pages/ClientIntakeForm";
 import CostTracking from "./pages/CostTracking";
+import ProspectAudit from "./pages/ProspectAudit";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Redirect } from "wouter";
 import { useEffect, useRef, useMemo } from "react";
@@ -63,6 +64,7 @@ const adminNavigationItems = [
   { href: "/settings", label: "Settings", icon: SettingsIcon },
   { href: "/agencies", label: "Agencies", icon: Users },
   { href: "/cost-tracking", label: "Cost Tracking", icon: DollarSign },
+  { href: "/prospect-audit", label: "Prospect Audit", icon: FileBarChart, openInNewWindow: true },
 ];
 
 // Base agency nav — alertCount is injected dynamically by AgencyNavWrapper
@@ -203,6 +205,9 @@ function Router() {
           <CostTracking />
         </DashboardLayout>
       </Route>
+
+      {/* Prospect Audit — opens in new window, no platform chrome */}
+      <Route path="/prospect-audit" component={ProspectAudit} />
 
       {/* ── Agency portal routes ── */}
       <Route path="/agency">
