@@ -136,7 +136,7 @@ function BusinessInfoForm({
             AI Visibility Audit
           </h1>
           <p className="text-sm text-gray-500 mt-2">
-            Enter the business info below to run an AI visibility audit.
+            Run a full AI visibility audit across ChatGPT, Gemini, and AI Overview.
           </p>
         </div>
 
