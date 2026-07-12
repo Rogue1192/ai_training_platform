@@ -545,15 +545,22 @@ export async function getAllCampaignsWithBusinessInfo(): Promise<
       businessName: businesses.name,
       businessType: businesses.businessType,
       website: businesses.website,
+      llmTxtVerified: campaigns.llmTxtVerified,
+      schemaVerified: campaigns.schemaVerified,
     })
     .from(campaigns)
     .innerJoin(businesses, eq(campaigns.businessId, businesses.id))
     .orderBy(desc(campaigns.createdAt));
 
-  // A campaign is "blocked" if it is stuck in publishing (content not yet live)
+  // A campaign is "blocked" if:
+  // 1. It is stuck in publishing (content not yet live), OR
+  // 2. llm.txt has not been verified, OR
+  // 3. JSON-LD schema has not been verified
   return result.map((r: any) => ({
     ...r,
-    isBlocked: r.status === 'publishing' && !r.publishingCompletedAt,
+    isBlocked: (r.status === 'publishing' && !r.publishingCompletedAt) ||
+               r.llmTxtVerified === false ||
+               r.schemaVerified === false,
   })) as any;
 }
 
