@@ -64,7 +64,7 @@ const adminNavigationItems = [
   { href: "/settings", label: "Settings", icon: SettingsIcon },
   { href: "/agencies", label: "Agencies", icon: Users },
   { href: "/cost-tracking", label: "Cost Tracking", icon: DollarSign },
-  { href: "/prospect-audit", label: "Prospect Audit", icon: FileBarChart, openInNewWindow: true },
+  { href: "/prospect-audit", label: "AI Visibility Audit", icon: FileBarChart, openInNewWindow: true },
 ];
 
 // Base agency nav — alertCount is injected dynamically by AgencyNavWrapper

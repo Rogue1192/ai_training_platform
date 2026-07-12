@@ -133,11 +133,10 @@ function BusinessInfoForm({
             </span>
           </div>
           <h1 className="text-3xl font-heading font-bold text-white">
-            Prospect Visibility Check
+            AI Visibility Audit
           </h1>
           <p className="text-sm text-gray-500 mt-2">
-            Enter the prospect's business info to generate a baseline AI
-            visibility report.
+            Enter the business info below to run an AI visibility audit.
           </p>
         </div>
 
@@ -239,9 +238,9 @@ function QueryReviewStep({
                 AI Visibility Audit
               </span>
             </div>
-            <h1 className="text-2xl font-heading font-bold text-white">
-              Review Queries for {businessName}
-            </h1>
+          <h1 className="text-2xl font-heading font-bold text-white">
+            AI Visibility Audit — {businessName}
+          </h1>
             <p className="text-sm text-gray-500 mt-1">
               {items.length} queries generated. Edit, remove, or add before running.
             </p>
@@ -389,7 +388,7 @@ function RunningStep({
           </div>
 
           <h2 className="text-xl font-heading font-bold text-white mb-2">
-            Running Visibility Audit
+            Running AI Visibility Audit
           </h2>
           <p className="text-sm text-gray-500">
             {completed} of {total} queries checked
