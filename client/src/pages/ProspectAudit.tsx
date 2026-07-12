@@ -848,6 +848,7 @@ export default function ProspectAudit() {
         location: formData.location,
         industry: formData.industry || undefined,
         seedKeywords: formData.seedKeywords || undefined,
+        avgJobValue: formData.avgJobValue ? parseInt(formData.avgJobValue, 10) : undefined,
         queries: confirmedQueries,
       });
       setAuditId(id);

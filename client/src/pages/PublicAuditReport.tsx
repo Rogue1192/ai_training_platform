@@ -8,9 +8,11 @@
  * the ClientDashboard so the prospect sees a consistent, professional report.
  */
 
+import { useState } from "react";
 import { useParams } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { Loader2, AlertCircle, Zap } from "lucide-react";
+import { motion } from "framer-motion";
+import { Loader2, AlertCircle, TrendingUp } from "lucide-react";
 import {
   VisibilityGauge,
   PlatformBreakdown,
@@ -50,6 +52,93 @@ function StatCard({
       <p className={`text-4xl font-black ${valueColors[color]}`}>{value}</p>
       {sub && <p className="text-xs mt-2 opacity-70">{sub}</p>}
     </div>
+  );
+}
+
+// ─── Revenue Calculator ─────────────────────────────────────────────────────
+
+function RevenueCalculator({ avgJobValue, lostOpportunities }: { avgJobValue: number; lostOpportunities: number }) {
+  const [captureRate, setCaptureRate] = useState(10);
+  const [closeRateInput, setCloseRateInput] = useState("30");
+  const closeRate = parseFloat(closeRateInput) || 0;
+  const liveRevenueGap =
+    closeRate > 0
+      ? Math.round(lostOpportunities * (captureRate / 100) * (closeRate / 100) * avgJobValue * 12)
+      : null;
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.1 }}
+      className="rounded-2xl border border-white/8 bg-gradient-to-br from-white/[0.03] to-transparent p-6 sm:p-8"
+    >
+      <h2 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+        <TrendingUp className="w-5 h-5 text-green-400" />
+        Revenue Opportunity Calculator
+      </h2>
+      <p className="text-xs text-gray-500 mb-6">
+        Adjust the inputs below to model what capturing a portion of this missed visibility could mean for your business.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div>
+          <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Your Close Rate</label>
+          <div className="relative">
+            <input
+              type="number" min="1" max="100"
+              value={closeRateInput}
+              onChange={(e) => setCloseRateInput(e.target.value)}
+              placeholder="e.g. 30"
+              className="w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-3 text-2xl font-bold text-white placeholder:text-gray-700 focus:outline-none focus:border-green-500/50 transition-all text-center"
+            />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-lg font-bold">%</span>
+          </div>
+          <p className="text-[11px] text-gray-600 mt-1.5 text-center">% of leads you typically convert to booked jobs</p>
+        </div>
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">AI Search Capture Rate</label>
+            <span className="text-2xl font-bold text-white">{captureRate}%</span>
+          </div>
+          <input
+            type="range" min="1" max="60" step="1"
+            value={captureRate}
+            onChange={(e) => setCaptureRate(parseInt(e.target.value))}
+            className="w-full h-2 rounded-full appearance-none cursor-pointer"
+            style={{ background: `linear-gradient(to right, #22c55e ${(captureRate / 60) * 100}%, rgba(255,255,255,0.1) ${(captureRate / 60) * 100}%)` }}
+          />
+          <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+            <span>1%</span><span>30%</span><span>60%</span>
+          </div>
+          <p className="text-[11px] text-gray-600 mt-1 text-center">% of missed searches you capture as inbound leads</p>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-green-500/25 bg-gradient-to-br from-green-500/10 to-green-900/5 p-6 text-center relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-green-400/5 to-transparent pointer-events-none rounded-2xl" />
+        <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest mb-3">Estimated Annual Revenue Opportunity</p>
+        {liveRevenueGap !== null && liveRevenueGap > 0 ? (
+          <>
+            <motion.p
+              key={liveRevenueGap}
+              initial={{ scale: 0.92, opacity: 0.7 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.15 }}
+              className="text-5xl sm:text-6xl font-bold text-white"
+            >
+              ${liveRevenueGap.toLocaleString()}
+            </motion.p>
+            <p className="text-xs text-gray-400 mt-3">
+              {lostOpportunities.toLocaleString()} missed searches × {captureRate}% capture × {closeRate}% close × ${avgJobValue.toLocaleString()} avg job × 12 months
+            </p>
+          </>
+        ) : (
+          <p className="text-3xl font-bold text-gray-600">Enter your close rate above</p>
+        )}
+      </div>
+      <p className="text-[10px] text-gray-700 text-center mt-3">
+        * This is a revenue opportunity model, not a guarantee. Actual results depend on market conditions, service quality, and follow-up processes.
+      </p>
+    </motion.section>
   );
 }
 
@@ -150,6 +239,8 @@ export default function PublicAuditReport() {
     ? new Date(audit.completedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
     : "—";
 
+  const avgJobValue = (audit as any).avgJobValue as number | null;
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
@@ -183,6 +274,14 @@ export default function PublicAuditReport() {
               color="red"
             />
           </div>
+        )}
+
+        {/* Interactive Revenue Gap Calculator */}
+        {avgJobValue && avgJobValue > 0 && lostOpportunities > 0 && (
+          <RevenueCalculator
+            avgJobValue={avgJobValue}
+            lostOpportunities={lostOpportunities}
+          />
         )}
 
         {/* Visibility gauge + platform breakdown */}

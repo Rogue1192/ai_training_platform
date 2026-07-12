@@ -379,6 +379,11 @@ export async function runProspectAudit(
         geminiScore: scores.gemini,
         aiOverviewScore: scores.aiOverview,
         queriesMentioned: scores.mentionedQueries,
+        // Volume summary — persisted so the public share URL can show the same numbers
+        totalAISearches: scores.totalAISearches,
+        visibleSearches: scores.visibleSearches,
+        lostOpportunities: scores.lostOpportunities,
+        volumeUsedFallback: scores.volumeUsedFallback,
         ...(nd ? { normalizedDomain: nd } : {}),
         status: "completed",
         completedAt: new Date(),

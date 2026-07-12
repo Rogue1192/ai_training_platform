@@ -847,6 +847,12 @@ export const prospectAudits = pgTable("prospectAudits", {
   geminiScore: integer("geminiScore"),
   aiOverviewScore: integer("aiOverviewScore"),
   queriesMentioned: integer("queriesMentioned"),
+  // AI search volume summary (computed during audit, persisted for public report)
+  avgJobValue: integer("avgJobValue"),
+  totalAISearches: integer("totalAISearches"),
+  visibleSearches: integer("visibleSearches"),
+  lostOpportunities: integer("lostOpportunities"),
+  volumeUsedFallback: boolean("volumeUsedFallback").default(false),
   // Delivery
   pdfUrl: varchar("pdfUrl", { length: 1000 }), // URL to generated PDF
   emailSentAt: timestamp("emailSentAt"),

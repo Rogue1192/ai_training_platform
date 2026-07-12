@@ -32,6 +32,7 @@ export const prospectAuditRouter = router({
         location: z.string().min(1),
         industry: z.string().optional(),
         seedKeywords: z.string().optional(),
+        avgJobValue: z.number().int().positive().optional(),
         queries: z.array(z.object({ searchQuery: z.string(), location: z.string() })),
       })
     )
@@ -55,6 +56,7 @@ export const prospectAuditRouter = router({
         location: input.location,
         industry: input.industry ?? null,
         seedKeywords: input.seedKeywords ?? null,
+        avgJobValue: input.avgJobValue ?? null,
         queries: input.queries as any,
         status: 'pending',
       }).returning({ id: prospectAudits.id });
