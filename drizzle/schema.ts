@@ -828,6 +828,8 @@ export const prospectAudits = pgTable("prospectAudits", {
   location: varchar("location", { length: 255 }).notNull(),
   industry: varchar("industry", { length: 100 }),
   seedKeywords: text("seedKeywords"), // comma-separated seed keywords provided by user
+  // Normalized domain for prospect-to-client matching (e.g. "titancleaningco.com")
+  normalizedDomain: varchar("normalizedDomain", { length: 253 }),
   // Contact info (lead capture)
   contactFirstName: varchar("contactFirstName", { length: 100 }),
   contactLastName: varchar("contactLastName", { length: 100 }),

@@ -104,6 +104,57 @@ export const prospectAuditRouter = router({
       return audit;
     }),
 
+  /**
+   * Look up a completed prospect audit by website domain.
+   * Used during campaign onboarding to detect if a baseline already exists.
+   * Normalizes the input website the same way as the audit engine so
+   * https://www.titancleaningco.com and titancleaningco.com both match.
+   */
+  findByDomain: protectedProcedure
+    .input(z.object({ website: z.string() }))
+    .query(async ({ input }) => {
+      const { normalizeDomain } = await import('./prospectAuditEngine');
+      const { getDb } = await import('./db');
+      const { prospectAudits } = await import('../drizzle/schema');
+      const { eq, and, isNull } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) return null;
+
+      const domain = normalizeDomain(input.website);
+      if (!domain) return null;
+
+      // Find the most recent completed audit for this domain that hasn't been
+      // promoted to a campaign yet
+      const [audit] = await db
+        .select({
+          id: prospectAudits.id,
+          businessName: prospectAudits.businessName,
+          location: prospectAudits.location,
+          overallScore: prospectAudits.overallScore,
+          chatgptScore: prospectAudits.chatgptScore,
+          geminiScore: prospectAudits.geminiScore,
+          aiOverviewScore: prospectAudits.aiOverviewScore,
+          queriesMentioned: prospectAudits.queriesMentioned,
+          completedAt: prospectAudits.completedAt,
+          queries: prospectAudits.queries,
+          snapshotResults: prospectAudits.snapshotResults,
+          campaignId: prospectAudits.campaignId,
+          baselinePromotedAt: prospectAudits.baselinePromotedAt,
+        })
+        .from(prospectAudits)
+        .where(
+          and(
+            eq(prospectAudits.normalizedDomain, domain),
+            eq(prospectAudits.status, 'completed'),
+            isNull(prospectAudits.campaignId) // not yet linked to a campaign
+          )
+        )
+        .orderBy()
+        .limit(1);
+
+      return audit ?? null;
+    }),
+
   /** List recent audits */
   listAudits: protectedProcedure
     .input(z.object({ limit: z.number().default(20) }))

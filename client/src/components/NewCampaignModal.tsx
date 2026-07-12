@@ -141,6 +141,13 @@ export default function NewCampaignModal({
       .filter(Boolean);
   }, [selectedBusiness]);
 
+  // Prospect audit domain-match lookup — fires when a business with a website is selected
+  const websiteForMatch = (selectedBusiness as any)?.website?.trim() || "";
+  const { data: existingAudit } = trpc.prospectAudit.findByDomain.useQuery(
+    { website: websiteForMatch },
+    { enabled: !!websiteForMatch && step === 1 }
+  );
+
   // Industry keyword cache for AI query pre-population
   const industry = (selectedBusiness as any)?.businessType?.trim() || "";
   const { data: industryCache } = trpc.industryCache.get.useQuery(
@@ -445,6 +452,18 @@ export default function NewCampaignModal({
                   <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300 flex gap-1.5">
                     <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     This business has no locations yet. Add them in the Businesses tab first, or you can proceed and the pipeline will use keyword research only.
+                  </div>
+                )}
+                {existingAudit && (
+                  <div className="rounded border border-green-500/40 bg-green-500/10 p-3 text-xs text-green-300 flex gap-2">
+                    <Check className="h-3.5 w-3.5 shrink-0 mt-0.5 text-green-400" />
+                    <div>
+                      <p className="font-semibold text-green-200 mb-0.5">AI Visibility Audit found for this business</p>
+                      <p className="text-green-400">
+                        Audit completed {existingAudit.completedAt ? new Date(existingAudit.completedAt).toLocaleDateString() : "recently"} · Overall score: {existingAudit.overallScore ?? "—"}/100
+                      </p>
+                      <p className="mt-1 text-green-400/80">When this campaign is created, the existing baseline will be linked automatically — no re-run needed.</p>
+                    </div>
                   </div>
                 )}
               </div>

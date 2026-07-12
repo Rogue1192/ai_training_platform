@@ -18,6 +18,36 @@ import { calculateVisibilityScore } from "./rankTrackingEngine";
 import { prospectAudits } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 
+// ─── Domain Normalization ─────────────────────────────────────────────────────
+
+/**
+ * Normalize a website URL to a bare domain for prospect-to-client matching.
+ * Handles all common input formats:
+ *   https://www.titancleaningco.com/  →  titancleaningco.com
+ *   http://titancleaningco.com        →  titancleaningco.com
+ *   www.titancleaningco.com           →  titancleaningco.com
+ *   TITANCLEANINGCO.COM               →  titancleaningco.com
+ */
+export function normalizeDomain(website: string | null | undefined): string | null {
+  if (!website || !website.trim()) return null;
+  try {
+    let raw = website.trim().toLowerCase();
+    // Add protocol if missing so URL can be parsed
+    if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
+      raw = "https://" + raw;
+    }
+    const url = new URL(raw);
+    let host = url.hostname;
+    // Strip leading www.
+    if (host.startsWith("www.")) host = host.slice(4);
+    // Strip trailing dot (rare but valid)
+    if (host.endsWith(".")) host = host.slice(0, -1);
+    return host || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fetch AI search volume for a list of queries.
  * Falls back to 25% of Google search volume when DataForSEO AI volume is zero/null.
@@ -338,7 +368,8 @@ export async function runProspectAudit(
       volumeUsedFallback,
     };
 
-    // Persist results
+    // Persist results (also store normalizedDomain for prospect-to-client matching)
+    const nd = normalizeDomain(website);
     await db
       .update(prospectAudits)
       .set({
@@ -348,6 +379,7 @@ export async function runProspectAudit(
         geminiScore: scores.gemini,
         aiOverviewScore: scores.aiOverview,
         queriesMentioned: scores.mentionedQueries,
+        ...(nd ? { normalizedDomain: nd } : {}),
         status: "completed",
         completedAt: new Date(),
         updatedAt: new Date(),
