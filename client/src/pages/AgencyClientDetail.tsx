@@ -503,29 +503,50 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
             )}
 
             {/* Expanded content + copy button */}
-            {isExpanded && (
-              <div className="border-t border-border mx-3 mb-3">
-                <div className="flex justify-end pt-2 pb-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs gap-1.5"
-                    onClick={() => {
-                      navigator.clipboard.writeText(page.pageContent);
-                      toast.success("Content copied to clipboard!");
-                    }}
-                  >
-                    <Copy className="h-3 w-3" />
-                    Copy content
-                  </Button>
+            {isExpanded && (() => {
+              const plainText = page.pageContent
+                ? page.pageContent.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\n{3,}/g, '\n\n').trim()
+                : '';
+              const contentTab = expandedPages[`${page.id}_tab`] ?? 'html';
+              return (
+                <div className="border-t border-border mx-3 mb-3">
+                  <div className="flex items-center justify-between pt-2 pb-1">
+                    <div className="flex gap-1">
+                      <Button
+                        variant={contentTab === 'html' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setExpandedPages(prev => ({ ...prev, [`${page.id}_tab`]: 'html' }))}
+                      >HTML</Button>
+                      <Button
+                        variant={contentTab === 'plain' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setExpandedPages(prev => ({ ...prev, [`${page.id}_tab`]: 'plain' }))}
+                      >Plain Text</Button>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1.5"
+                      onClick={() => {
+                        const toCopy = contentTab === 'plain' ? plainText : page.pageContent;
+                        navigator.clipboard.writeText(toCopy);
+                        toast.success(contentTab === 'plain' ? 'Plain text copied!' : 'HTML copied!');
+                      }}
+                    >
+                      <Copy className="h-3 w-3" />
+                      Copy {contentTab === 'plain' ? 'Plain Text' : 'HTML'}
+                    </Button>
+                  </div>
+                  <div className="rounded-md bg-muted/40 p-3 max-h-72 overflow-y-auto">
+                    <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
+                      {contentTab === 'plain' ? plainText : page.pageContent}
+                    </pre>
+                  </div>
                 </div>
-                <div className="rounded-md bg-muted/40 p-3 max-h-72 overflow-y-auto">
-                  <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
-                    {page.pageContent}
-                  </pre>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* URL entry row — only for unpublished pages */}
             {!page.publishedUrl && (
