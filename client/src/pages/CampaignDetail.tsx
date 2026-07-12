@@ -67,12 +67,12 @@ import { toast } from "sonner";
 // Pipeline step configuration
 const PIPELINE_STEPS = [
   { key: "keyword_research", label: "Keywords", icon: Search, color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/30" },
+  { key: "baseline_check", label: "Baseline", icon: Eye, color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30" },
   { key: "credibility_research", label: "Credibility", icon: Shield, color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/30" },
   { key: "content_generation", label: "Content", icon: FileText, color: "text-indigo-400", bg: "bg-indigo-500/10", border: "border-indigo-500/30" },
   { key: "publishing", label: "Publish", icon: Globe, color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/30" },
   { key: "indexing", label: "Indexing", icon: Zap, color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/30" },
   { key: "indexing_verification", label: "Verify", icon: CheckCircle2, color: "text-teal-400", bg: "bg-teal-500/10", border: "border-teal-500/30" },
-  { key: "baseline_check", label: "Baseline", icon: Eye, color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30" },
   { key: "training", label: "Training", icon: Brain, color: "text-primary", bg: "bg-primary/10", border: "border-primary/30" },
 ] as const;
 

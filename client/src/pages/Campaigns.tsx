@@ -256,6 +256,10 @@ export default function Campaigns() {
                           done: !!campaign.keywordResearchCompletedAt,
                         },
                         {
+                          key: "baseline_check",
+                          done: !!campaign.baselineCheckCompletedAt,
+                        },
+                        {
                           key: "credibility_research",
                           done: !!campaign.credibilityResearchCompletedAt,
                         },
@@ -270,10 +274,6 @@ export default function Campaigns() {
                         {
                           key: "indexing",
                           done: !!campaign.indexingVerifiedAt,
-                        },
-                        {
-                          key: "baseline_check",
-                          done: !!campaign.baselineCheckCompletedAt,
                         },
                         {
                           key: "training",

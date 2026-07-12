@@ -166,6 +166,16 @@ export async function runPipelineStep(
       }
       
       case "credibility_research": {
+        // ── Baseline gate ─────────────────────────────────────────────────────
+        // Credibility research must NOT run until the baseline visibility check
+        // has been completed. This ensures we capture a clean pre-content baseline
+        // before any credibility pages or schema are added to the client's site.
+        if (!campaign.baselineCheckCompletedAt) {
+          throw new Error(
+            "Baseline visibility check must be completed before running credibility research. " +
+            "Run the Baseline step first to capture a clean pre-content AI visibility snapshot."
+          );
+        }
         const { runCredibilityResearch } = await import("./credibilityResearchEngine");
         // Parse pre-supplied credibility URLs from the business record (BBB, certs, etc.)
         let parsedCredibilityUrls: Array<{ label: string; url: string }> | undefined;
