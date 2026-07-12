@@ -211,12 +211,18 @@ export default function Campaigns() {
                             {statusLabels[campaign.status] ||
                               campaign.status}
                           </Badge>
-                          {campaign.isBlocked && (
-                            <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30 text-xs gap-1">
-                              <AlertTriangle className="w-3 h-3" />
-                              Action Required
-                            </Badge>
-                          )}
+                          {campaign.isBlocked && (() => {
+                            const missing: string[] = [];
+                            if (campaign.llmTxtVerified === false) missing.push('llm.txt');
+                            if (campaign.schemaVerified === false) missing.push('Schema');
+                            if (campaign.status === 'publishing' && !campaign.publishingCompletedAt && missing.length === 0) missing.push('Content URLs');
+                            return (
+                              <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30 text-xs gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                {missing.length > 0 ? `Missing: ${missing.join(' + ')}` : 'Action Required'}
+                              </Badge>
+                            );
+                          })()}
                         </div>
                         <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
