@@ -1365,94 +1365,6 @@ function ContentTab({ campaignId }: { campaignId: number }) {
         </Card>
       )}
 
-      {/* LLM.TXT + SCHEMA VERIFICATION — two independent checkboxes */}
-      {hasSpecialAssets && visiblePages.length > 0 && (
-        <Card className="bg-card border-border">
-          <CardContent className="pt-4 pb-3 space-y-3">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Site Verification</p>
-            <p className="text-xs text-muted-foreground">
-              Check each box once you've added the asset to the client's site. Each checkbox scans independently — both must pass before the campaign unblocks.
-            </p>
-
-            {/* Checkbox 1: llm.txt */}
-            <div
-              className={`flex items-start gap-3 p-3 rounded-md border cursor-pointer select-none transition-colors ${
-                llmVerified
-                  ? 'border-green-500/40 bg-green-500/5'
-                  : scanningLlm
-                  ? 'border-amber-500/40 bg-amber-500/5'
-                  : llmScanError
-                  ? 'border-red-500/40 bg-red-500/5'
-                  : 'border-border hover:border-muted-foreground/40'
-              }`}
-              onClick={handleLlmCheck}
-            >
-              <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
-                llmVerified ? 'border-green-500 bg-green-500' : scanningLlm ? 'border-amber-400' : llmScanError ? 'border-red-500' : 'border-muted-foreground'
-              }`}>
-                {scanningLlm && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
-                {!scanningLlm && llmVerified && <CheckCircle2 className="h-2.5 w-2.5 text-white" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">
-                  {scanningLlm ? 'Scanning for llm.txt…' : llmVerified ? "I've added llm.txt to the site ✓" : "I've added llm.txt to the client's site"}
-                </p>
-                {!scanningLlm && !llmVerified && !llmScanError && (
-                  <p className="text-xs text-muted-foreground mt-0.5">Click to scan {'{domain}'}/llm.txt now</p>
-                )}
-                {!scanningLlm && llmScanError && (
-                  <div className="text-xs mt-1 flex items-center gap-1 text-red-400">
-                    <AlertCircle className="h-3 w-3" />
-                    Not detected — {llmScanError}
-                  </div>
-                )}
-                {!scanningLlm && llmScanError && (
-                  <p className="text-xs text-amber-400/80 mt-1">Fix the issue, then click again to re-scan.</p>
-                )}
-              </div>
-            </div>
-
-            {/* Checkbox 2: JSON-LD schema */}
-            <div
-              className={`flex items-start gap-3 p-3 rounded-md border cursor-pointer select-none transition-colors ${
-                schemaVerified
-                  ? 'border-green-500/40 bg-green-500/5'
-                  : scanningSchema
-                  ? 'border-amber-500/40 bg-amber-500/5'
-                  : schemaScanError
-                  ? 'border-red-500/40 bg-red-500/5'
-                  : 'border-border hover:border-muted-foreground/40'
-              }`}
-              onClick={handleSchemaCheck}
-            >
-              <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
-                schemaVerified ? 'border-green-500 bg-green-500' : scanningSchema ? 'border-amber-400' : schemaScanError ? 'border-red-500' : 'border-muted-foreground'
-              }`}>
-                {scanningSchema && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
-                {!scanningSchema && schemaVerified && <CheckCircle2 className="h-2.5 w-2.5 text-white" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">
-                  {scanningSchema ? 'Scanning homepage for JSON-LD schema…' : schemaVerified ? "I've injected the JSON-LD schema ✓" : "I've injected the JSON-LD schema on the client's site"}
-                </p>
-                {!scanningSchema && !schemaVerified && !schemaScanError && (
-                  <p className="text-xs text-muted-foreground mt-0.5">Click to scan the homepage for a JSON-LD &#x3C;script&#x3E; block</p>
-                )}
-                {!scanningSchema && schemaScanError && (
-                  <div className="text-xs mt-1 flex items-center gap-1 text-red-400">
-                    <AlertCircle className="h-3 w-3" />
-                    Not detected — {schemaScanError}
-                  </div>
-                )}
-                {!scanningSchema && schemaScanError && (
-                  <p className="text-xs text-amber-400/80 mt-1">Fix the issue, then click again to re-scan.</p>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Content Pages */}
       {visiblePages.length > 0 ? (
         <Card className="bg-card border-border">
@@ -1619,12 +1531,12 @@ function ContentTab({ campaignId }: { campaignId: number }) {
               llm.txt
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground mb-3">
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
               Upload this file to the root of the client's website as <code className="text-teal-400">/llm.txt</code> so AI crawlers can read it directly.
               This file tells GPTBot, Claude-Web, Google-Extended, and other AI crawlers exactly who this business is, what they specialize in, and where to find their credibility pages.
             </p>
-            <div className="flex justify-end mb-2">
+            <div className="flex justify-end">
               <Button
                 variant="outline"
                 size="sm"
@@ -1653,82 +1565,157 @@ function ContentTab({ campaignId }: { campaignId: number }) {
                 {llmTxtPage.pageContent}
               </pre>
             </div>
+            {/* Inline verification checkbox */}
+            <div
+              className={`flex items-start gap-3 p-3 rounded-md border cursor-pointer select-none transition-colors ${
+                llmVerified ? 'border-green-500/40 bg-green-500/5'
+                : scanningLlm ? 'border-amber-500/40 bg-amber-500/5'
+                : llmScanError ? 'border-red-500/40 bg-red-500/5'
+                : 'border-border hover:border-muted-foreground/40'
+              }`}
+              onClick={handleLlmCheck}
+            >
+              <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                llmVerified ? 'border-green-500 bg-green-500' : scanningLlm ? 'border-amber-400' : llmScanError ? 'border-red-500' : 'border-muted-foreground'
+              }`}>
+                {scanningLlm && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
+                {!scanningLlm && llmVerified && <CheckCircle2 className="h-2.5 w-2.5 text-white" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">
+                  {scanningLlm ? 'Scanning for llm.txt…' : llmVerified ? "I've added llm.txt to the site ✓" : "I've added llm.txt to the client's site"}
+                </p>
+                {!scanningLlm && !llmVerified && !llmScanError && (
+                  <p className="text-xs text-muted-foreground mt-0.5">Click to scan the site for /llm.txt</p>
+                )}
+                {!scanningLlm && llmScanError && (
+                  <>
+                    <div className="text-xs mt-1 flex items-center gap-1 text-red-400">
+                      <AlertCircle className="h-3 w-3" /> Not detected — {llmScanError}
+                    </div>
+                    <p className="text-xs text-amber-400/80 mt-1">Fix the issue, then click again to re-scan.</p>
+                  </>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
 
       {/* Schema Delivery Plan — Smart delivery with audit results */}
-      {deliveryPlan ? (
-        <>
-          <SchemaDeliveryPanel campaignId={campaignId} plan={deliveryPlan} />
-          {/* Regenerate button shown below the delivery plan */}
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs gap-1.5 text-orange-400 border-orange-500/40 hover:bg-orange-500/10"
-              onClick={() => regenerateSchema.mutate({ campaignId })}
-              disabled={regenerateSchema.isPending}
-            >
-              <RefreshCw className={`w-3 h-3 ${regenerateSchema.isPending ? "animate-spin" : ""}`} />
-              {regenerateSchema.isPending ? "Regenerating schema..." : "Regenerate Schema"}
-            </Button>
-          </div>
-        </>
-      ) : schemaPackagePage ? (
-        // Fallback: show the old schema package if no delivery plan yet
-        <Card className="bg-card border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
-              <Code className="w-4 h-4 text-orange-400" />
-              Schema Markup Package
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground mb-1">
-              Copy the <strong>SITE-WIDE SCHEMA</strong> block and paste it into the <code className="text-orange-400">&lt;head&gt;</code> of every page on the client's site. Each per-page block goes on its corresponding page.
-            </p>
-            {schemaPackagePage.placementInstructions && (
-              <p className="text-xs text-orange-300/80 mb-3 bg-orange-500/10 rounded p-2">
-                {schemaPackagePage.placementInstructions}
+      {/* Inline schema verification checkbox — shared by both delivery plan and fallback schema card */}
+      {(deliveryPlan || schemaPackagePage) && (() => {
+        const schemaCheckbox = (
+          <div
+            className={`flex items-start gap-3 p-3 rounded-md border cursor-pointer select-none transition-colors ${
+              schemaVerified ? 'border-green-500/40 bg-green-500/5'
+              : scanningSchema ? 'border-amber-500/40 bg-amber-500/5'
+              : schemaScanError ? 'border-red-500/40 bg-red-500/5'
+              : 'border-border hover:border-muted-foreground/40'
+            }`}
+            onClick={handleSchemaCheck}
+          >
+            <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
+              schemaVerified ? 'border-green-500 bg-green-500' : scanningSchema ? 'border-amber-400' : schemaScanError ? 'border-red-500' : 'border-muted-foreground'
+            }`}>
+              {scanningSchema && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
+              {!scanningSchema && schemaVerified && <CheckCircle2 className="h-2.5 w-2.5 text-white" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">
+                {scanningSchema ? 'Scanning homepage for JSON-LD schema…' : schemaVerified ? "I've injected the JSON-LD schema ✓" : "I've injected the JSON-LD schema on the client's site"}
               </p>
-            )}
-            <div className="flex gap-2 justify-end mb-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs gap-1.5"
-                onClick={() => {
-                  const match = schemaPackagePage.pageContent.match(/<script type="application\/ld\+json">[\s\S]*?<\/script>/);
-                  const siteWide = match ? match[0] : schemaPackagePage.pageContent;
-                  navigator.clipboard.writeText(siteWide);
-                  toast.success("Site-wide schema copied!");
-                }}
-              >
-                <Copy className="w-3 h-3" />
-                Copy Site-Wide Schema
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs gap-1.5"
-                onClick={() => {
-                  navigator.clipboard.writeText(schemaPackagePage.pageContent);
-                  toast.success("Full schema package copied!");
-                }}
-              >
-                <Copy className="w-3 h-3" />
-                Copy All
-              </Button>
+              {!scanningSchema && !schemaVerified && !schemaScanError && (
+                <p className="text-xs text-muted-foreground mt-0.5">Click to scan the homepage for a JSON-LD &lt;script&gt; block</p>
+              )}
+              {!scanningSchema && schemaScanError && (
+                <>
+                  <div className="text-xs mt-1 flex items-center gap-1 text-red-400">
+                    <AlertCircle className="h-3 w-3" /> Not detected — {schemaScanError}
+                  </div>
+                  <p className="text-xs text-amber-400/80 mt-1">Fix the issue, then click again to re-scan.</p>
+                </>
+              )}
             </div>
-            <div className="rounded-md bg-muted/40 p-3 max-h-64 overflow-y-auto">
-              <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
-                {schemaPackagePage.pageContent}
-              </pre>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+          </div>
+        );
+
+        if (deliveryPlan) {
+          return (
+            <>
+              <SchemaDeliveryPanel campaignId={campaignId} plan={deliveryPlan} />
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1.5 text-orange-400 border-orange-500/40 hover:bg-orange-500/10"
+                  onClick={() => regenerateSchema.mutate({ campaignId })}
+                  disabled={regenerateSchema.isPending}
+                >
+                  <RefreshCw className={`w-3 h-3 ${regenerateSchema.isPending ? "animate-spin" : ""}`} />
+                  {regenerateSchema.isPending ? "Regenerating schema..." : "Regenerate Schema"}
+                </Button>
+              </div>
+              {schemaCheckbox}
+            </>
+          );
+        }
+
+        return (
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+                <Code className="w-4 h-4 text-orange-400" />
+                Schema Markup Package
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Copy the <strong>SITE-WIDE SCHEMA</strong> block and paste it into the <code className="text-orange-400">&lt;head&gt;</code> of every page on the client's site. Each per-page block goes on its corresponding page.
+              </p>
+              {schemaPackagePage!.placementInstructions && (
+                <p className="text-xs text-orange-300/80 bg-orange-500/10 rounded p-2">
+                  {schemaPackagePage!.placementInstructions}
+                </p>
+              )}
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1.5"
+                  onClick={() => {
+                    const match = schemaPackagePage!.pageContent.match(/<script type="application\/ld\+json">[\s\S]*?<\/script>/);
+                    const siteWide = match ? match[0] : schemaPackagePage!.pageContent;
+                    navigator.clipboard.writeText(siteWide);
+                    toast.success("Site-wide schema copied!");
+                  }}
+                >
+                  <Copy className="w-3 h-3" />
+                  Copy Site-Wide Schema
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1.5"
+                  onClick={() => {
+                    navigator.clipboard.writeText(schemaPackagePage!.pageContent);
+                    toast.success("Full schema package copied!");
+                  }}
+                >
+                  <Copy className="w-3 h-3" />
+                  Copy All
+                </Button>
+              </div>
+              <div className="rounded-md bg-muted/40 p-3 max-h-64 overflow-y-auto">
+                <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
+                  {schemaPackagePage!.pageContent}
+                </pre>
+              </div>
+              {schemaCheckbox}
+            </CardContent>
+          </Card>
+        );
+      })()}
     </div>
   );
 }

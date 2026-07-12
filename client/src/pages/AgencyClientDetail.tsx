@@ -390,90 +390,6 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
         </div>
       )}
 
-      {/* LLM.TXT + SCHEMA VERIFICATION CHECKBOXES — two independent scans */}
-      {pages.some((p: any) => p.pageType === 'llm_txt' || p.pageType === 'schema_package' || p.pageType === 'schema_delivery') && (
-        <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Site Verification</p>
-          <p className="text-xs text-muted-foreground mb-2">Check each box once you've added the asset to the client's site. Each checkbox scans independently — both must pass before the campaign unblocks.</p>
-
-          {/* Checkbox 1: llm.txt */}
-          <div
-            className={`flex items-start gap-3 p-2 rounded-md border cursor-pointer select-none transition-colors ${
-              llmVerified
-                ? 'border-green-500/40 bg-green-500/5'
-                : scanningLlm
-                ? 'border-amber-500/40 bg-amber-500/5'
-                : llmError
-                ? 'border-red-500/40 bg-red-500/5'
-                : 'border-border hover:border-muted-foreground/40'
-            }`}
-            onClick={handleLlmCheck}
-          >
-            <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
-              llmVerified ? 'border-green-500 bg-green-500' : scanningLlm ? 'border-amber-400' : llmError ? 'border-red-500' : 'border-muted-foreground'
-            }`}>
-              {scanningLlm && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
-              {!scanningLlm && llmVerified && <CheckCircle className="h-2.5 w-2.5 text-white" />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium">
-                {scanningLlm ? 'Scanning for llm.txt…' : llmVerified ? "I've added llm.txt to the site ✓" : "I've added llm.txt to the client's site"}
-              </p>
-              {!scanningLlm && !llmVerified && !llmError && (
-                <p className="text-xs text-muted-foreground mt-0.5">Click to scan {'{domain}'}/llm.txt now</p>
-              )}
-              {!scanningLlm && llmError && (
-                <div className="text-xs mt-0.5 flex items-center gap-1 text-red-400">
-                  <AlertCircle className="h-3 w-3" />
-                  Not detected — {llmError}
-                </div>
-              )}
-              {!scanningLlm && llmError && (
-                <p className="text-xs text-amber-400/80 mt-1">Fix the issue, then click again to re-scan.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Checkbox 2: JSON-LD schema */}
-          <div
-            className={`flex items-start gap-3 p-2 rounded-md border cursor-pointer select-none transition-colors ${
-              schemaVerified
-                ? 'border-green-500/40 bg-green-500/5'
-                : scanningSchema
-                ? 'border-amber-500/40 bg-amber-500/5'
-                : schemaError
-                ? 'border-red-500/40 bg-red-500/5'
-                : 'border-border hover:border-muted-foreground/40'
-            }`}
-            onClick={handleSchemaCheck}
-          >
-            <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
-              schemaVerified ? 'border-green-500 bg-green-500' : scanningSchema ? 'border-amber-400' : schemaError ? 'border-red-500' : 'border-muted-foreground'
-            }`}>
-              {scanningSchema && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
-              {!scanningSchema && schemaVerified && <CheckCircle className="h-2.5 w-2.5 text-white" />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium">
-                {scanningSchema ? 'Scanning homepage for JSON-LD schema…' : schemaVerified ? "I've injected the JSON-LD schema ✓" : "I've injected the JSON-LD schema on the client's site"}
-              </p>
-              {!scanningSchema && !schemaVerified && !schemaError && (
-                <p className="text-xs text-muted-foreground mt-0.5">Click to scan the homepage for a JSON-LD &#x3C;script&#x3E; block</p>
-              )}
-              {!scanningSchema && schemaError && (
-                <div className="text-xs mt-0.5 flex items-center gap-1 text-red-400">
-                  <AlertCircle className="h-3 w-3" />
-                  Not detected — {schemaError}
-                </div>
-              )}
-              {!scanningSchema && schemaError && (
-                <p className="text-xs text-amber-400/80 mt-1">Fix the issue, then click again to re-scan.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Page cards */}
       {pages.length === 0 && (
         <p className="text-xs text-muted-foreground py-2">No content pages generated yet.</p>
@@ -603,8 +519,8 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
               );
             })()}
 
-            {/* URL entry row — only for unpublished pages */}
-            {!page.publishedUrl && (
+            {/* URL entry row — only for regular content pages (not llm_txt / schema types) */}
+            {!page.publishedUrl && !isSpecialType && (
               <div className="flex items-center gap-2 px-3 pb-3">
                 <Input
                   placeholder={urlPlaceholder}
@@ -625,6 +541,78 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
                   {setUrl.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
                   Save URL
                 </Button>
+              </div>
+            )}
+
+            {/* Inline verification checkbox — llm.txt page */}
+            {isLlmTxt && (
+              <div
+                className={`flex items-start gap-3 mx-3 mb-3 p-2 rounded-md border cursor-pointer select-none transition-colors ${
+                  llmVerified ? 'border-green-500/40 bg-green-500/5'
+                  : scanningLlm ? 'border-amber-500/40 bg-amber-500/5'
+                  : llmError ? 'border-red-500/40 bg-red-500/5'
+                  : 'border-border hover:border-muted-foreground/40'
+                }`}
+                onClick={handleLlmCheck}
+              >
+                <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                  llmVerified ? 'border-green-500 bg-green-500' : scanningLlm ? 'border-amber-400' : llmError ? 'border-red-500' : 'border-muted-foreground'
+                }`}>
+                  {scanningLlm && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
+                  {!scanningLlm && llmVerified && <CheckCircle className="h-2.5 w-2.5 text-white" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium">
+                    {scanningLlm ? 'Scanning for llm.txt…' : llmVerified ? "I've added llm.txt to the site ✓" : "I've added llm.txt to the client's site"}
+                  </p>
+                  {!scanningLlm && !llmVerified && !llmError && (
+                    <p className="text-xs text-muted-foreground mt-0.5">Click to scan the site for /llm.txt</p>
+                  )}
+                  {!scanningLlm && llmError && (
+                    <>
+                      <div className="text-xs mt-0.5 flex items-center gap-1 text-red-400">
+                        <AlertCircle className="h-3 w-3" /> Not detected — {llmError}
+                      </div>
+                      <p className="text-xs text-amber-400/80 mt-1">Fix the issue, then click again to re-scan.</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Inline verification checkbox — schema page */}
+            {(isSchemaPackage || isSchemaDelivery) && (
+              <div
+                className={`flex items-start gap-3 mx-3 mb-3 p-2 rounded-md border cursor-pointer select-none transition-colors ${
+                  schemaVerified ? 'border-green-500/40 bg-green-500/5'
+                  : scanningSchema ? 'border-amber-500/40 bg-amber-500/5'
+                  : schemaError ? 'border-red-500/40 bg-red-500/5'
+                  : 'border-border hover:border-muted-foreground/40'
+                }`}
+                onClick={handleSchemaCheck}
+              >
+                <div className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                  schemaVerified ? 'border-green-500 bg-green-500' : scanningSchema ? 'border-amber-400' : schemaError ? 'border-red-500' : 'border-muted-foreground'
+                }`}>
+                  {scanningSchema && <Loader2 className="h-2.5 w-2.5 animate-spin text-amber-400" />}
+                  {!scanningSchema && schemaVerified && <CheckCircle className="h-2.5 w-2.5 text-white" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium">
+                    {scanningSchema ? 'Scanning homepage for JSON-LD schema…' : schemaVerified ? "I've injected the JSON-LD schema ✓" : "I've injected the JSON-LD schema on the client's site"}
+                  </p>
+                  {!scanningSchema && !schemaVerified && !schemaError && (
+                    <p className="text-xs text-muted-foreground mt-0.5">Click to scan the homepage for a JSON-LD &lt;script&gt; block</p>
+                  )}
+                  {!scanningSchema && schemaError && (
+                    <>
+                      <div className="text-xs mt-0.5 flex items-center gap-1 text-red-400">
+                        <AlertCircle className="h-3 w-3" /> Not detected — {schemaError}
+                      </div>
+                      <p className="text-xs text-amber-400/80 mt-1">Fix the issue, then click again to re-scan.</p>
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>
