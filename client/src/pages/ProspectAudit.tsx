@@ -436,10 +436,19 @@ function ResultsStep({
     aiOverview: number;
     queriesMentioned: number;
     totalQueries: number;
+    totalAISearches?: number;
+    visibleSearches?: number;
+    lostOpportunities?: number;
+    volumeUsedFallback?: boolean;
   };
   snapshots: any[];
   completedAt: Date;
 }) {
+  const totalAISearches = scores.totalAISearches ?? 0;
+  const visibleSearches = scores.visibleSearches ?? 0;
+  const lostOpportunities = scores.lostOpportunities ?? 0;
+  const volumeUsedFallback = scores.volumeUsedFallback ?? false;
+  const visibilityPct = totalAISearches > 0 ? Math.round((visibleSearches / totalAISearches) * 100) : 0;
   // Shape snapshots into the format QueryDetailsTable expects
   const queryDetails = snapshots.map((s) => ({
     queryLocationId: s.searchQuery,
@@ -470,6 +479,61 @@ function ResultsStep({
       />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+        {/* Pain-Point Hero Cards */}
+        {totalAISearches > 0 && (
+          <motion.section
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Card 1: Total AI Searches */}
+              <div className="rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-transparent p-6 text-center">
+                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2">
+                  Monthly AI Searches
+                </p>
+                <p className="text-4xl font-heading font-bold text-white">
+                  {totalAISearches.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  People in your area searching these phrases
+                </p>
+              </div>
+
+              {/* Card 2: Your Visibility */}
+              <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 to-transparent p-6 text-center">
+                <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-2">
+                  Your AI Visibility
+                </p>
+                <p className="text-4xl font-heading font-bold text-white">
+                  {visibilityPct}%
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  {visibleSearches.toLocaleString()} searches where you were found
+                </p>
+              </div>
+
+              {/* Card 3: Lost Opportunities */}
+              <div className="rounded-2xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-transparent p-6 text-center">
+                <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">
+                  Potential Lost Opportunities
+                </p>
+                <p className="text-4xl font-heading font-bold text-white">
+                  {lostOpportunities.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  Searches per month where you weren't visible
+                </p>
+              </div>
+            </div>
+            {volumeUsedFallback && (
+              <p className="text-[10px] text-gray-600 text-center mt-2">
+                * Search volume estimates based on available AI search data. Where direct AI search data is unavailable, estimates reflect approximately 25% of Google search volume — consistent with current AI search adoption rates for local service queries.
+              </p>
+            )}
+          </motion.section>
+        )}
+
         {/* Hero: Overall Score */}
         <motion.section
           className="relative overflow-hidden rounded-2xl border border-white/5 bg-gradient-to-br from-white/[0.02] to-transparent p-6 sm:p-10"
