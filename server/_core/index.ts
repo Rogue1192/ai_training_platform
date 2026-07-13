@@ -48,6 +48,10 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  // Increase timeouts to handle long-running AI audit requests (~2-3 min for 15 queries × 3 platforms in parallel)
+  server.headersTimeout = 600_000; // 10 min (default is 60s — too short for audits)
+  server.requestTimeout = 600_000; // 10 min (default is 300s — may be too short)
+  server.timeout = 0;              // Disable socket inactivity timeout
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));

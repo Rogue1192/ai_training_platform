@@ -48,12 +48,13 @@ function getPeriodMonth(periodStart: string): string {
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export const prospectAuditRouter = router({
-  /** Step 1: Generate 15 queries from business info */
+  /** Step 1: Generate queries from business info (one set per location) */
   generateQueries: protectedProcedure
     .input(
       z.object({
         businessName: z.string().min(1),
         location: z.string().min(1),
+        locations: z.array(z.string().min(1)).optional(),
         industry: z.string().optional(),
         seedKeywords: z.string().optional(),
       })
@@ -71,6 +72,7 @@ export const prospectAuditRouter = router({
         businessName: z.string().min(1),
         website: z.string().optional(),
         location: z.string().min(1),
+        locations: z.array(z.string().min(1)).optional(),
         industry: z.string().optional(),
         seedKeywords: z.string().optional(),
         avgJobValue: z.number().int().positive().optional(),
@@ -81,6 +83,7 @@ export const prospectAuditRouter = router({
       const { getDb } = await import('./db');
       const { prospectAudits } = await import('../drizzle/schema');
       const { getAgencyByUserId } = await import('./dbAgencies');
+      const { serializeLocations } = await import('../shared/location');
       const db = await getDb();
       if (!db) throw new Error('Database not available');
 
@@ -90,11 +93,18 @@ export const prospectAuditRouter = router({
         if (agency) agencyId = agency.id;
       } catch {}
 
+      // Serialize all locations into the single location column ("City, ST; City2, ST")
+      const allLocations = [
+        input.location,
+        ...(input.locations ?? []).filter((l) => l.trim() && l.trim() !== input.location.trim()),
+      ].filter(Boolean);
+      const storedLocation = serializeLocations(allLocations) || input.location;
+
       const [audit] = await db.insert(prospectAudits).values({
         agencyId,
         businessName: input.businessName,
         website: input.website ?? null,
-        location: input.location,
+        location: storedLocation,
         industry: input.industry ?? null,
         seedKeywords: input.seedKeywords ?? null,
         avgJobValue: input.avgJobValue ?? null,

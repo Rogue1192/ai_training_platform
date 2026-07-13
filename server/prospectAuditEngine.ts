@@ -103,7 +103,10 @@ const PROSPECT_QUERY_COUNT = 15;
 
 export interface ProspectQueryInput {
   businessName: string;
+  /** Primary location (first in list) — kept for backward compat */
   location: string;
+  /** All target locations — if provided, queries are generated for each */
+  locations?: string[];
   industry?: string;
   seedKeywords?: string; // comma-separated
 }
@@ -152,75 +155,99 @@ export interface ProspectAuditScores {
 // ─── Query Generation ─────────────────────────────────────────────────────────
 
 /**
- * Use GPT-4o-mini to generate 15 AI-search queries for a prospect business.
- * Returns an array of { searchQuery, location } objects ready for the user to
- * review and edit before running the audit.
+ * Use GPT-4o-mini to generate PROSPECT_QUERY_COUNT buying-intent queries for a prospect.
+ *
+ * Strategy: raw keyword + commercial modifier pattern.
+ * For each core service keyword, generate variants like:
+ *   "aluminum fence installation"
+ *   "aluminum fence installation near me"
+ *   "best aluminum fence installation"
+ *   "top rated aluminum fence installation"
+ *   "affordable aluminum fence installation"
+ *
+ * ONLY commercial/transactional queries — zero informational content.
+ * Returns an array of { searchQuery, location } objects ready for review.
  */
 export async function generateProspectQueries(
   input: ProspectQueryInput
 ): Promise<ProspectQueryResult[]> {
   const { businessName, location, industry, seedKeywords } = input;
 
+  // Deduplicate and filter blank locations; always include primary
+  const allLocations = [
+    location,
+    ...(input.locations ?? []).filter((l) => l.trim() && l.trim() !== location.trim()),
+  ].filter(Boolean);
+
   const seedList = seedKeywords
-    ? seedKeywords
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .slice(0, 5)
+    ? seedKeywords.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 5)
     : [];
 
-  const prompt = `You are an AI search query strategist. Generate exactly ${PROSPECT_QUERY_COUNT} search queries that a potential customer might type into ChatGPT or Google Gemini when looking for a business like this one.
+  // Distribute exactly PROSPECT_QUERY_COUNT (15) queries across all locations.
+  // e.g. 1 location = 15 queries; 3 locations = 5+5+5; 4 locations = 4+4+4+3
+  const totalCount = PROSPECT_QUERY_COUNT;
+  const perLoc = Math.floor(totalCount / allLocations.length);
+  const remainder = totalCount % allLocations.length;
+  const counts = allLocations.map((_, i) => perLoc + (i < remainder ? 1 : 0));
 
-Business: ${businessName}
-Location: ${location}
-${industry ? `Industry: ${industry}` : ""}
-${seedList.length > 0 ? `Seed keywords: ${seedList.join(", ")}` : ""}
+  const systemPrompt = `You are a search query generator for local service businesses. Generate buying-intent queries that a customer would type into ChatGPT or Google when they are READY TO HIRE someone.
 
 Rules:
-- Queries should be natural conversational phrases a real person would ask an AI
-- Mix intent types: service-specific, location-based, problem-solving, comparison, urgency
-- Include the location naturally in most queries (e.g. "in ${location}", "near ${location}", "${location} area")
-- Use long-tail phrasing — avoid single-word keywords
-- Do NOT include competitor names
-- Do NOT repeat the same query with minor word changes
-- Return ONLY a valid JSON array of exactly ${PROSPECT_QUERY_COUNT} query strings, no explanation, no markdown
-
-Example format: ["best HVAC company in Richmond VA", "emergency AC repair near me Richmond", ...]`;
+- Every query must be something a paying customer would search — service + location, service + modifier, etc.
+- NEVER write informational queries ("how to", "what is", "do I need", "why", "tips", "guide", "explained", "process", "timeline", "benefits", "vs", "permit").
+- Vary the service keywords. Use the seed keywords if provided.
+- Include the city/state in most queries.
+- Return ONLY a valid JSON array of exactly the requested number of strings. No explanation. No markdown.`;
 
   try {
     const keyRecord = await getApiKeyByProvider("openai");
-    if (!keyRecord?.encryptedKey) {
-      throw new Error("OpenAI API key not configured");
-    }
+    if (!keyRecord?.encryptedKey) throw new Error("OpenAI API key not configured");
     const apiKey = decrypt(keyRecord.encryptedKey);
 
-    const response = await callAI("openai", apiKey, "gpt-4o-mini", [
-      { role: "user", content: prompt },
-    ]);
+    // Generate queries for each location in parallel
+    const locationResults = await Promise.allSettled(
+      allLocations.map((loc, i) => {
+        const count = counts[i];
+        const userPrompt = `Business: ${businessName}
+Location: ${loc}
+${industry ? `Industry: ${industry}` : ""}
+${seedList.length > 0 ? `Core services: ${seedList.join(", ")}` : ""}
 
-    const content = response.content?.trim() || "[]";
-    const match = content.match(/\[[\s\S]*\]/);
-    if (!match) throw new Error("LLM did not return a JSON array");
+Generate exactly ${count} buying-intent queries for this business in ${loc}. Return ONLY a JSON array of ${count} strings.`;
+        return callAI("openai", apiKey, "gpt-4o-mini", [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ]).then((resp) => {
+          const content = resp.content?.trim() || "[]";
+          const match = content.match(/\[[\s\S]*\]/);
+          if (!match) return [] as string[];
+          const parsed: string[] = JSON.parse(match[0]);
+          return Array.isArray(parsed)
+            ? parsed.filter((q) => typeof q === "string" && q.trim().length > 5).slice(0, count)
+            : [] as string[];
+        });
+      })
+    );
 
-    const queries: string[] = JSON.parse(match[0]);
-    if (!Array.isArray(queries)) throw new Error("Invalid JSON array");
+    const service = seedList[0] || industry || "services";
+    const normalized: ProspectQueryResult[] = [];
 
-    // Normalize and cap at PROSPECT_QUERY_COUNT
-    const normalized = queries
-      .filter((q) => typeof q === "string" && q.trim().length > 5)
-      .slice(0, PROSPECT_QUERY_COUNT)
-      .map((q) => ({
-        searchQuery: q.trim(),
-        location,
-      }));
-
-    // Pad with generic fallbacks if LLM returned fewer than needed
-    while (normalized.length < PROSPECT_QUERY_COUNT) {
-      const idx = normalized.length + 1;
-      normalized.push({
-        searchQuery: `${industry || "business"} services in ${location} ${idx}`,
-        location,
-      });
+    for (let li = 0; li < allLocations.length; li++) {
+      const loc = allLocations[li];
+      const count = counts[li];
+      const settled = locationResults[li];
+      const rawQueries = settled.status === "fulfilled" ? settled.value : [];
+      const locQueries = [...rawQueries];
+      // Pad with simple fallbacks if LLM returned fewer than needed
+      const fallbacks = [
+        `best ${service} in ${loc}`, `top rated ${service} ${loc}`,
+        `affordable ${service} near me`, `${service} company ${loc}`,
+        `${service} near me`, `${service} contractor ${loc}`,
+        `${service} services ${loc}`, `cheapest ${service} ${loc}`,
+      ];
+      let fi = 0;
+      while (locQueries.length < count) { locQueries.push(fallbacks[fi++ % fallbacks.length]); }
+      for (const q of locQueries) normalized.push({ searchQuery: q.trim(), location: loc });
     }
 
     return normalized;

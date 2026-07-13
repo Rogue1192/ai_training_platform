@@ -19,7 +19,6 @@ import {
   ChevronRight,
   Pencil,
   Trash2,
-  Plus,
   Play,
   Loader2,
   CheckCircle2,
@@ -30,6 +29,8 @@ import {
   Sparkles,
   Eye,
   Award,
+  Plus,
+  X,
 } from "lucide-react";
 import {
   VisibilityGauge,
@@ -58,7 +59,7 @@ function BusinessInfoForm({
   onGenerate: (data: {
     businessName: string;
     website: string;
-    location: string;
+    locations: string[];
     industry: string;
     seedKeywords: string;
     avgJobValue: string;
@@ -67,7 +68,7 @@ function BusinessInfoForm({
   const [form, setForm] = useState({
     businessName: "",
     website: "",
-    location: "",
+    locations: [""] as string[],
     industry: "",
     seedKeywords: "",
     avgJobValue: "",
@@ -76,12 +77,14 @@ function BusinessInfoForm({
 
   const generateMutation = trpc.prospectAudit.generateQueries.useMutation();
 
+  const validLocations = form.locations.filter((l) => l.trim().length > 0);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.businessName.trim() || !form.location.trim()) return;
+    if (!form.businessName.trim() || validLocations.length === 0) return;
     setIsGenerating(true);
     try {
-      await onGenerate(form);
+      await onGenerate({ ...form, locations: validLocations });
     } finally {
       setIsGenerating(false);
     }
@@ -147,7 +150,53 @@ function BusinessInfoForm({
           className="bg-white/[0.02] border border-white/5 rounded-2xl p-8 space-y-5"
         >
           {field("businessName", "Business Name", "e.g. Titan Cleaning Company", Building2, true)}
-          {field("location", "Primary Location", "e.g. Fredericksburg, VA", MapPin, true, "City and state where the business primarily operates")}
+
+          {/* Multi-location input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+              Target Locations
+              <span className="text-red-400 ml-1">*</span>
+            </label>
+            <div className="space-y-2">
+              {form.locations.map((loc, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <div className="flex items-center justify-center h-7 w-7 rounded-full bg-white/[0.06] text-xs font-medium text-gray-400 shrink-0">{i + 1}</div>
+                  <div className="relative flex-1">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                      type="text"
+                      value={loc}
+                      onChange={(e) => {
+                        const next = [...form.locations];
+                        next[i] = e.target.value;
+                        setForm((f) => ({ ...f, locations: next }));
+                      }}
+                      placeholder="City, State — e.g. Cullman, AL"
+                      className="w-full bg-white/[0.04] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/60 focus:bg-white/[0.06] transition-all"
+                    />
+                  </div>
+                  {form.locations.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, locations: f.locations.filter((_, j) => j !== i) }))}
+                      className="text-gray-600 hover:text-red-400 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, locations: [...f.locations, ""] }))}
+                className="flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors mt-1"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add location
+              </button>
+            </div>
+            <p className="text-xs text-gray-600 mt-1.5">15 queries distributed across all locations</p>
+          </div>
+
           {field("website", "Website", "e.g. https://titancleaningco.com", Globe, false)}
           {field("industry", "Industry", "e.g. Residential Cleaning, HVAC, Plumbing", Tag, false)}
           {field(
@@ -183,7 +232,7 @@ function BusinessInfoForm({
 
           <button
             type="submit"
-            disabled={isGenerating || !form.businessName.trim() || !form.location.trim() || !form.avgJobValue || parseFloat(form.avgJobValue) <= 0}
+            disabled={isGenerating || !form.businessName.trim() || validLocations.length === 0 || !form.avgJobValue || parseFloat(form.avgJobValue) <= 0}
             className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors mt-2"
           >
             {isGenerating ? (
@@ -220,7 +269,6 @@ function QueryReviewStep({
   const [items, setItems] = useState<QueryItem[]>(queries);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [newQuery, setNewQuery] = useState("");
 
   const startEdit = (idx: number) => {
     setEditingIdx(idx);
@@ -237,13 +285,6 @@ function QueryReviewStep({
 
   const remove = (idx: number) => {
     setItems((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const addQuery = () => {
-    if (!newQuery.trim()) return;
-    const location = items[0]?.location ?? "";
-    setItems((prev) => [...prev, { searchQuery: newQuery.trim(), location }]);
-    setNewQuery("");
   };
 
   return (
@@ -266,7 +307,7 @@ function QueryReviewStep({
             AI Visibility Audit — {businessName}
           </h1>
             <p className="text-sm text-gray-500 mt-1">
-              {items.length} queries generated. Edit, remove, or add before running.
+              {items.length} queries generated. Edit or remove queries before running.
             </p>
           </div>
 
@@ -319,26 +360,8 @@ function QueryReviewStep({
             ))}
           </div>
 
-          {/* Add query row */}
-          {items.length < 20 && (
-            <div className="flex gap-2 mb-8">
-              <input
-                type="text"
-                value={newQuery}
-                onChange={(e) => setNewQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addQuery()}
-                placeholder="Add a query…"
-                className="flex-1 bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/60 transition-all"
-              />
-              <button
-                onClick={addQuery}
-                disabled={!newQuery.trim()}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-sm text-gray-300 hover:bg-white/[0.08] disabled:opacity-40 transition-colors"
-              >
-                <Plus className="w-4 h-4" /> Add
-              </button>
-            </div>
-          )}
+          {/* Spacer before action buttons */}
+          <div className="mb-8" />
 
           {/* Action buttons */}
           <div className="flex gap-3">
@@ -795,7 +818,7 @@ export default function ProspectAudit() {
   const [formData, setFormData] = useState<{
     businessName: string;
     website: string;
-    location: string;
+    locations: string[];
     industry: string;
     seedKeywords: string;
     avgJobValue: string;
@@ -822,7 +845,8 @@ export default function ProspectAudit() {
     try {
       const res = await generateMutation.mutateAsync({
         businessName: data.businessName,
-        location: data.location,
+        location: data.locations[0],
+        locations: data.locations,
         industry: data.industry || undefined,
         seedKeywords: data.seedKeywords || undefined,
       });
@@ -845,7 +869,8 @@ export default function ProspectAudit() {
       const { auditId: id } = await createAuditMutation.mutateAsync({
         businessName: formData.businessName,
         website: formData.website || undefined,
-        location: formData.location,
+        location: formData.locations[0],
+        locations: formData.locations,
         industry: formData.industry || undefined,
         seedKeywords: formData.seedKeywords || undefined,
         avgJobValue: formData.avgJobValue ? parseInt(formData.avgJobValue, 10) : undefined,
