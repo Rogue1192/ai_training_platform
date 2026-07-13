@@ -309,16 +309,37 @@ ${candidates.map((k, i) => `${i + 1}. ${k}`).join("\n")}`,
         console.warn(`[ProspectAudit] LLM intent filter failed, falling back to volume sort: ${llmErr.message}`);
       }
 
-      // If LLM failed or returned too few, fill from DataForSEO volume sort
+      // If LLM returned too few, fill remaining slots with modifier-template
+      // variants of the top DataForSEO keyword — NOT raw DataForSEO results
+      // (which may include cost/research queries).
       if (baseKeywords.length < baseKeywordsNeeded) {
+        const topSeed = dfsKeywords[0]?.keyword || seedList[0] || industry || "services";
+        const FILL_TEMPLATES = [
+          `best ${topSeed}`,
+          `top-rated ${topSeed}`,
+          `affordable ${topSeed}`,
+          `${topSeed} near me`,
+          `trusted ${topSeed}`,
+          `licensed ${topSeed}`,
+          `insured ${topSeed}`,
+          `certified ${topSeed}`,
+          `experienced ${topSeed}`,
+          `highly rated ${topSeed}`,
+          `reputable ${topSeed}`,
+          `recommended ${topSeed}`,
+          `reliable ${topSeed}`,
+          `local ${topSeed}`,
+          `${topSeed} that offers financing`,
+        ];
         const existing = new Set(baseKeywords.map((k) => k.toLowerCase()));
-        for (const kw of dfsKeywords) {
+        for (const t of FILL_TEMPLATES) {
           if (baseKeywords.length >= baseKeywordsNeeded) break;
-          if (!existing.has(kw.keyword.toLowerCase())) {
-            baseKeywords.push(kw.keyword);
-            existing.add(kw.keyword.toLowerCase());
+          if (!existing.has(t.toLowerCase())) {
+            baseKeywords.push(t);
+            existing.add(t.toLowerCase());
           }
         }
+        console.log(`[ProspectAudit] Filled ${baseKeywords.length - (baseKeywords.length - FILL_TEMPLATES.length)} slots with modifier templates (LLM returned fewer than needed)`);
       }
     }
 
