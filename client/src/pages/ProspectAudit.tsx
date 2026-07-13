@@ -597,7 +597,7 @@ function ResultsStep({
               </div>
             </div>
             {volumeUsedFallback && (
-              <p className="text-[10px] text-gray-600 text-center mt-2">
+              <p className="text-[10px] text-gray-300 text-center mt-2">
                 * Search volume estimates based on available AI search data. Where direct AI search data is unavailable, estimates reflect approximately 25% of Google search volume — consistent with current AI search adoption rates for local service queries.
               </p>
             )}
@@ -616,7 +616,7 @@ function ResultsStep({
               <TrendingUp className="w-5 h-5 text-green-400" />
               Revenue Opportunity Calculator
             </h2>
-            <p className="text-xs text-gray-500 mb-6">
+            <p className="text-xs text-gray-300 mb-6">
               Adjust the sliders to model what capturing a portion of this missed visibility could mean for your business.
             </p>
 
@@ -636,9 +636,9 @@ function ResultsStep({
                     placeholder="e.g. 30"
                     className="w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-3 text-2xl font-heading font-bold text-white placeholder:text-gray-700 focus:outline-none focus:border-green-500/50 transition-all text-center"
                   />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-lg font-bold">%</span>
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 text-lg font-bold">%</span>
                 </div>
-                <p className="text-[11px] text-gray-600 mt-1.5 text-center">
+                <p className="text-[11px] text-gray-200 mt-1.5 text-center">
                   % of leads you typically convert to booked jobs
                 </p>
               </div>
@@ -663,12 +663,12 @@ function ResultsStep({
                     background: `linear-gradient(to right, #22c55e ${(captureRate / 60) * 100}%, rgba(255,255,255,0.1) ${(captureRate / 60) * 100}%)`
                   }}
                 />
-                <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+                <div className="flex justify-between text-[10px] text-gray-200 mt-1">
                   <span>1%</span>
                   <span>30%</span>
                   <span>60%</span>
                 </div>
-                <p className="text-[11px] text-gray-600 mt-1 text-center">
+                <p className="text-[11px] text-gray-200 mt-1 text-center">
                   % of missed searches you capture as inbound leads
                 </p>
               </div>
@@ -730,7 +730,7 @@ function ResultsStep({
               )}
             </div>
 
-            <p className="text-[10px] text-gray-700 text-center mt-3">
+            <p className="text-[10px] text-gray-300 text-center mt-3">
               * This is a revenue opportunity model, not a guarantee. Actual results depend on market conditions, service quality, and follow-up processes.
             </p>
           </motion.section>

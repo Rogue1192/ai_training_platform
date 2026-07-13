@@ -749,11 +749,11 @@ export function BaselineScoreCards({
             <p className="text-2xl font-heading font-bold" style={{ color }}>
               {value}
             </p>
-            <p className="text-[10px] text-muted-foreground mt-1">at start</p>
+            <p className="text-[10px] text-gray-300 mt-1">at start</p>
           </div>
         ))}
       </div>
-      <p className="text-xs text-muted-foreground mt-3 opacity-60">
+      <p className="text-xs text-gray-300 mt-3">
         These numbers reflect your AI visibility when we first started. They are
         locked and will never change.
       </p>
