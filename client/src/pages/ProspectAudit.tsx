@@ -339,7 +339,9 @@ function QueryReviewStep({
                 ) : (
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-200 truncate">{q.searchQuery}</p>
-                    <p className="text-[10px] text-gray-600">{q.location}</p>
+                    <p className="text-xs text-blue-400/80 font-medium mt-0.5 flex items-center gap-1">
+                      <MapPin className="w-3 h-3 shrink-0" />{q.location}
+                    </p>
                   </div>
                 )}
                 <div className="flex items-center gap-1 shrink-0">
