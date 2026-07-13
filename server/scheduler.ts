@@ -962,8 +962,11 @@ async function checkTrainingCycleAdvances(): Promise<void> {
 
   try {
     const { advanceCampaignCycle } = await import('./trainingCycleOrchestrator');
-    const { campaignQueryLocations: cqlTable, campaigns: campaignsTable, businesses: businessesTable } = await import('../drizzle/schema');
-    const { lte: lteOp, or: orOp, eq: eqOp, ne: neOp, and: andOp } = await import('drizzle-orm');
+    const { campaignQueryLocations: cqlTable, campaigns: campaignsTable, businesses: businessesTable, contentPages: contentPagesTable } = await import('../drizzle/schema');
+    const { lte: lteOp, or: orOp, eq: eqOp, ne: neOp, and: andOp, notInArray: notInArrayOp, isNull: isNullOp, notExists: notExistsOp } = await import('drizzle-orm');
+
+    // Page types that do NOT require a publishedUrl (verified by scan instead)
+    const NO_URL_REQUIRED_TYPES = ['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery'];
 
     // Get admin user for system-triggered sessions
     const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
@@ -991,6 +994,18 @@ async function checkTrainingCycleAdvances(): Promise<void> {
           neOp(campaignsTable.status, 'paused'),     // skip manually paused campaigns
           eqOp(campaignsTable.llmTxtVerified, true), // HARD GATE: llm.txt must be verified before any training runs
           eqOp(campaignsTable.schemaVerified, true), // HARD GATE: schema must be verified before any training runs
+          // HARD GATE: all credibility content pages must have a publishedUrl
+          notExistsOp(
+            db.select({ id: contentPagesTable.id })
+              .from(contentPagesTable)
+              .where(
+                andOp(
+                  eqOp(contentPagesTable.campaignId, campaignsTable.id),
+                  notInArrayOp(contentPagesTable.pageType, NO_URL_REQUIRED_TYPES),
+                  isNullOp(contentPagesTable.publishedUrl),
+                )
+              )
+          ),
         ),
       );
 
@@ -1038,8 +1053,11 @@ async function checkScheduledRankTracking(): Promise<void> {
 
   try {
     const { runScheduledRankCheck } = await import("./rankTrackingEngine");
-    const { campaignQueryLocations: cqlTable, rankSnapshots: rsTable, campaigns: campaignsTable, businesses: businessesTable } = await import("../drizzle/schema");
-    const { eq: eqRank, and: andRank, inArray: inArrayRank, or: orRank, ne: neRank } = await import('drizzle-orm');
+    const { campaignQueryLocations: cqlTable, rankSnapshots: rsTable, campaigns: campaignsTable, businesses: businessesTable, contentPages: contentPagesTableRank } = await import("../drizzle/schema");
+    const { eq: eqRank, and: andRank, inArray: inArrayRank, or: orRank, ne: neRank, notInArray: notInArrayRank, isNull: isNullRank, notExists: notExistsRank } = await import('drizzle-orm');
+
+    // Page types that do NOT require a publishedUrl (verified by scan instead)
+    const NO_URL_REQUIRED_TYPES_RANK = ['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery'];
 
     // Only run rank checks for campaigns that are actively in the pipeline past the
     // baseline check. Campaigns waiting on keyword approval (query_review), credibility
@@ -1076,7 +1094,19 @@ async function checkScheduledRankTracking(): Promise<void> {
           eqRank(businessesTable.isArchived, false),
           inArrayRank(campaignsTable.status, RANK_ELIGIBLE_STATUSES),
           eqRank(campaignsTable.llmTxtVerified, true), // HARD GATE: llm.txt must be verified
-          eqRank(campaignsTable.schemaVerified, true)  // HARD GATE: schema must be verified
+          eqRank(campaignsTable.schemaVerified, true), // HARD GATE: schema must be verified
+          // HARD GATE: all credibility content pages must have a publishedUrl
+          notExistsRank(
+            db.select({ id: contentPagesTableRank.id })
+              .from(contentPagesTableRank)
+              .where(
+                andRank(
+                  eqRank(contentPagesTableRank.campaignId, campaignsTable.id),
+                  notInArrayRank(contentPagesTableRank.pageType, NO_URL_REQUIRED_TYPES_RANK),
+                  isNullRank(contentPagesTableRank.publishedUrl),
+                )
+              )
+          ),
         )
       );
 
