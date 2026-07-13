@@ -211,11 +211,17 @@ export async function generateProspectQueries(
     ...(input.locations ?? []).filter((l) => l.trim() && l.trim() !== location.trim()),
   ].filter(Boolean);
 
-  // Build seed list from user-provided keywords + industry as fallback seed
+  // Build seed list — always include industry and businessName so DataForSEO
+  // has something to work with even if seedKeywords is blank.
   const seedList = [
     ...(seedKeywords ? seedKeywords.split(",").map((s) => s.trim()).filter(Boolean) : []),
-    ...(industry && !seedKeywords ? [industry] : []),
-  ].slice(0, 8);
+    ...(industry ? [industry] : []),
+    // businessName as last-resort seed (e.g. "Cullman Fence Company" → "fence company")
+    ...(input.businessName ? [input.businessName] : []),
+  ]
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i) // deduplicate
+    .slice(0, 8);
 
   const totalCount = PROSPECT_QUERY_COUNT; // 15
   const numLocations = allLocations.length;
@@ -229,61 +235,123 @@ export async function generateProspectQueries(
   const baseKeywordsNeeded = Math.ceil(totalCount / numLocations);
 
   try {
-    // ── Step 1: DataForSEO keyword suggestions ────────────────────────────────
+    // ── Step 1: DataForSEO keyword suggestions ────────────────────────────────────
+    // Pull a large pool of keyword suggestions from DataForSEO. We'll let the
+    // LLM pick the best transactional ones in Step 2 — DataForSEO gives us
+    // real search volume data; the LLM gives us accurate intent classification.
     let dfsKeywords: { keyword: string; searchVolume: number }[] = [];
 
     if (seedList.length > 0) {
       try {
         dfsKeywords = await getKeywordSuggestionsForProspect(seedList, {
-          locationCode: 2840, // US — intent filtering works at national level
+          locationCode: 2840,
           languageCode: "en",
-          limit: 200, // fetch 200 per seed so we have plenty after filtering
+          limit: 200,
         });
-        console.log(`[ProspectAudit] DataForSEO returned ${dfsKeywords.length} commercial/transactional keywords`);
+        console.log(`[ProspectAudit] DataForSEO returned ${dfsKeywords.length} keyword candidates`);
       } catch (dfsErr: any) {
         console.warn(`[ProspectAudit] DataForSEO keyword suggestions failed, using fallback: ${dfsErr.message}`);
       }
     }
 
-    // ── Step 2: Pick top base keywords ───────────────────────────────────────
-    // Already sorted by search volume desc from getKeywordSuggestionsForProspect.
-    // Take the top `baseKeywordsNeeded` unique keywords.
-    const baseKeywords: string[] = dfsKeywords
-      .slice(0, baseKeywordsNeeded)
-      .map((k) => k.keyword);
+    // ── Step 2: LLM picks the best transactional queries ────────────────────
+    // Feed the DataForSEO candidates to an LLM and ask it to select only the
+    // queries where someone is actively looking to hire / buy right now.
+    const baseKeywords: string[] = [];
 
-    // ── Step 3: Fallback if DataForSEO returned nothing ──────────────────────
+    if (dfsKeywords.length > 0) {
+      try {
+        const { getApiKeyByProvider } = await import("./db");
+        const { decrypt } = await import("./encryption");
+        const keyRecord = await getApiKeyByProvider("openai");
+        let openaiKey = process.env.OPENAI_API_KEY || "";
+        if (keyRecord?.encryptedKey) {
+          try { openaiKey = decrypt(keyRecord.encryptedKey); } catch { /* use env fallback */ }
+        }
+
+        if (openaiKey) {
+          // Give the LLM the top 80 candidates (sorted by volume) to choose from
+          const candidates = dfsKeywords.slice(0, 80).map((k) => k.keyword);
+          const prompt = [
+            `You are a search intent expert. Below is a list of keywords related to "${seedList[0] || industry}".
+`,
+            `Your job: select exactly ${baseKeywordsNeeded} keywords that represent PURE BUYING INTENT — someone who is ready to hire a company or purchase a service RIGHT NOW.
+`,
+            `KEEP: keywords like "best fence company", "fence company near me", "licensed fence installer", "affordable fence installation", "fence company that offers financing"
+`,
+            `REMOVE: anything with cost/price/how much, DIY/how-to, reviews, comparisons, timelines, permits, maintenance, or any research intent.
+`,
+            `Return ONLY a JSON array of exactly ${baseKeywordsNeeded} keyword strings. No explanation. No markdown. Just the JSON array.
+`,
+            `Keywords to evaluate:
+${candidates.map((k, i) => `${i + 1}. ${k}`).join("\n")}`,
+          ].join("");
+
+          const resp = await callAI("openai", openaiKey, "gpt-4o-mini", [
+            { role: "user", content: prompt },
+          ]);
+
+          // Parse the JSON array from the LLM response
+          const raw = resp.content.trim();
+          const jsonMatch = raw.match(/\[.*\]/s);
+          if (jsonMatch) {
+            const parsed: string[] = JSON.parse(jsonMatch[0]);
+            baseKeywords.push(
+              ...parsed
+                .filter((k) => typeof k === "string" && k.trim())
+                .map((k) => k.trim())
+                .slice(0, baseKeywordsNeeded)
+            );
+            console.log(`[ProspectAudit] LLM selected ${baseKeywords.length} transactional queries from ${candidates.length} candidates`);
+          }
+        }
+      } catch (llmErr: any) {
+        console.warn(`[ProspectAudit] LLM intent filter failed, falling back to volume sort: ${llmErr.message}`);
+      }
+
+      // If LLM failed or returned too few, fill from DataForSEO volume sort
+      if (baseKeywords.length < baseKeywordsNeeded) {
+        const existing = new Set(baseKeywords.map((k) => k.toLowerCase()));
+        for (const kw of dfsKeywords) {
+          if (baseKeywords.length >= baseKeywordsNeeded) break;
+          if (!existing.has(kw.keyword.toLowerCase())) {
+            baseKeywords.push(kw.keyword);
+            existing.add(kw.keyword.toLowerCase());
+          }
+        }
+      }
+    }
+
+    // ── Step 3: Fallback if DataForSEO returned nothing at all ──────────────
     if (baseKeywords.length === 0) {
-      // Fallback: apply proven transactional-intent modifiers to the primary seed.
-      // Each entry is a [modifier, template] pair where {s} = service.
-      // Templates produce natural-sounding queries — not raw string concatenation.
       const service = seedList[0] || industry || "services";
       const TRANSACTIONAL_TEMPLATES: [string, string][] = [
-        ["best",                  "best {s}"],
-        ["top-rated",             "top-rated {s}"],
-        ["highly rated",          "highly rated {s}"],
-        ["five-star",             "five-star {s}"],
-        ["affordable",            "affordable {s}"],
-        ["budget-friendly",       "budget-friendly {s}"],
-        ["low-cost",              "low-cost {s}"],
-        ["local",                 "local {s}"],
-        ["near me",               "{s} near me"],
-        ["trusted",               "trusted {s}"],
-        ["reputable",             "reputable {s}"],
-        ["recommended",           "recommended {s}"],
-        ["reliable",              "reliable {s}"],
-        ["licensed",              "licensed {s}"],
-        ["insured",               "insured {s}"],
-        ["certified",             "certified {s}"],
-        ["experienced",           "experienced {s}"],
-        ["financing",             "{s} that offers financing"],
-        ["payment plans",         "{s} with payment plans"],
-        ["free estimates",        "{s} that offers free estimates"],
+        ["best",           "best {s}"],
+        ["top-rated",      "top-rated {s}"],
+        ["highly rated",   "highly rated {s}"],
+        ["five-star",      "five-star {s}"],
+        ["affordable",     "affordable {s}"],
+        ["budget-friendly","budget-friendly {s}"],
+        ["low-cost",       "low-cost {s}"],
+        ["local",          "local {s}"],
+        ["near me",        "{s} near me"],
+        ["trusted",        "trusted {s}"],
+        ["reputable",      "reputable {s}"],
+        ["recommended",    "recommended {s}"],
+        ["reliable",       "reliable {s}"],
+        ["licensed",       "licensed {s}"],
+        ["insured",        "insured {s}"],
+        ["certified",      "certified {s}"],
+        ["experienced",    "experienced {s}"],
+        ["financing",      "{s} that offers financing"],
+        ["payment plans",  "{s} with payment plans"],
+        ["free estimates", "{s} that offers free estimates"],
       ];
-      const fallbackQueries = TRANSACTIONAL_TEMPLATES.map(([, tmpl]) =>
-        tmpl.replace("{s}", service)
+      baseKeywords.push(
+        ...TRANSACTIONAL_TEMPLATES
+          .map(([, tmpl]) => tmpl.replace("{s}", service))
+          .slice(0, baseKeywordsNeeded)
       );
-      baseKeywords.push(...fallbackQueries.slice(0, baseKeywordsNeeded));
     }
 
     // ── Step 4: Distribute locations across base keywords → exactly 15 pairs ─
