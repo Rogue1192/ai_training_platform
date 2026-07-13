@@ -1,4 +1,4 @@
-import { integer, pgEnum, pgTable, serial, text, timestamp, varchar, json, boolean, real, decimal } from "drizzle-orm/pg-core";
+import { integer, pgEnum, pgTable, serial, text, timestamp, varchar, json, boolean, real, decimal, date } from "drizzle-orm/pg-core";
 
 /**
  * Core user table backing auth flow.
@@ -883,8 +883,9 @@ export type InsertProspectAudit = typeof prospectAudits.$inferInsert;
 export const agencyAuditQuota = pgTable("agencyAuditQuota", {
   id: serial("id").primaryKey(),
   agencyId: integer("agencyId").notNull().references(() => agencies.id, { onDelete: "cascade" }),
-  // Billing period (YYYY-MM)
-  periodMonth: varchar("periodMonth", { length: 7 }).notNull(), // e.g. "2026-07"
+  // Billing period — YYYY-MM kept for legacy; periodStart (YYYY-MM-DD) is the canonical key
+  periodMonth: varchar("periodMonth", { length: 7 }).notNull(), // e.g. "2026-07" (legacy)
+  periodStart: date("periodStart"), // e.g. "2026-07-13" — anniversary-based period start
   // Included quota (default 20 for white-label)
   includedQuota: integer("includedQuota").default(20).notNull(),
   // Extra audits purchased as overage blocks (5 per block)

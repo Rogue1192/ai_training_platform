@@ -1,10 +1,51 @@
 /**
  * Prospect Audit Router
  * Exported separately so server/_core/index.ts can import it for the CombinedRouter type.
+ *
+ * Quota billing periods are anniversary-based:
+ *   - Period starts on the same day-of-month as the agency's createdAt date
+ *   - e.g. agency created on the 13th → periods run 13th → 12th of next month
+ * Super admins (role === 'admin') are never quota-gated.
  */
 
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+
+// ─── Billing period helpers ───────────────────────────────────────────────────
+
+/**
+ * Given an agency's createdAt date and "now", compute the start of the
+ * current anniversary billing period (as a YYYY-MM-DD string).
+ *
+ * Example: createdAt = 2026-06-13, now = 2026-07-20
+ *   → current period start = 2026-07-13
+ *
+ * Example: createdAt = 2026-06-13, now = 2026-07-10
+ *   → current period start = 2026-06-13
+ */
+function getAnniversaryPeriodStart(createdAt: Date, now: Date): string {
+  const anchorDay = createdAt.getUTCDate(); // e.g. 13
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth(); // 0-indexed
+  const day = now.getUTCDate();
+
+  // Try the anchor day in the current month
+  let periodStart = new Date(Date.UTC(year, month, anchorDay));
+
+  // If that date is in the future, roll back one month
+  if (periodStart > now) {
+    periodStart = new Date(Date.UTC(year, month - 1, anchorDay));
+  }
+
+  return periodStart.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+/** Legacy YYYY-MM string for the periodMonth column (kept for backward compat) */
+function getPeriodMonth(periodStart: string): string {
+  return periodStart.slice(0, 7); // "2026-07-13" → "2026-07"
+}
+
+// ─── Router ───────────────────────────────────────────────────────────────────
 
 export const prospectAuditRouter = router({
   /** Step 1: Generate 15 queries from business info */
@@ -69,7 +110,7 @@ export const prospectAuditRouter = router({
     .input(z.object({ auditId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const { getDb } = await import('./db');
-      const { prospectAudits, agencyAuditQuota } = await import('../drizzle/schema');
+      const { prospectAudits, agencyAuditQuota, agencies } = await import('../drizzle/schema');
       const { eq, and, sql } = await import('drizzle-orm');
       const { runProspectAudit } = await import('./prospectAuditEngine');
       const { getAgencyByUserId } = await import('./dbAgencies');
@@ -79,19 +120,24 @@ export const prospectAuditRouter = router({
       const [audit] = await db.select().from(prospectAudits).where(eq(prospectAudits.id, input.auditId)).limit(1);
       if (!audit) throw new Error('Audit not found');
 
+      // Super admins are never quota-gated
+      const isAdmin = (ctx.user as any).role === 'admin';
+
       // ── Quota check (agency users only) ────────────────────────────────────
-      const agency = await getAgencyByUserId(ctx.user.id);
+      const agency = isAdmin ? null : await getAgencyByUserId(ctx.user.id);
       if (agency) {
         const now = new Date();
-        const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const periodStart = getAnniversaryPeriodStart(agency.createdAt, now);
         const [qRow] = await db.select().from(agencyAuditQuota)
-          .where(and(eq(agencyAuditQuota.agencyId, agency.id), eq(agencyAuditQuota.periodMonth, periodMonth)))
+          .where(and(eq(agencyAuditQuota.agencyId, agency.id), eq(agencyAuditQuota.periodStart, periodStart)))
           .limit(1);
         const included = qRow?.includedQuota ?? 20;
         const overageAudits = (qRow?.overageBlocksPurchased ?? 0) * 5;
         const total = included + overageAudits;
         const used = qRow?.auditsUsed ?? 0;
-        if (used >= total) throw new Error(`Audit quota exceeded (${used}/${total} used this month). Purchase more audits to continue.`);
+        if (used >= total) {
+          throw new Error(`Audit quota exceeded (${used}/${total} used this period). Purchase more audits to continue.`);
+        }
       }
 
       const queries = (audit.queries as any[]) || [];
@@ -104,18 +150,20 @@ export const prospectAuditRouter = router({
         queries
       );
 
-      // ── Increment quota usage ───────────────────────────────────────────────
+      // ── Increment quota usage (agency users only) ───────────────────────────
       if (agency) {
         const now = new Date();
-        const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const periodStart = getAnniversaryPeriodStart(agency.createdAt, now);
+        const periodMonth = getPeriodMonth(periodStart);
         await db.insert(agencyAuditQuota).values({
           agencyId: agency.id,
           periodMonth,
+          periodStart,
           auditsUsed: 1,
           includedQuota: 20,
           overageBlocksPurchased: 0,
         }).onConflictDoUpdate({
-          target: [agencyAuditQuota.agencyId, agencyAuditQuota.periodMonth],
+          target: [agencyAuditQuota.agencyId, agencyAuditQuota.periodStart],
           set: { auditsUsed: sql`${agencyAuditQuota.auditsUsed} + 1`, updatedAt: new Date() },
         });
       }
@@ -139,10 +187,40 @@ export const prospectAuditRouter = router({
     }),
 
   /**
+   * Delete an audit record.
+   * Agency users can only delete their own audits; admins can delete any.
+   */
+  deleteAudit: protectedProcedure
+    .input(z.object({ auditId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const { getDb } = await import('./db');
+      const { prospectAudits } = await import('../drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+
+      const isAdmin = (ctx.user as any).role === 'admin';
+      const agency = isAdmin ? null : await getAgencyByUserId(ctx.user.id);
+
+      if (agency) {
+        // Agency user — verify ownership before deleting
+        const [audit] = await db.select({ id: prospectAudits.id, agencyId: prospectAudits.agencyId })
+          .from(prospectAudits).where(eq(prospectAudits.id, input.auditId)).limit(1);
+        if (!audit) throw new Error('Audit not found');
+        if (audit.agencyId !== agency.id) throw new Error('You do not have permission to delete this audit');
+        await db.delete(prospectAudits).where(and(eq(prospectAudits.id, input.auditId), eq(prospectAudits.agencyId, agency.id)));
+      } else {
+        // Admin — can delete any audit
+        await db.delete(prospectAudits).where(eq(prospectAudits.id, input.auditId));
+      }
+
+      return { deleted: true };
+    }),
+
+  /**
    * Look up a completed prospect audit by website domain.
    * Used during campaign onboarding to detect if a baseline already exists.
-   * Normalizes the input website the same way as the audit engine so
-   * https://www.titancleaningco.com and titancleaningco.com both match.
    */
   findByDomain: protectedProcedure
     .input(z.object({ website: z.string() }))
@@ -157,8 +235,6 @@ export const prospectAuditRouter = router({
       const domain = normalizeDomain(input.website);
       if (!domain) return null;
 
-      // Find the most recent completed audit for this domain that hasn't been
-      // promoted to a campaign yet
       const [audit] = await db
         .select({
           id: prospectAudits.id,
@@ -180,7 +256,7 @@ export const prospectAuditRouter = router({
           and(
             eq(prospectAudits.normalizedDomain, domain),
             eq(prospectAudits.status, 'completed'),
-            isNull(prospectAudits.campaignId) // not yet linked to a campaign
+            isNull(prospectAudits.campaignId)
           )
         )
         .orderBy()
@@ -215,8 +291,6 @@ export const prospectAuditRouter = router({
 
   /**
    * Generate (or return existing) share token for an audit.
-   * The token is a 32-byte hex string stored on the audit record.
-   * Returns the full shareable URL.
    */
   getShareLink: protectedProcedure
     .input(z.object({ auditId: z.number() }))
@@ -242,7 +316,6 @@ export const prospectAuditRouter = router({
 
   /**
    * Public endpoint — fetch audit by share token (no auth required).
-   * Used by the public share page.
    */
   getByShareToken: publicProcedure
     .input(z.object({ token: z.string() }))
@@ -258,11 +331,17 @@ export const prospectAuditRouter = router({
     }),
 
   /**
-   * Get the current month's audit quota for the calling agency.
-   * Returns { used, total, remaining, periodMonth }.
+   * Get the current billing period's audit quota for the calling user.
+   * - Agency users: anniversary-based period, 20 included + overage
+   * - Super admins: unlimited (returns isAdmin: true)
    */
   getQuota: protectedProcedure
     .query(async ({ ctx }) => {
+      const isAdmin = (ctx.user as any).role === 'admin';
+      if (isAdmin) {
+        return { used: 0, total: null, remaining: null, isAdmin: true, periodStart: null, periodEnd: null };
+      }
+
       const { getDb } = await import('./db');
       const { agencyAuditQuota } = await import('../drizzle/schema');
       const { eq, and } = await import('drizzle-orm');
@@ -274,17 +353,30 @@ export const prospectAuditRouter = router({
       if (!agency) return null;
 
       const now = new Date();
-      const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const periodStart = getAnniversaryPeriodStart(agency.createdAt, now);
+
+      // Compute period end = one month after period start, minus one day
+      const psDate = new Date(periodStart + 'T00:00:00Z');
+      const peDate = new Date(Date.UTC(psDate.getUTCFullYear(), psDate.getUTCMonth() + 1, psDate.getUTCDate() - 1));
+      const periodEnd = peDate.toISOString().slice(0, 10);
 
       const [row] = await db.select().from(agencyAuditQuota)
-        .where(and(eq(agencyAuditQuota.agencyId, agency.id), eq(agencyAuditQuota.periodMonth, periodMonth)))
+        .where(and(eq(agencyAuditQuota.agencyId, agency.id), eq(agencyAuditQuota.periodStart, periodStart)))
         .limit(1);
 
       const included = row?.includedQuota ?? 20;
       const overageAudits = (row?.overageBlocksPurchased ?? 0) * 5;
       const total = included + overageAudits;
       const used = row?.auditsUsed ?? 0;
-      return { used, total, remaining: Math.max(0, total - used), periodMonth, agencyId: agency.id };
+      return {
+        used,
+        total,
+        remaining: Math.max(0, total - used),
+        isAdmin: false,
+        periodStart,
+        periodEnd,
+        agencyId: agency.id,
+      };
     }),
 
   /**
@@ -300,7 +392,7 @@ export const prospectAuditRouter = router({
       const { getAgencyByUserId } = await import('./dbAgencies');
       const { createAuditOverageCheckoutSession } = await import('./stripeAuditOverage');
       const agency = await getAgencyByUserId(ctx.user.id);
-      if (!agency) throw new Error('Agency not found');
+      if (!agency) throw new Error('Agency not found. Only white-label agency accounts can purchase audit credits.');
 
       const result = await createAuditOverageCheckoutSession({
         agencyId: agency.id,
@@ -328,9 +420,11 @@ export const prospectAuditRouter = router({
       if (!session.paid) throw new Error('Payment not completed');
       if (session.agencyId !== agency.id) throw new Error('Session does not belong to this agency');
 
+      // Use the anniversary period start for the current date
       const now = new Date();
-      const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      await fulfillAuditOveragePurchase(agency.id, session.auditsGranted, periodMonth);
+      const periodStart = getAnniversaryPeriodStart(agency.createdAt, now);
+      const periodMonth = getPeriodMonth(periodStart);
+      await fulfillAuditOveragePurchase(agency.id, session.auditsGranted, periodMonth, periodStart);
       return { auditsGranted: session.auditsGranted };
     }),
 });

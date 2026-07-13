@@ -126,7 +126,8 @@ export async function createAuditOverageCheckoutSession(
 export async function fulfillAuditOveragePurchase(
   agencyId: number,
   auditsGranted: number,
-  periodMonth: string // "YYYY-MM"
+  periodMonth: string, // "YYYY-MM"
+  periodStart?: string  // "YYYY-MM-DD" anniversary-based period start
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -157,6 +158,7 @@ export async function fulfillAuditOveragePurchase(
     await db.insert(agencyAuditQuota).values({
       agencyId,
       periodMonth,
+      periodStart: periodStart ?? null,
       includedQuota: 20,
       overageBlocksPurchased: Math.ceil(auditsGranted / 5),
       auditsUsed: 0,

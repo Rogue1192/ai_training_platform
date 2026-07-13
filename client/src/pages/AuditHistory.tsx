@@ -6,8 +6,11 @@
  *  - List of all audits with scores and metadata
  *  - "Open" button to view the full report in a new window
  *  - "Share" button to generate/copy a shareable URL
- *  - Quota meter showing used/total audits this month
- *  - "Buy More Audits" modal with Stripe Checkout
+ *  - "Delete" button to remove an audit
+ *  - Quota meter showing used/total audits for the current billing period
+ *    (anniversary-based: runs from signup day-of-month to same day next month)
+ *  - Super admins see "Unlimited" instead of a quota meter
+ *  - "Buy More Audits" modal with Stripe Checkout (agency users only)
  *  - Low-quota warning toast (shown when ≤ 2 remaining)
  */
 
@@ -22,6 +25,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import {
   ExternalLink,
@@ -36,6 +49,8 @@ import {
   Globe,
   AlertTriangle,
   RefreshCw,
+  Trash2,
+  Infinity as InfinityIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -57,21 +72,49 @@ function scoreColor(score: number | null | undefined) {
   return "text-red-400";
 }
 
+// ─── Format date helper ───────────────────────────────────────────────────────
+
+function fmtDate(d: string | null | undefined) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 // ─── Quota Meter ─────────────────────────────────────────────────────────────
 
 function QuotaMeter({
   used,
   total,
   remaining,
+  isAdmin,
+  periodStart,
+  periodEnd,
   onBuyMore,
 }: {
   used: number;
-  total: number;
-  remaining: number;
+  total: number | null;
+  remaining: number | null;
+  isAdmin: boolean;
+  periodStart: string | null;
+  periodEnd: string | null;
   onBuyMore: () => void;
 }) {
-  const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
-  const low = remaining <= 2;
+  if (isAdmin) {
+    return (
+      <div className="rounded-lg border border-border bg-muted/20 p-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <InfinityIcon className="h-4 w-4 text-primary" />
+          <span className="text-sm font-medium">Audit Usage</span>
+          <span className="text-xs text-muted-foreground">— Super Admin: Unlimited</span>
+        </div>
+        <span className="text-sm font-bold text-primary">{used} run this period</span>
+      </div>
+    );
+  }
+
+  const safeTotal = total ?? 20;
+  const safeRemaining = remaining ?? 0;
+  const pct = safeTotal > 0 ? Math.min(100, Math.round((used / safeTotal) * 100)) : 0;
+  const low = safeRemaining <= 2;
 
   return (
     <div className={cn(
@@ -81,9 +124,12 @@ function QuotaMeter({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {low && <AlertTriangle className="h-4 w-4 text-amber-400" />}
-          <span className="text-sm font-medium">
-            Monthly Audit Usage
-          </span>
+          <span className="text-sm font-medium">Audit Usage</span>
+          {periodStart && periodEnd && (
+            <span className="text-xs text-muted-foreground">
+              {fmtDate(periodStart)} – {fmtDate(periodEnd)}
+            </span>
+          )}
         </div>
         <Button size="sm" variant="outline" onClick={onBuyMore} className="h-7 text-xs gap-1">
           <ShoppingCart className="h-3 w-3" />
@@ -105,14 +151,14 @@ function QuotaMeter({
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>{used} used</span>
           <span className={low ? "text-amber-400 font-medium" : ""}>
-            {remaining} remaining of {total}
+            {safeRemaining} remaining of {safeTotal}
           </span>
         </div>
       </div>
 
       {low && (
         <p className="text-xs text-amber-300">
-          You have {remaining} audit{remaining !== 1 ? "s" : ""} left this month.
+          You have {safeRemaining} audit{safeRemaining !== 1 ? "s" : ""} left this period.
           Purchase more to keep running audits.
         </p>
       )}
@@ -122,24 +168,13 @@ function QuotaMeter({
 
 // ─── Buy More Modal ───────────────────────────────────────────────────────────
 
-function BuyMoreModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
+function BuyMoreModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [selected, setSelected] = useState<typeof OVERAGE_PACKAGES[number]["id"] | null>(null);
   const [loading, setLoading] = useState(false);
 
   const checkoutMutation = trpc.prospectAudit.createOverageCheckout.useMutation({
-    onSuccess: (data) => {
-      window.location.href = data.url;
-    },
-    onError: (err) => {
-      toast.error(err.message);
-      setLoading(false);
-    },
+    onSuccess: (data) => { window.location.href = data.url; },
+    onError: (err) => { toast.error(err.message); setLoading(false); },
   });
 
   const handlePurchase = () => {
@@ -162,8 +197,7 @@ function BuyMoreModal({
             Buy More Audits
           </DialogTitle>
           <DialogDescription>
-            Purchase additional AI Visibility Audits for this month.
-            Credits are added immediately after payment.
+            Purchase additional AI Visibility Audits. Credits are added immediately after payment.
           </DialogDescription>
         </DialogHeader>
 
@@ -202,11 +236,7 @@ function BuyMoreModal({
         </div>
 
         <div className="flex gap-2 pt-2">
-          <Button
-            className="flex-1"
-            disabled={!selected || loading}
-            onClick={handlePurchase}
-          >
+          <Button className="flex-1" disabled={!selected || loading} onClick={handlePurchase}>
             {loading ? (
               <><Loader2 className="h-4 w-4 animate-spin mr-2" />Redirecting to Stripe…</>
             ) : (
@@ -239,22 +269,14 @@ function ShareButton({ auditId }: { auditId: number }) {
       });
       setGenerating(false);
     },
-    onError: (err) => {
-      toast.error(err.message);
-      setGenerating(false);
-    },
+    onError: (err) => { toast.error(err.message); setGenerating(false); },
   });
-
-  const handleShare = () => {
-    setGenerating(true);
-    shareMutation.mutate({ auditId });
-  };
 
   return (
     <Button
       size="sm"
       variant="outline"
-      onClick={handleShare}
+      onClick={() => { setGenerating(true); shareMutation.mutate({ auditId }); }}
       disabled={generating}
       className="h-8 gap-1.5 text-xs"
     >
@@ -270,26 +292,71 @@ function ShareButton({ auditId }: { auditId: number }) {
   );
 }
 
+// ─── Delete Button ────────────────────────────────────────────────────────────
+
+function DeleteButton({ auditId, businessName, onDeleted }: { auditId: number; businessName: string; onDeleted: () => void }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const deleteMutation = trpc.prospectAudit.deleteAudit.useMutation({
+    onSuccess: () => {
+      toast.success(`Audit for "${businessName}" deleted`);
+      onDeleted();
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => setConfirmOpen(true)}
+        className="h-8 w-8 p-0 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+        title="Delete audit"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this audit?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the AI Visibility Audit for <strong>{businessName}</strong>.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => deleteMutation.mutate({ auditId })}
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 // ─── Audit Row ────────────────────────────────────────────────────────────────
 
-function AuditRow({ audit }: { audit: any }) {
+function AuditRow({ audit, onDeleted }: { audit: any; onDeleted: () => void }) {
   const handleOpen = () => {
     window.open(`/prospect-audit?auditId=${audit.id}`, "_blank", "noopener");
   };
 
   const date = audit.completedAt
-    ? new Date(audit.completedAt).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : audit.createdAt
-    ? new Date(audit.createdAt).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "—";
+    ? fmtDate(audit.completedAt)
+    : fmtDate(audit.createdAt);
 
   const statusColors: Record<string, string> = {
     completed: "bg-green-500/20 text-green-400 border-green-500/30",
@@ -341,27 +408,19 @@ function AuditRow({ audit }: { audit: any }) {
         <div className="flex items-center gap-4 text-center shrink-0">
           <div>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Overall</p>
-            <p className={cn("text-lg font-bold", scoreColor(audit.overallScore))}>
-              {audit.overallScore ?? "—"}
-            </p>
+            <p className={cn("text-lg font-bold", scoreColor(audit.overallScore))}>{audit.overallScore ?? "—"}</p>
           </div>
           <div>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">ChatGPT</p>
-            <p className={cn("text-lg font-bold", scoreColor(audit.chatgptScore))}>
-              {audit.chatgptScore ?? "—"}
-            </p>
+            <p className={cn("text-lg font-bold", scoreColor(audit.chatgptScore))}>{audit.chatgptScore ?? "—"}</p>
           </div>
           <div>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Gemini</p>
-            <p className={cn("text-lg font-bold", scoreColor(audit.geminiScore))}>
-              {audit.geminiScore ?? "—"}
-            </p>
+            <p className={cn("text-lg font-bold", scoreColor(audit.geminiScore))}>{audit.geminiScore ?? "—"}</p>
           </div>
           <div>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">AI Ov.</p>
-            <p className={cn("text-lg font-bold", scoreColor(audit.aiOverviewScore))}>
-              {audit.aiOverviewScore ?? "—"}
-            </p>
+            <p className={cn("text-lg font-bold", scoreColor(audit.aiOverviewScore))}>{audit.aiOverviewScore ?? "—"}</p>
           </div>
         </div>
       )}
@@ -388,6 +447,12 @@ function AuditRow({ audit }: { audit: any }) {
             Running…
           </span>
         )}
+        {/* Delete button — always visible */}
+        <DeleteButton
+          auditId={audit.id}
+          businessName={audit.businessName}
+          onDeleted={onDeleted}
+        />
       </div>
     </div>
   );
@@ -401,19 +466,19 @@ export default function AuditHistory() {
 
   const { data: audits = [], isLoading, refetch } = trpc.prospectAudit.listAudits.useQuery(
     { limit: 50 },
-    { refetchInterval: 10_000 } // poll every 10s to catch running audits completing
+    { refetchInterval: 10_000 }
   );
 
   const { data: quota } = trpc.prospectAudit.getQuota.useQuery(undefined, {
     refetchInterval: 30_000,
   });
 
-  // Low-quota warning toast — fires once per session when ≤ 2 remaining
+  // Low-quota warning toast — fires once per session when ≤ 2 remaining (agency users only)
   useEffect(() => {
-    if (quota && quota.remaining <= 2 && !lowQuotaToasted) {
+    if (quota && !quota.isAdmin && quota.remaining != null && quota.remaining <= 2 && !lowQuotaToasted) {
       setLowQuotaToasted(true);
       toast.warning(
-        `You have ${quota.remaining} audit${quota.remaining !== 1 ? "s" : ""} remaining this month.`,
+        `You have ${quota.remaining} audit${quota.remaining !== 1 ? "s" : ""} remaining this period.`,
         {
           description: "Purchase more to keep running AI Visibility Audits.",
           action: {
@@ -440,7 +505,7 @@ export default function AuditHistory() {
             AI Visibility Audits
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            View completed audits, share reports with prospects, and manage your monthly quota.
+            View completed audits, share reports with prospects, and manage your audit credits.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -455,12 +520,15 @@ export default function AuditHistory() {
         </div>
       </div>
 
-      {/* Quota meter (agency users only) */}
-      {quota && (
+      {/* Quota meter */}
+      {quota !== undefined && quota !== null && (
         <QuotaMeter
           used={quota.used}
-          total={quota.total}
-          remaining={quota.remaining}
+          total={quota.total ?? null}
+          remaining={quota.remaining ?? null}
+          isAdmin={quota.isAdmin ?? false}
+          periodStart={quota.periodStart ?? null}
+          periodEnd={quota.periodEnd ?? null}
           onBuyMore={() => setBuyMoreOpen(true)}
         />
       )}
@@ -484,13 +552,15 @@ export default function AuditHistory() {
       ) : (
         <div className="space-y-3">
           {(audits as any[]).map((audit) => (
-            <AuditRow key={audit.id} audit={audit} />
+            <AuditRow key={audit.id} audit={audit} onDeleted={() => refetch()} />
           ))}
         </div>
       )}
 
-      {/* Buy More Modal */}
-      <BuyMoreModal open={buyMoreOpen} onClose={() => setBuyMoreOpen(false)} />
+      {/* Buy More Modal (agency users only) */}
+      {quota && !quota.isAdmin && (
+        <BuyMoreModal open={buyMoreOpen} onClose={() => setBuyMoreOpen(false)} />
+      )}
     </div>
   );
 }
