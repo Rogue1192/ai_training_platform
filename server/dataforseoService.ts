@@ -738,7 +738,7 @@ export async function getKeywordSuggestionsForProspect(
           location_code: locationCode,
           language_code: languageCode,
           include_seed_keyword: true,
-          include_serp_info: false,
+          include_serp_info: true,   // REQUIRED: search_intent_info is null without this
           limit,
           order_by: ["keyword_info.search_volume,desc"],
         },
@@ -747,12 +747,33 @@ export async function getKeywordSuggestionsForProspect(
         return items
           .filter((item: any) => {
             const intent = item?.search_intent_info?.main_intent;
-            return intent === "commercial" || intent === "transactional";
+            // Keep commercial and transactional — these are the money queries.
+            // If intent is null (shouldn't happen with include_serp_info:true but
+            // DataForSEO occasionally omits it for very new keywords), keep the
+            // keyword anyway so we don't silently drop valid results.
+            return intent === "commercial" || intent === "transactional" || intent == null;
           })
           .map((item: any) => ({
             keyword: (item.keyword as string).trim(),
             searchVolume: (item.keyword_info?.search_volume as number) || 0,
-          }));
+            intent: (item?.search_intent_info?.main_intent as string) || null,
+          }))
+          // After keeping null-intent as a safety net, do a second pass to drop
+          // anything that looks informational by keyword pattern.
+          .filter((kw: any) => {
+            const k = kw.keyword.toLowerCase();
+            const informationalPatterns = [
+              /^how (to|do|does|can|long|much|many|often)/,
+              /^what (is|are|does|do|to)/,
+              /^why /,
+              /^when /,
+              /^where (to|can|do|does)/,
+              /^(guide|tutorial|tips|steps|ways|ideas|examples|types|list|history|definition|meaning|explained|vs\b)/,
+              /\b(how to|what is|what are|diy|yourself|yourself|timeline|process|benefits of|advantages of|disadvantages|comparison|difference between|vs\b)\b/,
+            ];
+            return !informationalPatterns.some((re) => re.test(k));
+          })
+          .map((kw: any) => ({ keyword: kw.keyword, searchVolume: kw.searchVolume }));
       })
     )
   );
