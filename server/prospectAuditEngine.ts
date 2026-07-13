@@ -273,15 +273,19 @@ export async function generateProspectQueries(
           // Give the LLM the top 80 candidates (sorted by volume) to choose from
           const candidates = dfsKeywords.slice(0, 80).map((k) => k.keyword);
           const prompt = [
-            `You are a search intent expert. Below is a list of keywords related to "${seedList[0] || industry}".
+            `You are a search intent classifier. Below is a list of keywords related to "${seedList[0] || industry}".
 `,
-            `Your job: select exactly ${baseKeywordsNeeded} keywords that represent PURE BUYING INTENT — someone who is ready to hire a company or purchase a service RIGHT NOW.
+            `Your job: select UP TO ${baseKeywordsNeeded} keywords that show BUYING INTENT — someone looking to hire a company or purchase a service.
 `,
-            `KEEP: keywords like "best fence company", "fence company near me", "licensed fence installer", "affordable fence installation", "fence company that offers financing"
+            `BE GENEROUS: include keywords that show any purchase signal, even if they are not perfectly transactional. "fence company near me", "best fence company", "local fence installer", "affordable fence installation", "fence company with financing", "top rated fence contractor", "fence installation quote", "hire a fence company" are all good examples.
 `,
-            `REMOVE: anything with cost/price/how much, DIY/how-to, reviews, comparisons, timelines, permits, maintenance, or any research intent.
+            `EXCLUDE ONLY: keywords that contain cost/price/how much research, DIY/how-to instructions, reviews of products (not services), permit questions, maintenance tips, or pure informational content with zero purchase signal.
 `,
-            `Return ONLY a JSON array of exactly ${baseKeywordsNeeded} keyword strings. No explanation. No markdown. Just the JSON array.
+            `ALSO EXCLUDE: any keyword that already contains a specific city, state, or geographic location name (e.g. "chicago", "dallas", "texas", "NYC") — we will append the correct location ourselves.
+`,
+            `If you can find ${baseKeywordsNeeded} buying-intent keywords, return exactly ${baseKeywordsNeeded}. If you can only find fewer, return as many as you can.
+`,
+            `Return ONLY a JSON array of keyword strings. No explanation. No markdown. Just the JSON array.
 `,
             `Keywords to evaluate:
 ${candidates.map((k, i) => `${i + 1}. ${k}`).join("\n")}`,
