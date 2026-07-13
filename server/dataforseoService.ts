@@ -758,20 +758,31 @@ export async function getKeywordSuggestionsForProspect(
             searchVolume: (item.keyword_info?.search_volume as number) || 0,
             intent: (item?.search_intent_info?.main_intent as string) || null,
           }))
-          // After keeping null-intent as a safety net, do a second pass to drop
-          // anything that looks informational by keyword pattern.
+          // Second pass: drop anything that is research/cost/informational by pattern.
+          // DataForSEO sometimes marks cost/price queries as "commercial" — we don't
+          // want those. We want queries where someone is ready to HIRE, not research.
           .filter((kw: any) => {
             const k = kw.keyword.toLowerCase();
-            const informationalPatterns = [
+            const NON_BUYING_PATTERNS = [
+              // Informational question starters
               /^how (to|do|does|can|long|much|many|often)/,
               /^what (is|are|does|do|to)/,
               /^why /,
               /^when /,
               /^where (to|can|do|does)/,
-              /^(guide|tutorial|tips|steps|ways|ideas|examples|types|list|history|definition|meaning|explained|vs\b)/,
-              /\b(how to|what is|what are|diy|yourself|yourself|timeline|process|benefits of|advantages of|disadvantages|comparison|difference between|vs\b)\b/,
+              // Research/guide content
+              /^(guide|tutorial|tips|steps|ways|ideas|examples|types|list|history|definition|meaning|explained)/,
+              /\b(how to|what is|what are|diy|yourself|timeline|process|benefits of|advantages of|disadvantages|comparison|difference between)\b/,
+              // Cost/price research — person is researching, not buying
+              /\b(cost|costs|price|prices|pricing|how much|average cost|average price|per foot|per linear|per panel|per post|calculator|estimate cost|price guide|price list|cost guide|cost breakdown|cost per|price per|rates|rate chart)\b/,
+              // Installation process / DIY research
+              /\b(installation process|how to install|install yourself|diy install|steps to install|installing a|how long does|how long to|time to install|permit|permits required|do i need a permit)\b/,
+              // Comparison / research queries
+              /\b(vs\b|versus|compared to|comparison|pros and cons|which is better|should i get|should i choose|difference between)\b/,
+              // Review/research queries
+              /\b(reviews|review|complaints|problems|issues|common problems|warranty|lifespan|how long does it last|maintenance tips|care tips)\b/,
             ];
-            return !informationalPatterns.some((re) => re.test(k));
+            return !NON_BUYING_PATTERNS.some((re) => re.test(k));
           })
           .map((kw: any) => ({ keyword: kw.keyword, searchVolume: kw.searchVolume }));
       })
