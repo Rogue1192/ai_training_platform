@@ -1108,3 +1108,93 @@ export async function checkLLMVisibilityDirect(
 
   return result;
 }
+
+// ============= City Location Code Resolver =============
+
+/**
+ * Resolve a DataForSEO city-level location_code from a location string
+ * like "Cullman, AL" or "Birmingham, Alabama".
+ *
+ * Hits the DataForSEO locations list and finds the closest city-level match.
+ * Falls back to state-level code, then US national (2840) if not found.
+ *
+ * Results are cached in-process to avoid repeated API calls for the same city.
+ */
+const _cityCodeCache = new Map<string, number>();
+
+export async function getCityLocationCode(location: string): Promise<number> {
+  if (!location) return 2840;
+
+  const cacheKey = location.trim().toLowerCase();
+  if (_cityCodeCache.has(cacheKey)) return _cityCodeCache.get(cacheKey)!;
+
+  // Parse city name from "City, ST" or "City, State" format
+  const cityMatch = location.trim().match(/^([^,]+)/);
+  const cityName = cityMatch ? cityMatch[1].trim() : location.trim();
+
+  // Also extract state abbreviation for filtering
+  const stateMatch = location.trim().match(/,?\s+([A-Z]{2})$/);
+  const stateAbbr = stateMatch ? stateMatch[1].toUpperCase() : null;
+
+  try {
+    const auth = await getAuthHeader();
+    // DataForSEO locations endpoint — returns all available locations for a country
+    const resp = await axios.get(
+      `${DATAFORSEO_BASE}/keywords_data/google_ads/locations`,
+      {
+        headers: { Authorization: auth },
+        params: { country_iso_code: "US" },
+        timeout: 15_000,
+      }
+    );
+
+    const locations: Array<{
+      location_code: number;
+      location_name: string;
+      location_type: string;
+      country_iso_code: string;
+    }> = resp.data?.locations ?? [];
+
+    const cityLower = cityName.toLowerCase();
+
+    // Priority 1: exact city name match in the correct state
+    let match = locations.find(
+      (l) =>
+        l.location_type === "City" &&
+        l.country_iso_code === "US" &&
+        l.location_name.toLowerCase() === cityLower &&
+        (!stateAbbr || l.location_name.toLowerCase().includes(stateAbbr.toLowerCase()))
+    );
+
+    // Priority 2: city name starts-with match
+    if (!match) {
+      match = locations.find(
+        (l) =>
+          l.location_type === "City" &&
+          l.country_iso_code === "US" &&
+          l.location_name.toLowerCase().startsWith(cityLower)
+      );
+    }
+
+    if (match) {
+      console.log(`[LocationCode] Resolved "${location}" → city code ${match.location_code} (${match.location_name})`);
+      _cityCodeCache.set(cacheKey, match.location_code);
+      return match.location_code;
+    }
+
+    // Fall back to state-level code
+    const { resolveLocationCode } = await import("../shared/locationCodes");
+    const stateCode = resolveLocationCode(location);
+    console.log(`[LocationCode] City "${cityName}" not found in DataForSEO, using state code ${stateCode} for "${location}"`);
+    _cityCodeCache.set(cacheKey, stateCode);
+    return stateCode;
+  } catch (err: any) {
+    console.warn(`[LocationCode] Failed to resolve location code for "${location}":`, err.message);
+    try {
+      const { resolveLocationCode } = await import("../shared/locationCodes");
+      return resolveLocationCode(location);
+    } catch {
+      return 2840;
+    }
+  }
+}

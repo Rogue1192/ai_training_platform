@@ -13,7 +13,7 @@
 import { getDb, getApiKeyByProvider } from "./db";
 import { decrypt } from "./encryption";
 import { callAI } from "./aiProviders";
-import { checkLLMVisibilityDirect, getAIKeywordSearchVolume, getGoogleAdsSearchVolume, getKeywordsForSite, getKeywordSuggestionsForProspect } from "./dataforseoService";
+import { checkLLMVisibilityDirect, getAIKeywordSearchVolume, getGoogleAdsSearchVolume, getKeywordsForSite, getKeywordSuggestionsForProspect, getCityLocationCode } from "./dataforseoService";
 import { calculateVisibilityScore } from "./rankTrackingEngine";
 import { prospectAudits } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -436,17 +436,30 @@ export async function runProspectAudit(
 
   const snapshots: ProspectSnapshotResult[] = [];
 
-  // Derive a location code from the first query's location (default US)
-  // We use US national (2840) since our queries are geo-specific in the text
-  const locationCode = 2840;
-
-  // Fetch AI search volume for all queries in a single batch call BEFORE
-  // running the visibility checks so we have volume data ready for the report.
-  // Pass 2 volume lookup: use the FINAL query+location strings (e.g. "aluminum fence
-  // installation Cullman AL") so DataForSEO returns location-specific volume data.
-  // This is the same string we send to the LLMs for the visibility check.
+  // Fetch AI search volume for all queries BEFORE running visibility checks.
+  // Group queries by location so each batch uses the correct state-level
+  // DataForSEO location code (e.g. "Cullman, AL" → Alabama code 21167).
+  // This gives local-market volume instead of US national.
   const finalQueryStrings = queries.map(q => `${q.searchQuery} ${q.location}`);
-  const aiVolumeMap = await fetchQueryAIVolumes(finalQueryStrings, locationCode);
+
+  // Build a combined volume map by running per-location batches
+  const aiVolumeMap = new Map<string, { estimatedVolume: number; usedFallback: boolean }>();
+  // Group query indices by location
+  const locationGroups = new Map<string, number[]>();
+  for (let i = 0; i < queries.length; i++) {
+    const loc = queries[i].location;
+    if (!locationGroups.has(loc)) locationGroups.set(loc, []);
+    locationGroups.get(loc)!.push(i);
+  }
+  // Fetch volume for each location group with the correct city-level location code
+  for (const [loc, indices] of locationGroups) {
+    const locCode = await getCityLocationCode(loc);
+    const groupQueryStrings = indices.map(i => finalQueryStrings[i]);
+    const groupVolMap = await fetchQueryAIVolumes(groupQueryStrings, locCode);
+    for (const [key, val] of groupVolMap) {
+      aiVolumeMap.set(key, val);
+    }
+  }
 
   try {
     for (let i = 0; i < queries.length; i++) {
