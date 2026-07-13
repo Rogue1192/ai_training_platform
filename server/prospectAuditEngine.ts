@@ -66,6 +66,15 @@ export function normalizeDomain(website: string | null | undefined): string | nu
  */
 const AI_VOLUME_FALLBACK_RATE = 0.25;
 
+/**
+ * Suburban uplift: city-limits data from Google Ads/AI volume endpoints
+ * captures only searches originating within city limits. Service businesses
+ * draw customers from suburbs, surrounding towns, and rural areas that
+ * Google's geo-targeting excludes. We apply a flat 20% uplift to all
+ * volume figures to account for this systematic under-reporting.
+ */
+const SUBURBAN_UPLIFT = 1.20;
+
 async function fetchQueryAIVolumes(
   queries: string[], // final query+location strings, e.g. "aluminum fence installation Cullman AL"
   locationCode: number
@@ -88,7 +97,7 @@ async function fetchQueryAIVolumes(
   for (const q of queries) {
     const aiVol = aiVolumeMap.get(q.toLowerCase()) ?? 0;
     if (aiVol > 0) {
-      result.set(q.toLowerCase(), { estimatedVolume: aiVol, usedFallback: false });
+      result.set(q.toLowerCase(), { estimatedVolume: Math.round(aiVol * SUBURBAN_UPLIFT), usedFallback: false });
     } else {
       needsGoogleFallback.push(q);
     }
@@ -101,15 +110,15 @@ async function fetchQueryAIVolumes(
       for (const q of needsGoogleFallback) {
         const googleVol = googleVolMap.get(q.toLowerCase()) ?? 0;
         if (googleVol > 0) {
-          // Real Google volume × 25% estimate
+          // Real Google volume × 25% AI estimate × 20% suburban uplift
           result.set(q.toLowerCase(), {
-            estimatedVolume: Math.round(googleVol * AI_VOLUME_FALLBACK_RATE),
+            estimatedVolume: Math.round(googleVol * AI_VOLUME_FALLBACK_RATE * SUBURBAN_UPLIFT),
             usedFallback: true,
           });
         } else {
-          // Last resort: conservative floor of 100/mo × 25% = 25
+          // Last resort: conservative floor of 100/mo × 25% × 20% uplift = 30
           result.set(q.toLowerCase(), {
-            estimatedVolume: Math.round(100 * AI_VOLUME_FALLBACK_RATE),
+            estimatedVolume: Math.round(100 * AI_VOLUME_FALLBACK_RATE * SUBURBAN_UPLIFT),
             usedFallback: true,
           });
         }
