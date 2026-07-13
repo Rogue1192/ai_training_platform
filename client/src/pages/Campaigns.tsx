@@ -213,9 +213,9 @@ export default function Campaigns() {
                           </Badge>
                           {campaign.isBlocked && (() => {
                             const missing: string[] = [];
+                            if ((campaign.missingUrlCount ?? 0) > 0) missing.push(`${campaign.missingUrlCount} Content URL${campaign.missingUrlCount === 1 ? '' : 's'}`);
                             if (campaign.llmTxtVerified === false) missing.push('llm.txt');
                             if (campaign.schemaVerified === false) missing.push('Schema');
-                            if (campaign.status === 'publishing' && !campaign.publishingCompletedAt && missing.length === 0) missing.push('Content URLs');
                             return (
                               <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30 text-xs gap-1">
                                 <AlertTriangle className="w-3 h-3" />

@@ -3460,7 +3460,7 @@ export const agencyRouter = router({
   myClients: protectedProcedure.query(async ({ ctx }) => {
     const { getAgencyByUserId, getAgencyById } = await import('./dbAgencies');
     const { businesses, campaigns } = await import('../drizzle/schema');
-    const { eq, sql } = await import('drizzle-orm');
+    const { eq, sql, and } = await import('drizzle-orm');
     const { getDb } = await import('./db');
     const db = await getDb();
     if (!db) return [];
@@ -3480,6 +3480,7 @@ export const agencyRouter = router({
     const businessIds = clientRows.map((b) => b.id);
     const campaignRows = await db
       .select({
+        id: campaigns.id,
         businessId: campaigns.businessId,
         status: campaigns.status,
         llmTxtVerified: campaigns.llmTxtVerified,
@@ -3487,6 +3488,31 @@ export const agencyRouter = router({
       })
       .from(campaigns)
       .where(sql`${campaigns.businessId} = ANY(ARRAY[${sql.raw(businessIds.join(','))}]::int[])`);
+
+    // Fetch missing URL counts for all campaigns in one aggregated query
+    const { contentPages: cpAgency } = await import('../drizzle/schema');
+    const campaignIds = campaignRows.map((c: any) => c.id).filter(Boolean);
+    const missingUrlMap = new Map<number, number>();
+    if (campaignIds.length > 0) {
+      const missingRows = await db
+        .select({
+          campaignId: cpAgency.campaignId,
+          missingCount: sql<number>`count(*)`,
+        })
+        .from(cpAgency)
+        .where(
+          and(
+            sql`${cpAgency.campaignId} = ANY(ARRAY[${sql.raw(campaignIds.join(','))}]::int[])`,
+            sql`${cpAgency.pageType} NOT IN ('llm_txt','schema_package','schema_audit','schema_delivery')`,
+            sql`${cpAgency.publishedUrl} IS NULL`
+          )
+        )
+        .groupBy(cpAgency.campaignId);
+      for (const row of missingRows) {
+        if (row.campaignId != null) missingUrlMap.set(row.campaignId, Number(row.missingCount));
+      }
+    }
+
     // Build per-business maps
     const campaignCountMap = new Map<number, number>();
     const campaignStatusMap = new Map<number, string>();
@@ -3496,9 +3522,10 @@ export const agencyRouter = router({
       campaignCountMap.set(row.businessId, (campaignCountMap.get(row.businessId) ?? 0) + 1);
       // Track most recent status (last write wins — rows are ordered by insert)
       campaignStatusMap.set(row.businessId, row.status ?? 'unknown');
-      // Blocked if: publishing status (content URLs missing) OR llm.txt/schema not yet verified
+      // Blocked if: any content pages missing a live URL OR llm.txt/schema not yet verified via scan
+      const missingUrlCount = missingUrlMap.get(row.id) ?? 0;
       const isBlocked =
-        row.status === 'publishing' ||
+        missingUrlCount > 0 ||
         row.llmTxtVerified === false ||
         row.schemaVerified === false;
       if (isBlocked) campaignBlockedMap.set(row.businessId, true);

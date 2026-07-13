@@ -514,7 +514,7 @@ export async function getSchemaMarkupByBusinessId(businessId: number): Promise<S
 // ============= All Campaigns (no user filter — internal team tool) =============
 
 export async function getAllCampaignsWithBusinessInfo(): Promise<
-  (Campaign & { businessName: string; businessType: string | null; website: string | null; isBlocked: boolean })[]
+  (Campaign & { businessName: string; businessType: string | null; website: string | null; isBlocked: boolean; missingUrlCount: number })[]
 > {
   const db = await getDb();
   if (!db) return [];
@@ -552,16 +552,41 @@ export async function getAllCampaignsWithBusinessInfo(): Promise<
     .innerJoin(businesses, eq(campaigns.businessId, businesses.id))
     .orderBy(desc(campaigns.createdAt));
 
-  // A campaign is "blocked" if:
-  // 1. It is stuck in publishing (content not yet live), OR
-  // 2. llm.txt has not been verified, OR
-  // 3. JSON-LD schema has not been verified
-  return result.map((r: any) => ({
-    ...r,
-    isBlocked: (r.status === 'publishing' && !r.publishingCompletedAt) ||
-               r.llmTxtVerified === false ||
-               r.schemaVerified === false,
-  })) as any;
+  // Fetch missing URL counts in one aggregated query (avoids N+1).
+  // Exclude internal asset types that don't need a URL — they are verified via scan.
+  const missingUrlRows = await db
+    .select({
+      campaignId: contentPages.campaignId,
+      missingCount: sql<number>`count(*)`,
+    })
+    .from(contentPages)
+    .where(
+      and(
+        sql`${contentPages.pageType} NOT IN ('llm_txt','schema_package','schema_audit','schema_delivery')`,
+        sql`${contentPages.publishedUrl} IS NULL`
+      )
+    )
+    .groupBy(contentPages.campaignId);
+
+  const missingUrlMap = new Map<number, number>();
+  for (const row of missingUrlRows) {
+    if (row.campaignId != null) missingUrlMap.set(row.campaignId, Number(row.missingCount));
+  }
+
+  // A campaign is "blocked" if ANY of the following are true:
+  // 1. One or more credibility content pages are missing a live URL
+  // 2. llm.txt has not been verified via scan (llmTxtVerified = false)
+  // 3. JSON-LD schema has not been verified via scan (schemaVerified = false)
+  return result.map((r: any) => {
+    const missingUrlCount = missingUrlMap.get(r.id) ?? 0;
+    return {
+      ...r,
+      missingUrlCount,
+      isBlocked: missingUrlCount > 0 ||
+                 r.llmTxtVerified === false ||
+                 r.schemaVerified === false,
+    };
+  }) as any;
 }
 
 export async function getAllCampaignStats(): Promise<Record<string, number>> {
