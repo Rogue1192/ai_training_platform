@@ -261,10 +261,19 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
 
     // Fallback: if DataForSEO returned nothing, expand seeds into buyer-intent queries
     if (baseKeywords.length === 0) {
-      const { expandToBuyerIntentQueries } = await import("./dataforseoService");
-      const fallbackQueries = expandToBuyerIntentQueries(seeds.length > 0 ? seeds : [industry], maxQueries, allLocations[0] ?? undefined);
-      baseKeywords = fallbackQueries.slice(0, maxQueries);
-      console.log(`[Pipeline] Using fallback buyer-intent expansion: ${baseKeywords.length} queries`);
+      // Fallback: apply proven transactional-intent modifiers to the primary seed.
+      const service = seeds[0] || industry;
+      const TRANSACTIONAL_MODIFIERS = [
+        "best", "top-rated", "highly rated", "five-star", "affordable",
+        "budget-friendly", "low-cost", "local", "near me", "trusted",
+        "reputable", "recommended", "reliable", "licensed", "insured",
+        "certified", "experienced", "financing available", "offers payment plans", "free estimates",
+      ];
+      const SUFFIX_MODIFIERS = new Set(["near me", "financing available", "offers payment plans", "free estimates"]);
+      baseKeywords = TRANSACTIONAL_MODIFIERS
+        .map((mod) => SUFFIX_MODIFIERS.has(mod) ? `${service} ${mod}` : `${mod} ${service}`)
+        .slice(0, maxQueries);
+      console.log(`[Pipeline] Using transactional modifier fallback: ${baseKeywords.length} queries`);
     }
 
     // Contribute to industry cache for golden template learning

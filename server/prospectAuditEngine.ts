@@ -254,25 +254,38 @@ export async function generateProspectQueries(
 
     // ── Step 3: Fallback if DataForSEO returned nothing ──────────────────────
     if (baseKeywords.length === 0) {
+      // Fallback: apply proven transactional-intent modifiers to the primary seed.
+      // These are real buying-signal phrases — not AI guesses.
       const service = seedList[0] || industry || "services";
-      const fallbackModifiers = [
-        service,
-        `${service} near me`,
-        `best ${service}`,
-        `top rated ${service}`,
-        `affordable ${service}`,
-        `${service} company`,
-        `${service} contractor`,
-        `${service} services`,
-        `local ${service}`,
-        `${service} cost`,
-        `${service} price`,
-        `${service} estimate`,
-        `${service} quotes`,
-        `${service} installer`,
-        `${service} installation`,
+      const TRANSACTIONAL_MODIFIERS = [
+        "best",
+        "top-rated",
+        "highly rated",
+        "five-star",
+        "affordable",
+        "budget-friendly",
+        "low-cost",
+        "local",
+        "near me",
+        "trusted",
+        "reputable",
+        "recommended",
+        "reliable",
+        "licensed",
+        "insured",
+        "certified",
+        "experienced",
+        "financing available",
+        "offers payment plans",
+        "free estimates",
       ];
-      baseKeywords.push(...fallbackModifiers.slice(0, baseKeywordsNeeded));
+      // Build queries: "best fence company", "top-rated fence company", etc.
+      // For "near me" and bare modifiers that go after the service, swap order.
+      const SUFFIX_MODIFIERS = new Set(["near me", "financing available", "offers payment plans", "free estimates"]);
+      const fallbackQueries = TRANSACTIONAL_MODIFIERS.map((mod) =>
+        SUFFIX_MODIFIERS.has(mod) ? `${service} ${mod}` : `${mod} ${service}`
+      );
+      baseKeywords.push(...fallbackQueries.slice(0, baseKeywordsNeeded));
     }
 
     // ── Step 4: Distribute locations across base keywords → exactly 15 pairs ─
