@@ -255,35 +255,33 @@ export async function generateProspectQueries(
     // ── Step 3: Fallback if DataForSEO returned nothing ──────────────────────
     if (baseKeywords.length === 0) {
       // Fallback: apply proven transactional-intent modifiers to the primary seed.
-      // These are real buying-signal phrases — not AI guesses.
+      // Each entry is a [modifier, template] pair where {s} = service.
+      // Templates produce natural-sounding queries — not raw string concatenation.
       const service = seedList[0] || industry || "services";
-      const TRANSACTIONAL_MODIFIERS = [
-        "best",
-        "top-rated",
-        "highly rated",
-        "five-star",
-        "affordable",
-        "budget-friendly",
-        "low-cost",
-        "local",
-        "near me",
-        "trusted",
-        "reputable",
-        "recommended",
-        "reliable",
-        "licensed",
-        "insured",
-        "certified",
-        "experienced",
-        "financing available",
-        "offers payment plans",
-        "free estimates",
+      const TRANSACTIONAL_TEMPLATES: [string, string][] = [
+        ["best",                  "best {s}"],
+        ["top-rated",             "top-rated {s}"],
+        ["highly rated",          "highly rated {s}"],
+        ["five-star",             "five-star {s}"],
+        ["affordable",            "affordable {s}"],
+        ["budget-friendly",       "budget-friendly {s}"],
+        ["low-cost",              "low-cost {s}"],
+        ["local",                 "local {s}"],
+        ["near me",               "{s} near me"],
+        ["trusted",               "trusted {s}"],
+        ["reputable",             "reputable {s}"],
+        ["recommended",           "recommended {s}"],
+        ["reliable",              "reliable {s}"],
+        ["licensed",              "licensed {s}"],
+        ["insured",               "insured {s}"],
+        ["certified",             "certified {s}"],
+        ["experienced",           "experienced {s}"],
+        ["financing",             "{s} that offers financing"],
+        ["payment plans",         "{s} with payment plans"],
+        ["free estimates",        "{s} that offers free estimates"],
       ];
-      // Build queries: "best fence company", "top-rated fence company", etc.
-      // For "near me" and bare modifiers that go after the service, swap order.
-      const SUFFIX_MODIFIERS = new Set(["near me", "financing available", "offers payment plans", "free estimates"]);
-      const fallbackQueries = TRANSACTIONAL_MODIFIERS.map((mod) =>
-        SUFFIX_MODIFIERS.has(mod) ? `${service} ${mod}` : `${mod} ${service}`
+      const fallbackQueries = TRANSACTIONAL_TEMPLATES.map(([, tmpl]) =>
+        tmpl.replace("{s}", service)
       );
       baseKeywords.push(...fallbackQueries.slice(0, baseKeywordsNeeded));
     }
