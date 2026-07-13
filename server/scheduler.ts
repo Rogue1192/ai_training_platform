@@ -826,6 +826,14 @@ export function startScheduler(): void {
     checkPublishingReminders().catch((err: Error) => console.error("[Scheduler] Publishing reminder check failed:", err));
   }, 24 * 60 * 60 * 1000); // once per day
 
+  // Stuck prospect audit cleanup — runs every 5 minutes.
+  // Any audit stuck in 'running' for > 10 minutes is marked failed so the UI
+  // doesn't show an indefinite spinner.
+  cleanupStuckProspectAudits().catch((err: Error) => console.error("[Scheduler] Stuck audit cleanup failed:", err));
+  setInterval(() => {
+    cleanupStuckProspectAudits().catch((err: Error) => console.error("[Scheduler] Stuck audit cleanup failed:", err));
+  }, 5 * 60 * 1000); // every 5 minutes
+
   console.log("[Scheduler] Scheduler started successfully");
 }
 
@@ -955,7 +963,7 @@ async function checkTrainingCycleAdvances(): Promise<void> {
   try {
     const { advanceCampaignCycle } = await import('./trainingCycleOrchestrator');
     const { campaignQueryLocations: cqlTable, campaigns: campaignsTable, businesses: businessesTable } = await import('../drizzle/schema');
-    const { lte: lteOp, or: orOp, eq: eqOp, ne: neOp } = await import('drizzle-orm');
+    const { lte: lteOp, or: orOp, eq: eqOp, ne: neOp, and: andOp } = await import('drizzle-orm');
 
     // Get admin user for system-triggered sessions
     const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
@@ -981,6 +989,8 @@ async function checkTrainingCycleAdvances(): Promise<void> {
           ),
           eqOp(businessesTable.isArchived, false),  // skip archived clients
           neOp(campaignsTable.status, 'paused'),     // skip manually paused campaigns
+          eqOp(campaignsTable.llmTxtVerified, true), // HARD GATE: llm.txt must be verified before any training runs
+          eqOp(campaignsTable.schemaVerified, true), // HARD GATE: schema must be verified before any training runs
         ),
       );
 
@@ -1029,7 +1039,7 @@ async function checkScheduledRankTracking(): Promise<void> {
   try {
     const { runScheduledRankCheck } = await import("./rankTrackingEngine");
     const { campaignQueryLocations: cqlTable, rankSnapshots: rsTable, campaigns: campaignsTable, businesses: businessesTable } = await import("../drizzle/schema");
-    const { eq: eqRank, and: andRank, inArray: inArrayRank, or: orRank } = await import('drizzle-orm');
+    const { eq: eqRank, and: andRank, inArray: inArrayRank, or: orRank, ne: neRank } = await import('drizzle-orm');
 
     // Only run rank checks for campaigns that are actively in the pipeline past the
     // baseline check. Campaigns waiting on keyword approval (query_review), credibility
@@ -1064,7 +1074,9 @@ async function checkScheduledRankTracking(): Promise<void> {
       .where(
         andRank(
           eqRank(businessesTable.isArchived, false),
-          inArrayRank(campaignsTable.status, RANK_ELIGIBLE_STATUSES)
+          inArrayRank(campaignsTable.status, RANK_ELIGIBLE_STATUSES),
+          eqRank(campaignsTable.llmTxtVerified, true), // HARD GATE: llm.txt must be verified
+          eqRank(campaignsTable.schemaVerified, true)  // HARD GATE: schema must be verified
         )
       );
 
@@ -1280,6 +1292,53 @@ async function checkPublishingReminders(): Promise<void> {
     }
   } catch (err: any) {
     console.error("[Scheduler] checkPublishingReminders error:", err.message);
+  }
+}
+
+/**
+ * Clean up prospect audits stuck in 'running' status for more than 10 minutes.
+ * Any audit that has been running for > 10 minutes without completing is almost
+ * certainly dead (server restart, unhandled exception, etc.) — mark it failed so
+ * the UI doesn't show an indefinite spinner to the user.
+ */
+async function cleanupStuckProspectAudits(): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+
+    const { prospectAudits: paTable } = await import('../drizzle/schema');
+    const { eq: eqAudit, and: andAudit, lt: ltAudit } = await import('drizzle-orm');
+
+    const TEN_MINUTES_AGO = new Date(Date.now() - 10 * 60 * 1000);
+
+    // Find audits stuck in 'running' for more than 10 minutes
+    const stuckAudits = await db
+      .select({ id: paTable.id })
+      .from(paTable)
+      .where(
+        andAudit(
+          eqAudit(paTable.status, 'running'),
+          ltAudit(paTable.updatedAt, TEN_MINUTES_AGO)
+        )
+      );
+
+    if (stuckAudits.length === 0) return;
+
+    console.log(`[Scheduler] Marking ${stuckAudits.length} stuck prospect audit(s) as failed (running > 10 min)`);
+
+    for (const { id } of stuckAudits) {
+      await db
+        .update(paTable)
+        .set({
+          status: 'failed',
+          errorMessage: 'Audit timed out — please try again',
+          updatedAt: new Date(),
+        })
+        .where(eqAudit(paTable.id, id));
+      console.log(`[Scheduler] Marked stuck prospect audit ${id} as failed`);
+    }
+  } catch (err: any) {
+    console.error('[Scheduler] cleanupStuckProspectAudits error:', err.message);
   }
 }
 
