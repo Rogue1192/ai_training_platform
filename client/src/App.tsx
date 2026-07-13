@@ -215,11 +215,21 @@ function Router() {
       {/* Prospect Audit — opens in new window, no platform chrome */}
       <Route path="/prospect-audit" component={ProspectAudit} />
 
-      {/* Audit History — inside platform chrome */}
+      {/* Audit History — inside platform chrome.
+           navItems is already agency nav when user.role === 'agency'.
+           When a super-admin is impersonating (sessionStorage has impersonatedAgencyId)
+           we also need agency nav — AgencyRoute handles that. */}
       <Route path="/audit-history">
-        <DashboardLayout navigationItems={navItems}>
-          <AuditHistory />
-        </DashboardLayout>
+        {(() => {
+          const impersonating = typeof sessionStorage !== 'undefined' && !!sessionStorage.getItem('impersonatedAgencyId');
+          return impersonating ? (
+            <AgencyRoute><AuditHistory /></AgencyRoute>
+          ) : (
+            <DashboardLayout navigationItems={navItems}>
+              <AuditHistory />
+            </DashboardLayout>
+          );
+        })()}
       </Route>
 
       {/* Stripe overage success landing page */}

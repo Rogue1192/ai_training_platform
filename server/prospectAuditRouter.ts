@@ -276,26 +276,29 @@ export const prospectAuditRouter = router({
     }),
 
   /** List recent audits */
-  listAudits: protectedProcedure
+    listAudits: protectedProcedure
     .input(z.object({ limit: z.number().default(50) }))
     .query(async ({ ctx, input }) => {
       const { getDb } = await import('./db');
       const { prospectAudits } = await import('../drizzle/schema');
       const { desc, eq } = await import('drizzle-orm');
-      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getAgencyByUserId, getAgencyById } = await import('./dbAgencies');
       const db = await getDb();
       if (!db) return [];
-
+      // Impersonation: super-admin viewing as an agency sees that agency's audits
+      const impersonatedAgencyId = (ctx as any).impersonatedAgencyId as number | null;
+      if (impersonatedAgencyId && (ctx.user as any).role === 'admin') {
+        const rows = await db.select().from(prospectAudits).where(eq(prospectAudits.agencyId, impersonatedAgencyId)).orderBy(desc(prospectAudits.createdAt)).limit(input.limit);
+        return rows;
+      }
       let agencyId: number | null = null;
       try {
         const agency = await getAgencyByUserId(ctx.user.id);
         if (agency) agencyId = agency.id;
       } catch {}
-
       const rows = agencyId
         ? await db.select().from(prospectAudits).where(eq(prospectAudits.agencyId, agencyId)).orderBy(desc(prospectAudits.createdAt)).limit(input.limit)
         : await db.select().from(prospectAudits).orderBy(desc(prospectAudits.createdAt)).limit(input.limit);
-
       return rows;
     }),
 
@@ -345,21 +348,24 @@ export const prospectAuditRouter = router({
    * - Agency users: anniversary-based period, 20 included + overage
    * - Super admins: unlimited (returns isAdmin: true)
    */
-  getQuota: protectedProcedure
+    getQuota: protectedProcedure
     .query(async ({ ctx }) => {
       const isAdmin = (ctx.user as any).role === 'admin';
-      if (isAdmin) {
+      const impersonatedAgencyId = (ctx as any).impersonatedAgencyId as number | null;
+      // When impersonating, show the agency's real quota instead of admin unlimited
+      if (isAdmin && !impersonatedAgencyId) {
         return { used: 0, total: null, remaining: null, isAdmin: true, periodStart: null, periodEnd: null };
       }
-
       const { getDb } = await import('./db');
       const { agencyAuditQuota } = await import('../drizzle/schema');
       const { eq, and } = await import('drizzle-orm');
-      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getAgencyByUserId, getAgencyById } = await import('./dbAgencies');
       const db = await getDb();
       if (!db) return null;
-
-      const agency = await getAgencyByUserId(ctx.user.id);
+      // Resolve agency: impersonated agency or the caller's own
+      const agency = impersonatedAgencyId
+        ? await getAgencyById(impersonatedAgencyId)
+        : await getAgencyByUserId(ctx.user.id);
       if (!agency) return null;
 
       const now = new Date();

@@ -449,11 +449,11 @@ function ContentPublishPanel({ campaignId, campaignStatus }: { campaignId: numbe
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Button>
                   </>
-                ) : (
+                ) : !isSpecialType ? (
                   <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-xs">
                     Needs URL
                   </Badge>
-                )}
+                ) : null}
                 <Button
                   variant="ghost"
                   size="sm"

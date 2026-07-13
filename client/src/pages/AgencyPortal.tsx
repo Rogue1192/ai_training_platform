@@ -188,6 +188,9 @@ export default function AgencyPortal() {
         <StatCard label="Awaiting Setup"  value={pendingClients.length}   icon={AlertCircle}  color={pendingClients.length > 0 ? "text-orange-500" : "text-foreground"} />
       </div>
 
+      {/* AI Visibility Audit quota */}
+      <AuditQuotaWidget onViewHistory={() => navigate('/audit-history')} />
+
       {/* ── Pending clients — need tier assigned ── */}
       {pendingClients.length > 0 && (
         <div className="space-y-3">
@@ -421,6 +424,116 @@ function ReportCard({
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+// ─── Audit Quota Widget ───────────────────────────────────────────────────────
+function AuditQuotaWidget({ onViewHistory }: { onViewHistory: () => void }) {
+  const [buyMoreOpen, setBuyMoreOpen] = useState(false);
+  const { data: quota } = trpc.prospectAudit.getQuota.useQuery(undefined, {
+    refetchInterval: 60_000,
+  });
+  if (!quota) return null;
+  // Don't show if admin (non-impersonating)
+  if ((quota as any).isAdmin) return null;
+  const { used, total, remaining } = quota as any;
+  const safeTotal = total ?? 20;
+  const safeRemaining = remaining ?? 0;
+  const pct = safeTotal > 0 ? Math.min(100, Math.round((used / safeTotal) * 100)) : 0;
+  const low = safeRemaining <= 2;
+  return (
+    <>
+      <Card className={low ? "border-amber-500/40 bg-amber-500/5" : "border-border"}>
+        <CardContent className="py-3 px-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              {low && <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />}
+              <BarChart3 className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div>
+                <p className="text-sm font-medium">AI Visibility Audits</p>
+                <p className={`text-xs ${low ? "text-amber-400" : "text-muted-foreground"}`}>
+                  {safeRemaining} remaining of {safeTotal} this period
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={onViewHistory}>
+                <ExternalLink className="h-3 w-3" />
+                View History
+              </Button>
+              <Button size="sm" variant={low ? "default" : "outline"} className="h-7 text-xs gap-1" onClick={() => setBuyMoreOpen(true)}>
+                Buy More
+              </Button>
+            </div>
+          </div>
+          <div className="mt-2">
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${low ? "bg-amber-500" : pct >= 80 ? "bg-orange-500" : "bg-primary"}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      {buyMoreOpen && <BuyMoreAuditsModal open={buyMoreOpen} onClose={() => setBuyMoreOpen(false)} />}
+    </>
+  );
+}
+
+// ─── Buy More Audits Modal ────────────────────────────────────────────────────
+const AUDIT_OVERAGE_PACKAGES = [
+  { id: "audit_5"  as const, audits: 5,  price: 15,  label: "5 Audits",  perAudit: "$3.00/audit" },
+  { id: "audit_10" as const, audits: 10, price: 25,  label: "10 Audits", perAudit: "$2.50/audit" },
+  { id: "audit_25" as const, audits: 25, price: 60,  label: "25 Audits", perAudit: "$2.40/audit" },
+  { id: "audit_50" as const, audits: 50, price: 100, label: "50 Audits", perAudit: "$2.00/audit" },
+];
+function BuyMoreAuditsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const checkoutMutation = trpc.prospectAudit.createOverageCheckout.useMutation({
+    onSuccess: (data: any) => { window.location.href = data.url; },
+    onError: (err: any) => { toast.error(err.message); setLoading(false); },
+  });
+  const handlePurchase = () => {
+    if (!selected) return;
+    setLoading(true);
+    const origin = window.location.origin;
+    checkoutMutation.mutate({
+      packageId: selected as any,
+      successUrl: `${origin}/audit-overage-success`,
+      cancelUrl: `${origin}/agency`,
+    });
+  };
+  return (
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 ${open ? '' : 'hidden'}`} onClick={onClose}>
+      <div className="bg-background border border-border rounded-xl p-6 max-w-md w-full mx-4 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold">Buy More Audits</h2>
+        <p className="text-sm text-muted-foreground">Purchase additional AI Visibility Audits. Credits are added immediately after payment.</p>
+        <div className="grid grid-cols-2 gap-3">
+          {AUDIT_OVERAGE_PACKAGES.map((pkg) => (
+            <button
+              key={pkg.id}
+              onClick={() => setSelected(pkg.id)}
+              className={`rounded-lg border p-3 text-left transition-colors ${
+                selected === pkg.id ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'
+              }`}
+            >
+              <p className="font-semibold text-sm">{pkg.label}</p>
+              <p className="text-lg font-bold mt-0.5">${pkg.price}</p>
+              <p className="text-xs text-muted-foreground">{pkg.perAudit}</p>
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={!selected || loading} onClick={handlePurchase}>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Purchase
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function StatCard({
   label, value, icon: Icon, color = "text-foreground",
