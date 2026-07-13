@@ -67,16 +67,32 @@ export const prospectAuditRouter = router({
   /** Step 3: Run the audit */
   runAudit: protectedProcedure
     .input(z.object({ auditId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { getDb } = await import('./db');
-      const { prospectAudits } = await import('../drizzle/schema');
-      const { eq } = await import('drizzle-orm');
+      const { prospectAudits, agencyAuditQuota } = await import('../drizzle/schema');
+      const { eq, and, sql } = await import('drizzle-orm');
       const { runProspectAudit } = await import('./prospectAuditEngine');
+      const { getAgencyByUserId } = await import('./dbAgencies');
       const db = await getDb();
       if (!db) throw new Error('Database not available');
 
       const [audit] = await db.select().from(prospectAudits).where(eq(prospectAudits.id, input.auditId)).limit(1);
       if (!audit) throw new Error('Audit not found');
+
+      // ── Quota check (agency users only) ────────────────────────────────────
+      const agency = await getAgencyByUserId(ctx.user.id);
+      if (agency) {
+        const now = new Date();
+        const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const [qRow] = await db.select().from(agencyAuditQuota)
+          .where(and(eq(agencyAuditQuota.agencyId, agency.id), eq(agencyAuditQuota.periodMonth, periodMonth)))
+          .limit(1);
+        const included = qRow?.includedQuota ?? 20;
+        const overageAudits = (qRow?.overageBlocksPurchased ?? 0) * 5;
+        const total = included + overageAudits;
+        const used = qRow?.auditsUsed ?? 0;
+        if (used >= total) throw new Error(`Audit quota exceeded (${used}/${total} used this month). Purchase more audits to continue.`);
+      }
 
       const queries = (audit.queries as any[]) || [];
       const { snapshots, scores } = await runProspectAudit(
@@ -87,6 +103,22 @@ export const prospectAuditRouter = router({
         audit.agencyId,
         queries
       );
+
+      // ── Increment quota usage ───────────────────────────────────────────────
+      if (agency) {
+        const now = new Date();
+        const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        await db.insert(agencyAuditQuota).values({
+          agencyId: agency.id,
+          periodMonth,
+          auditsUsed: 1,
+          includedQuota: 20,
+          overageBlocksPurchased: 0,
+        }).onConflictDoUpdate({
+          target: [agencyAuditQuota.agencyId, agencyAuditQuota.periodMonth],
+          set: { auditsUsed: sql`${agencyAuditQuota.auditsUsed} + 1`, updatedAt: new Date() },
+        });
+      }
 
       return { snapshots, scores };
     }),

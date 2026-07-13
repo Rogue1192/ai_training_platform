@@ -76,6 +76,8 @@ const BASE_AGENCY_NAV = [
   { href: "/agency", label: "My Clients", icon: Building2 },
   { href: "/agency/client-reports", label: "Client Reports", icon: FileBarChart },
   { href: "/agency/llm-insights", label: "LLM Insights", icon: BarChart3 },
+  { href: "/prospect-audit", label: "AI Visibility Audit", icon: FileBarChart, openInNewWindow: true },
+  { href: "/audit-history", label: "Audit History", icon: BarChart3 },
   { href: "/agency/settings", label: "Settings", icon: SettingsIcon },
 ];
 
