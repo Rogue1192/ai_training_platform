@@ -506,15 +506,18 @@ function ResultsStep({
   const [closeRateInput, setCloseRateInput] = useState(
     avgJobValue && avgJobValue > 0 ? "30" : ""
   ); // % of leads that become booked jobs
+  const [revenueView, setRevenueView] = useState<"monthly" | "annual">("monthly");
 
   const closeRate = parseFloat(closeRateInput) || 0;
   const hasJobValue = avgJobValue && avgJobValue > 0;
 
-  // Live revenue: lostSearches/mo × captureRate% × closeRate% × avgJobValue × 12 months
-  const liveRevenueGap =
+  // Base: lostSearches/mo × captureRate% × closeRate% × avgJobValue (monthly)
+  const liveRevenueMonthly =
     hasJobValue && lostOpportunities > 0 && closeRate > 0
-      ? Math.round(lostOpportunities * (captureRate / 100) * (closeRate / 100) * avgJobValue! * 12)
+      ? Math.round(lostOpportunities * (captureRate / 100) * (closeRate / 100) * avgJobValue!)
       : null;
+  const liveRevenueAnnual = liveRevenueMonthly !== null ? liveRevenueMonthly * 12 : null;
+  const liveRevenueGap = revenueView === "monthly" ? liveRevenueMonthly : liveRevenueAnnual;
 
   // Shape snapshots into the format QueryDetailsTable expects
   const queryDetails = snapshots.map((s) => ({
@@ -674,8 +677,33 @@ function ResultsStep({
             {/* Live Revenue Number */}
             <div className="rounded-2xl border border-green-500/25 bg-gradient-to-br from-green-500/10 to-green-900/5 p-6 text-center relative overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-br from-green-400/5 to-transparent pointer-events-none rounded-2xl" />
+
+              {/* Monthly / Annual toggle */}
+              <div className="flex items-center justify-center gap-1 mb-4">
+                <button
+                  onClick={() => setRevenueView("monthly")}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${
+                    revenueView === "monthly"
+                      ? "bg-green-500/20 text-green-400 border border-green-500/40"
+                      : "text-gray-600 hover:text-gray-400"
+                  }`}
+                >
+                  Monthly
+                </button>
+                <button
+                  onClick={() => setRevenueView("annual")}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${
+                    revenueView === "annual"
+                      ? "bg-green-500/20 text-green-400 border border-green-500/40"
+                      : "text-gray-600 hover:text-gray-400"
+                  }`}
+                >
+                  Annual
+                </button>
+              </div>
+
               <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest mb-3">
-                Estimated Annual Revenue Opportunity
+                Estimated {revenueView === "monthly" ? "Monthly" : "Annual"} Revenue Opportunity
               </p>
               {liveRevenueGap !== null && liveRevenueGap > 0 ? (
                 <>
@@ -689,7 +717,10 @@ function ResultsStep({
                     ${liveRevenueGap.toLocaleString()}
                   </motion.p>
                   <p className="text-xs text-gray-400 mt-3">
-                    {lostOpportunities.toLocaleString()} missed searches × {captureRate}% capture × {closeRate}% close × ${avgJobValue!.toLocaleString()} avg job × 12 months
+                    {revenueView === "monthly"
+                      ? `${lostOpportunities.toLocaleString()} missed searches × ${captureRate}% capture × ${closeRate}% close × $${avgJobValue!.toLocaleString()} avg job`
+                      : `${lostOpportunities.toLocaleString()} missed searches × ${captureRate}% capture × ${closeRate}% close × $${avgJobValue!.toLocaleString()} avg job × 12 months`
+                    }
                   </p>
                 </>
               ) : (
