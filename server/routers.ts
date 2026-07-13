@@ -3201,7 +3201,7 @@ export const llmInsightsRouter = router({
       const { getDb } = await import("./db");
       const { campaignQueryLocations } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
-      const { getAIKeywordSearchVolume } = await import("./dataforseoService");
+      const { getAIKeywordSearchVolume, getGoogleAdsSearchVolume } = await import("./dataforseoService");
       const db = await getDb();
       if (!db) throw new Error("Database not available");
 
@@ -3211,21 +3211,50 @@ export const llmInsightsRouter = router({
         .where(eq(campaignQueryLocations.campaignId, input.campaignId));
       if (qls.length === 0) return { updated: 0, checked: 0 };
 
-      const keywords = Array.from(new Set(qls.map((q) => q.searchQuery)));
-      const volumes = await getAIKeywordSearchVolume(keywords);
-      const volMap = new Map(volumes.map((v) => [v.keyword.toLowerCase(), v]));
+      // Build final query+location strings (same as what the LLM checks use)
+      const finalStrings = qls.map((q) =>
+        q.location ? `${q.searchQuery} ${q.location}` : q.searchQuery
+      );
+
+      // Pass 1: AI volume on final query+location strings
+      const aiVolumeMap = new Map<string, number>();
+      try {
+        const volumes = await getAIKeywordSearchVolume(finalStrings);
+        for (const v of volumes) {
+          if (v.aiSearchVolume > 0) aiVolumeMap.set(v.keyword.toLowerCase(), v.aiSearchVolume);
+        }
+      } catch (err: any) {
+        console.warn("[refreshAiVolume] AI volume fetch failed:", err.message);
+      }
+
+      // Pass 2: Google Ads × 25% fallback for zero-AI-volume queries
+      const needsFallback = finalStrings.filter((s) => !aiVolumeMap.has(s.toLowerCase()));
+      const fallbackMap = new Map<string, number>();
+      if (needsFallback.length > 0) {
+        try {
+          const googleMap = await getGoogleAdsSearchVolume(needsFallback);
+          for (const [k, v] of googleMap.entries()) {
+            if (v > 0) fallbackMap.set(k, Math.round(v * 0.25));
+          }
+        } catch (err: any) {
+          console.warn("[refreshAiVolume] Google Ads fallback failed:", err.message);
+        }
+      }
 
       let updated = 0;
-      for (const q of qls) {
-        const v = volMap.get(q.searchQuery.toLowerCase());
-        if (!v) continue;
+      for (let i = 0; i < qls.length; i++) {
+        const q = qls[i];
+        const key = finalStrings[i].toLowerCase();
+        const aiVol = aiVolumeMap.get(key) ?? 0;
+        const fallbackVol = fallbackMap.get(key) ?? 0;
+        const finalVolume = aiVol > 0 ? aiVol : (fallbackVol > 0 ? fallbackVol : Math.round(100 * 0.25));
         await db
           .update(campaignQueryLocations)
-          .set({ aiSearchVolume: v.aiSearchVolume, monthlyTrend: v.monthlyTrend as any, updatedAt: new Date() })
+          .set({ aiSearchVolume: finalVolume, updatedAt: new Date() })
           .where(eq(campaignQueryLocations.id, q.id));
         updated++;
       }
-      return { updated, checked: keywords.length };
+      return { updated, checked: finalStrings.length };
     }),
 
   /**

@@ -2,6 +2,9 @@ import {
   runKeywordResearchPipeline,
   runBaselineRankCheck,
   checkLLMVisibilityDirect,
+  getKeywordSuggestionsForProspect,
+  getAIKeywordSearchVolume,
+  getGoogleAdsSearchVolume,
   type KeywordResearchResult,
   type LLMMentionResult,
 } from "./dataforseoService";
@@ -222,91 +225,62 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
     // Determine the industry
     const industry = business.businessType || "general";
 
-    // Step 1: Check industry cache
-    let topKeywords: { keyword: string; aiSearchVolume: number; searchVolume: number; searchIntent: string | null }[] = [];
+    // ── Pass 1: Keyword selection via DataForSEO keyword_suggestions ──────────
+    // Build seeds from businessType + specialties. Feed into DataForSEO
+    // keyword_suggestions, keep only commercial/transactional, sort by volume desc.
+    // This replaces the old keywords_for_site approach.
+    const { buildServiceSeeds } = await import("./dataforseoService");
+    const seeds = buildServiceSeeds(business.businessType, business.specialties);
+
+    let baseKeywords: string[] = [];
     let usedCache = false;
 
-    const goldenTemplate = await getGoldenTemplateKeywords(industry);
+    if (seeds.length > 0) {
+      try {
+        const dfsKeywords = await getKeywordSuggestionsForProspect(seeds, {
+          locationCode: 2840,
+          languageCode: "en",
+          limit: 200,
+        });
+        baseKeywords = dfsKeywords.slice(0, maxQueries).map((k) => k.keyword);
+        console.log(`[Pipeline] DataForSEO keyword_suggestions returned ${dfsKeywords.length} commercial/transactional keywords, using top ${baseKeywords.length}`);
 
-    if (goldenTemplate) {
-      // Use cached golden template — no API call needed!
-      // Re-expand the cached bare keyword seeds through the long-tail geo-specific
-      // templates so the stored queries are full sentences with city+state inline
-      // (e.g. "best hvac repair services in Chino, CA") rather than bare fragments
-      // (e.g. "hvac", "best repair") that were generated before the template upgrade.
-      const primaryLocation = allLocations[0] ?? null;
-      const { buildServiceSeeds, expandToBuyerIntentQueries: expandQueries } = await import("./dataforseoService");
-      const cachedSeeds = goldenTemplate
-        .slice(0, 8)
-        .map((k) => k.keyword)
-        .filter(Boolean);
-      // Prefer seeds derived from businessType+specialties (more accurate) but fall
-      // back to the raw cached keywords if no type signal is available.
-      const seeds = buildServiceSeeds(business.businessType, business.specialties);
-      const seedsToUse = seeds.length > 0 ? seeds : cachedSeeds;
-      const expandedKeywords = expandQueries(seedsToUse, maxQueries, primaryLocation ?? undefined);
-      topKeywords = expandedKeywords.slice(0, maxQueries).map((kw) => ({
-        keyword: kw,
-        aiSearchVolume: 0,   // volume not available from cache expansion; AI volume check runs later
-        searchVolume: 0,
-        searchIntent: "commercial",
-      }));
-      usedCache = true;
-      console.log(`[Pipeline] Using golden template for "${industry}" — expanded ${topKeywords.length} long-tail geo-specific queries (location: ${primaryLocation ?? "none"}) — saved API costs!`);
-    } else {
-      // Step 2: Run fresh keyword research
-      if (!business.website) {
-        throw new Error("Business has no website URL — cannot run keyword research");
+        await logDFSCost({
+          campaignId,
+          businessId: campaign.businessId,
+          operationType: 'keyword_research',
+          endpoint: '/dataforseo_labs/google/keyword_suggestions/live',
+          costUsd: DFS_COSTS.keywordsForSite, // same cost tier
+          campaignCreatedAt: campaign.createdAt,
+          metadata: { seedCount: seeds.length, keywordsFound: dfsKeywords.length },
+        });
+      } catch (dfsErr: any) {
+        console.warn(`[Pipeline] DataForSEO keyword_suggestions failed, using seed fallback: ${dfsErr.message}`);
       }
-
-      const research = await runKeywordResearchPipeline(business.website, {
-        maxKeywords: maxQueries,
-        businessType: business.businessType,
-        specialties: business.specialties,
-        // Pass the first location so queries are generated with city+state inline
-        // (e.g. "best hvac repair services in Chino, CA") rather than bare fragments.
-        primaryLocation: allLocations[0] ?? null,
-      });
-
-      topKeywords = research.topKeywords;
-
-      // Log DataForSEO keyword research costs
-      await logDFSCost({
-        campaignId,
-        businessId: campaign.businessId,
-        operationType: 'keyword_research',
-        endpoint: '/dataforseo_labs/google/keywords_for_site/live',
-        costUsd: DFS_COSTS.keywordsForSite,
-        campaignCreatedAt: campaign.createdAt,
-        metadata: { keywordsFound: research.topKeywords.length },
-      });
-      await logDFSCost({
-        campaignId,
-        businessId: campaign.businessId,
-        operationType: 'keyword_research',
-        endpoint: '/ai_optimization/ai_keyword_data/keywords_search_volume/live',
-        costUsd: DFS_COSTS.aiKeywordVolume * research.topKeywords.length,
-        campaignCreatedAt: campaign.createdAt,
-        metadata: { keywordCount: research.topKeywords.length },
-      });
-
-      // Step 3: Contribute to industry cache
-      await contributeToIndustryCache(
-        industry,
-        research.topKeywords.map((k) => ({
-          keyword: k.keyword,
-          aiSearchVolume: k.aiSearchVolume,
-          searchVolume: k.searchVolume,
-          searchIntent: k.searchIntent,
-        }))
-      );
     }
 
-    // Step 4: Build query×location matrix
-    // Get locations from the business record
+    // Fallback: if DataForSEO returned nothing, expand seeds into buyer-intent queries
+    if (baseKeywords.length === 0) {
+      const { expandToBuyerIntentQueries } = await import("./dataforseoService");
+      const fallbackQueries = expandToBuyerIntentQueries(seeds.length > 0 ? seeds : [industry], maxQueries, allLocations[0] ?? undefined);
+      baseKeywords = fallbackQueries.slice(0, maxQueries);
+      console.log(`[Pipeline] Using fallback buyer-intent expansion: ${baseKeywords.length} queries`);
+    }
+
+    // Contribute to industry cache for golden template learning
+    await contributeToIndustryCache(
+      industry,
+      baseKeywords.map((kw) => ({
+        keyword: kw,
+        aiSearchVolume: 0,
+        searchVolume: 0,
+        searchIntent: "commercial",
+      }))
+    );
+
+    // ── Build query×location matrix ──────────────────────────────────────────
     const locations: string[] = allLocations;
 
-    // If no locations found, we can't build the matrix
     if (locations.length === 0) {
       console.warn(`[Pipeline] No locations found for campaign ${campaignId} — matrix will be empty`);
       await updateCampaign(campaignId, {
@@ -315,49 +289,94 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
       });
       return {
         success: true,
-        keywordsFound: topKeywords.length,
+        keywordsFound: baseKeywords.length,
         queryLocationsCreated: 0,
         usedCache,
       };
     }
 
-    // Build the matrix — cap total pairs at effectiveMaxQuerySlots (remaining quota)
-    const entries = [];
+    // Build keyword×location pairs, capped at effectiveMaxQuerySlots
+    const matrixPairs: { keyword: string; location: string }[] = [];
     let slotsUsed = 0;
-    outer: for (const kw of topKeywords) {
+    outer: for (const kw of baseKeywords) {
       for (const location of locations) {
         if (slotsUsed >= effectiveMaxQuerySlots) break outer;
-        entries.push({
-          campaignId,
-          searchQuery: kw.keyword,
-          location,
-          aiSearchVolume: kw.aiSearchVolume,
-          trainingStatus: "pending" as const,
-          trainingSessions: 0,
-          // All rows generated here fill remaining tracked slots — mark as tracked.
-          isTargetLocation: true,
-        });
+        matrixPairs.push({ keyword: kw, location });
         slotsUsed++;
       }
     }
+
+    // ── Pass 2: Per-location volume lookup on final query+location strings ────
+    // Hit AI volume endpoint first; fall back to Google Ads × 25% for zeros.
+    const finalStrings = matrixPairs.map((p) => `${p.keyword} ${p.location}`);
+    const aiVolumeMap = new Map<string, number>();
+    const fallbackVolumeMap = new Map<string, number>();
+
+    try {
+      const aiVolumes = await getAIKeywordSearchVolume(finalStrings, { locationCode: 2840 });
+      for (const v of aiVolumes) {
+        if (v.aiSearchVolume > 0) aiVolumeMap.set(v.keyword.toLowerCase(), v.aiSearchVolume);
+      }
+      await logDFSCost({
+        campaignId,
+        businessId: campaign.businessId,
+        operationType: 'keyword_research',
+        endpoint: '/ai_optimization/ai_keyword_data/keywords_search_volume/live',
+        costUsd: DFS_COSTS.aiKeywordVolume * finalStrings.length,
+        campaignCreatedAt: campaign.createdAt,
+        metadata: { keywordCount: finalStrings.length },
+      });
+    } catch (volErr: any) {
+      console.warn(`[Pipeline] AI volume lookup failed: ${volErr.message}`);
+    }
+
+    // Google Ads fallback for any zero-AI-volume pairs
+    const needsGoogleFallback = finalStrings.filter((s) => !aiVolumeMap.has(s.toLowerCase()));
+    if (needsGoogleFallback.length > 0) {
+      try {
+        const googleVolMap = await getGoogleAdsSearchVolume(needsGoogleFallback, { locationCode: 2840 });
+        for (const [k, v] of googleVolMap.entries()) {
+          if (v > 0) fallbackVolumeMap.set(k, Math.round(v * 0.25));
+        }
+      } catch (gErr: any) {
+        console.warn(`[Pipeline] Google Ads volume fallback failed: ${gErr.message}`);
+      }
+    }
+
+    // Build final entries with accurate per-location volume
+    const entries = matrixPairs.map((p) => {
+      const key = `${p.keyword} ${p.location}`.toLowerCase();
+      const aiVol = aiVolumeMap.get(key) ?? 0;
+      const fallbackVol = fallbackVolumeMap.get(key) ?? 0;
+      const finalVolume = aiVol > 0 ? aiVol : (fallbackVol > 0 ? fallbackVol : Math.round(100 * 0.25));
+      return {
+        campaignId,
+        searchQuery: p.keyword,
+        location: p.location,
+        aiSearchVolume: finalVolume,
+        trainingStatus: "pending" as const,
+        trainingSessions: 0,
+        isTargetLocation: true,
+      };
+    });
 
     if (entries.length > 0) {
       await createCampaignQueryLocations(entries);
     }
 
-    // Step 5: Update campaign status
+    // Update campaign status
     await updateCampaign(campaignId, {
       keywordResearchCompletedAt: new Date(),
       lastError: null,
     });
 
     console.log(
-      `[Pipeline] Keyword research complete for campaign ${campaignId}: ${topKeywords.length} keywords × ${locations.length} locations = ${entries.length} combos`
+      `[Pipeline] Keyword research complete for campaign ${campaignId}: ${baseKeywords.length} keywords × ${locations.length} locations = ${entries.length} combos`
     );
 
     return {
       success: true,
-      keywordsFound: topKeywords.length,
+      keywordsFound: baseKeywords.length,
       queryLocationsCreated: entries.length,
       usedCache,
     };

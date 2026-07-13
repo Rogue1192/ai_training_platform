@@ -658,6 +658,123 @@ export async function runKeywordResearchPipeline(
 }
 
 /**
+ * Get Google Ads search volume for a list of keywords.
+ * Used as a fallback when AI volume is zero — multiply by 25% to estimate AI searches.
+ * Accepts up to 1000 keywords per request.
+ */
+export async function getGoogleAdsSearchVolume(
+  keywords: string[],
+  options: {
+    locationCode?: number;
+    languageCode?: string;
+  } = {}
+): Promise<Map<string, number>> {
+  const { locationCode = 2840, languageCode = "en" } = options;
+  const volumeMap = new Map<string, number>();
+
+  if (keywords.length === 0) return volumeMap;
+
+  // API accepts up to 1000 keywords per request
+  const batches: string[][] = [];
+  for (let i = 0; i < keywords.length; i += 1000) {
+    batches.push(keywords.slice(i, i + 1000));
+  }
+
+  console.log(`[DataForSEO] Fetching Google Ads search volume for ${keywords.length} keywords`);
+
+  for (const batch of batches) {
+    try {
+      const data = await dfsFetch("/keywords_data/google_ads/search_volume/live", [
+        {
+          keywords: batch,
+          location_code: locationCode,
+          language_code: languageCode,
+        },
+      ]);
+      const items: any[] = data?.tasks?.[0]?.result || [];
+      for (const item of items) {
+        if (item?.keyword && item?.search_volume != null) {
+          volumeMap.set(item.keyword.toLowerCase(), item.search_volume || 0);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[DataForSEO] Google Ads volume batch failed: ${err.message}`);
+    }
+  }
+
+  return volumeMap;
+}
+
+/**
+ * Fetch high-volume commercial/transactional keyword suggestions from DataForSEO
+ * for a set of seed keywords. Used by the prospect audit query generator.
+ *
+ * Flow:
+ *   1. Call keyword_suggestions for each seed (in parallel)
+ *   2. Merge results, keep only main_intent === "commercial" | "transactional"
+ *   3. Sort by search_volume desc, deduplicate by normalized keyword
+ *   4. Return the top N results
+ */
+export async function getKeywordSuggestionsForProspect(
+  seeds: string[],
+  options: {
+    locationCode?: number;
+    languageCode?: string;
+    limit?: number; // per seed, before filtering
+  } = {}
+): Promise<{ keyword: string; searchVolume: number }[]> {
+  const { locationCode = 2840, languageCode = "en", limit = 100 } = options;
+
+  if (!seeds.length) return [];
+
+  console.log(`[DataForSEO] Fetching keyword suggestions for seeds: ${seeds.join(" | ")}`);
+
+  // Run all seed lookups in parallel
+  const results = await Promise.allSettled(
+    seeds.map((seed) =>
+      dfsFetch("/dataforseo_labs/google/keyword_suggestions/live", [
+        {
+          keyword: seed.trim(),
+          location_code: locationCode,
+          language_code: languageCode,
+          include_seed_keyword: true,
+          include_serp_info: false,
+          limit,
+          order_by: ["keyword_info.search_volume,desc"],
+        },
+      ]).then((data: any) => {
+        const items: any[] = data?.tasks?.[0]?.result?.[0]?.items || [];
+        return items
+          .filter((item: any) => {
+            const intent = item?.search_intent_info?.main_intent;
+            return intent === "commercial" || intent === "transactional";
+          })
+          .map((item: any) => ({
+            keyword: (item.keyword as string).trim(),
+            searchVolume: (item.keyword_info?.search_volume as number) || 0,
+          }));
+      })
+    )
+  );
+
+  // Merge all results, deduplicate by lowercased keyword, keep highest volume
+  const volumeMap = new Map<string, { keyword: string; searchVolume: number }>();
+  for (const r of results) {
+    if (r.status !== "fulfilled") continue;
+    for (const kw of r.value) {
+      const key = kw.keyword.toLowerCase();
+      const existing = volumeMap.get(key);
+      if (!existing || kw.searchVolume > existing.searchVolume) {
+        volumeMap.set(key, kw);
+      }
+    }
+  }
+
+  // Sort by search volume descending
+  return Array.from(volumeMap.values()).sort((a, b) => b.searchVolume - a.searchVolume);
+}
+
+/**
  * Run a baseline rank check for a business domain
  * Returns all queries where the business is currently mentioned in AI responses
  */
