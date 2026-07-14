@@ -16,6 +16,7 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Loader2,
@@ -536,8 +537,10 @@ export default function PublicAuditReport() {
 
   const avgJobValue = (audit as any).avgJobValue as number | null;
 
+  // Lead gate: authenticated agency/admin users always see the full report (no blur)
+  const { isAuthenticated } = useAuth({ redirectOnUnauthenticated: false });
   // Lead gate: show overlay if not yet captured (check both DB state and local state)
-  const isLeadCaptured = leadCapturedLocally || (meta?.leadCaptured ?? false);
+  const isLeadCaptured = isAuthenticated || leadCapturedLocally || (meta?.leadCaptured ?? false);
   const calendarEmbedCode = meta?.calendarEmbedCode ?? null;
 
   // The report content (always rendered; blurred when not captured)

@@ -14,7 +14,7 @@
  *  - Low-quota warning toast (shown when ≤ 2 remaining)
  */
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -350,8 +350,21 @@ function DeleteButton({ auditId, businessName, onDeleted }: { auditId: number; b
 // ─── Audit Row ────────────────────────────────────────────────────────────────
 
 function AuditRow({ audit, onDeleted }: { audit: any; onDeleted: () => void }) {
+  const [opening, setOpening] = React.useState(false);
+  const getShareLinkMutation = trpc.prospectAudit.getShareLink.useMutation({
+    onSuccess: (data) => {
+      window.open(`/audit/${data.token}`, "_blank", "noopener");
+      setOpening(false);
+    },
+    onError: (err) => { toast.error(err.message); setOpening(false); },
+  });
   const handleOpen = () => {
-    window.open(`/prospect-audit?auditId=${audit.id}`, "_blank", "noopener");
+    if (audit.shareToken) {
+      window.open(`/audit/${audit.shareToken}`, "_blank", "noopener");
+    } else {
+      setOpening(true);
+      getShareLinkMutation.mutate({ auditId: audit.id });
+    }
   };
 
   const date = audit.completedAt
@@ -433,9 +446,10 @@ function AuditRow({ audit, onDeleted }: { audit: any; onDeleted: () => void }) {
               size="sm"
               variant="outline"
               onClick={handleOpen}
+              disabled={opening}
               className="h-8 gap-1.5 text-xs"
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              {opening ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}
               Open
             </Button>
             <ShareButton auditId={audit.id} />
