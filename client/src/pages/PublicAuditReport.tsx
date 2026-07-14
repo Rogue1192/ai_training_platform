@@ -448,6 +448,9 @@ export default function PublicAuditReport() {
     { enabled: !!token }
   );
 
+  // MUST be called unconditionally before any early returns (React rules of hooks)
+  const { isAuthenticated } = useAuth({ redirectOnUnauthenticated: false });
+
   const handleLeadCaptured = () => {
     setLeadCapturedLocally(true);
     refetchMeta();
@@ -541,7 +544,6 @@ export default function PublicAuditReport() {
   // - 'internal' (Visibility Audit): never gated — always show full report
   // - 'widget' (Lead Gen): gated until leadCaptured=true (fires once at widget submission)
   // - Authenticated users: always see full report regardless of source
-  const { isAuthenticated } = useAuth({ redirectOnUnauthenticated: false });
   const auditSource = meta?.source ?? 'internal';
   const isLeadCaptured = isAuthenticated || auditSource === 'internal' || leadCapturedLocally || (meta?.leadCaptured ?? false);
   const calendarEmbedCode = meta?.calendarEmbedCode ?? null;
