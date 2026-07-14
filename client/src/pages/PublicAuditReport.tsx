@@ -78,11 +78,14 @@ function StatCard({
 function RevenueCalculator({ avgJobValue, lostOpportunities }: { avgJobValue: number; lostOpportunities: number }) {
   const [captureRate, setCaptureRate] = useState(10);
   const [closeRateInput, setCloseRateInput] = useState("30");
+  const [revenueView, setRevenueView] = useState<"monthly" | "annual">("monthly");
   const closeRate = parseFloat(closeRateInput) || 0;
-  const liveRevenueGap =
+  const liveRevenueMonthly =
     closeRate > 0
-      ? Math.round(lostOpportunities * (captureRate / 100) * (closeRate / 100) * avgJobValue * 12)
+      ? Math.round(lostOpportunities * (captureRate / 100) * (closeRate / 100) * avgJobValue)
       : null;
+  const liveRevenueAnnual = liveRevenueMonthly !== null ? liveRevenueMonthly * 12 : null;
+  const liveRevenueGap = revenueView === "monthly" ? liveRevenueMonthly : liveRevenueAnnual;
 
   return (
     <motion.section
@@ -133,7 +136,34 @@ function RevenueCalculator({ avgJobValue, lostOpportunities }: { avgJobValue: nu
       </div>
       <div className="rounded-2xl border border-green-500/25 bg-gradient-to-br from-green-500/10 to-green-900/5 p-6 text-center relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-green-400/5 to-transparent pointer-events-none rounded-2xl" />
-        <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest mb-3">Estimated Annual Revenue Opportunity</p>
+
+        {/* Monthly / Annual toggle */}
+        <div className="flex items-center justify-center gap-1 mb-4">
+          <button
+            onClick={() => setRevenueView("monthly")}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${
+              revenueView === "monthly"
+                ? "bg-green-500/20 text-green-400 border border-green-500/40"
+                : "text-gray-600 hover:text-gray-400"
+            }`}
+          >
+            Monthly
+          </button>
+          <button
+            onClick={() => setRevenueView("annual")}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${
+              revenueView === "annual"
+                ? "bg-green-500/20 text-green-400 border border-green-500/40"
+                : "text-gray-600 hover:text-gray-400"
+            }`}
+          >
+            Annual
+          </button>
+        </div>
+
+        <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest mb-3">
+          Estimated {revenueView === "monthly" ? "Monthly" : "Annual"} Revenue Opportunity
+        </p>
         {liveRevenueGap !== null && liveRevenueGap > 0 ? (
           <>
             <motion.p
@@ -146,7 +176,10 @@ function RevenueCalculator({ avgJobValue, lostOpportunities }: { avgJobValue: nu
               ${liveRevenueGap.toLocaleString()}
             </motion.p>
             <p className="text-xs text-gray-400 mt-3">
-              {lostOpportunities.toLocaleString()} missed searches × {captureRate}% capture × {closeRate}% close × ${avgJobValue.toLocaleString()} avg job × 12 months
+              {revenueView === "monthly"
+                ? `${lostOpportunities.toLocaleString()} missed searches × ${captureRate}% capture × ${closeRate}% close × $${avgJobValue.toLocaleString()} avg job`
+                : `${lostOpportunities.toLocaleString()} missed searches × ${captureRate}% capture × ${closeRate}% close × $${avgJobValue.toLocaleString()} avg job × 12 months`
+              }
             </p>
           </>
         ) : (
