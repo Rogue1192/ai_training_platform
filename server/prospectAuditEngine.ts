@@ -278,44 +278,85 @@ export async function generateProspectQueries(
         }
 
         if (openaiKey) {
-          // Give the LLM the top 80 candidates (sorted by volume) to choose from
-          const candidates = dfsKeywords.slice(0, 80).map((k) => k.keyword);
-          const prompt = [
-            `You are a search intent classifier. Below is a list of keywords related to "${seedList[0] || industry}".
-`,
-            `Your job: select UP TO ${baseKeywordsNeeded} keywords that show BUYING INTENT — someone looking to hire a company or purchase a service.
-`,
-            `BE GENEROUS: include keywords that show any purchase signal, even if they are not perfectly transactional. "fence company near me", "best fence company", "local fence installer", "affordable fence installation", "fence company with financing", "top rated fence contractor", "fence installation quote", "hire a fence company" are all good examples.
-`,
-            `EXCLUDE ONLY: keywords that contain cost/price/how much research, DIY/how-to instructions, reviews of products (not services), permit questions, maintenance tips, or pure informational content with zero purchase signal.
-`,
-            `ALSO EXCLUDE: any keyword that already contains a specific city, state, or geographic location name (e.g. "chicago", "dallas", "texas", "NYC") — we will append the correct location ourselves.
-`,
-            `If you can find ${baseKeywordsNeeded} buying-intent keywords, return exactly ${baseKeywordsNeeded}. If you can only find fewer, return as many as you can.
-`,
-            `Return ONLY a JSON array of keyword strings. No explanation. No markdown. Just the JSON array.
-`,
-            `Keywords to evaluate:
-${candidates.map((k, i) => `${i + 1}. ${k}`).join("\n")}`,
-          ].join("");
+          // ── Step 2a: LLM classifies ALL top-100 candidates as buying-intent or not ──
+          // Candidates are already sorted by search volume (highest first).
+          // The LLM returns the 1-based indices of candidates that pass the
+          // buying-intent filter. We then take the top baseKeywordsNeeded
+          // by volume from whatever passes — preserving volume ordering.
+          const candidates = dfsKeywords.slice(0, 100);
+          const classifyPrompt = [
+            `You are a search intent classifier for a local service business in the "${industry || seedList[0]}" industry.`,
+            `\n\nBelow is a numbered list of keywords sorted by search volume (highest first).`,
+            `For EACH keyword, decide: does this keyword indicate someone is actively looking to HIRE a company or BUY a service RIGHT NOW?`,
+            `\n\nINCLUDE if the keyword shows: looking to hire, find a contractor, get a quote, compare companies, find the best/top/local/trusted/affordable provider.`,
+            `EXCLUDE if the keyword is: a cost/price research query ("how much does X cost", "X price", "X cost"), DIY/how-to content, product reviews, permit or legal questions, maintenance tips, or purely informational with zero purchase signal.`,
+            `EXCLUDE if the keyword already contains a specific city, state, or geographic location name — location will be appended separately.`,
+            `\n\nReturn ONLY a JSON array of the 1-based index numbers of keywords that PASS the buying-intent filter, in the same order they appear in the list (preserving volume rank). Example: [1,3,5,7,12]. No explanation, no markdown, just the JSON array.`,
+            `\n\nKeywords to classify:\n${candidates.map((k, i) => `${i + 1}. ${k.keyword} (monthly searches: ${k.searchVolume})`).join("\n")}`,
+          ].join("\n");
 
-          const resp = await callAI("openai", openaiKey, "gpt-4o-mini", [
-            { role: "user", content: prompt },
+          const classifyResp = await callAI("openai", openaiKey, "gpt-4o-mini", [
+            { role: "user", content: classifyPrompt },
           ]);
-
-          // Parse the JSON array from the LLM response
-          const raw = resp.content.trim();
-          const jsonMatch = raw.match(/\[.*\]/s);
-          if (jsonMatch) {
-            const parsed: string[] = JSON.parse(jsonMatch[0]);
-            baseKeywords.push(
-              ...parsed
-                .filter((k) => typeof k === "string" && k.trim())
-                .map((k) => k.trim())
-                .slice(0, baseKeywordsNeeded)
-            );
-            console.log(`[ProspectAudit] LLM selected ${baseKeywords.length} transactional queries from ${candidates.length} candidates`);
+          const classifyRaw = classifyResp.content.trim();
+          const classifyMatch = classifyRaw.match(/\[.*?\]/s);
+          let passingIndices: number[] = [];
+          if (classifyMatch) {
+            try {
+              passingIndices = (JSON.parse(classifyMatch[0]) as any[])
+                .filter((n: any) => typeof n === "number");
+            } catch { /* fall through to volume sort */ }
           }
+
+          // Pick the top baseKeywordsNeeded from passing candidates (already volume-sorted)
+          const passingKeywords = passingIndices
+            .map((idx) => candidates[idx - 1])
+            .filter(Boolean)
+            .slice(0, baseKeywordsNeeded)
+            .map((k) => k.keyword);
+
+          console.log(`[ProspectAudit] LLM classified ${passingIndices.length} buying-intent queries from ${candidates.length} candidates; taking top ${passingKeywords.length} by volume`);
+
+          // ── Step 2b: Supplement with LLM-generated conversational AI queries ──
+          // DataForSEO reflects Google search patterns. AI assistants (ChatGPT,
+          // Gemini) receive more conversational queries that don't appear in
+          // Google volume data. We generate a small set to round out the list.
+          const conversationalNeeded = Math.max(0, baseKeywordsNeeded - passingKeywords.length);
+          let conversationalQueries: string[] = [];
+          if (conversationalNeeded > 0) {
+            const convPrompt = [
+              `A homeowner or business owner needs to find a "${industry || seedList[0]}" company.`,
+              `Generate exactly ${conversationalNeeded} conversational questions they would type into ChatGPT or Google Gemini to find the best local provider.`,
+              `These should sound like natural spoken questions (e.g. "Who is the best fence company near me?", "What fence contractor do you recommend?"), NOT Google keyword fragments.`,
+              `Do NOT include any city, state, or location name — location will be appended separately.`,
+              `Do NOT include cost/price questions or DIY questions.`,
+              `Return ONLY a JSON array of question strings. No explanation, no markdown.`,
+            ].join("\n");
+            try {
+              const convResp = await callAI("openai", openaiKey, "gpt-4o-mini", [
+                { role: "user", content: convPrompt },
+              ]);
+              const convRaw = convResp.content.trim();
+              const convMatch = convRaw.match(/\[.*?\]/s);
+              if (convMatch) {
+                conversationalQueries = (JSON.parse(convMatch[0]) as any[])
+                  .filter((k: any) => typeof k === "string" && k.trim())
+                  .map((k: string) => k.trim())
+                  .slice(0, conversationalNeeded);
+              }
+            } catch { /* skip conversational supplement on error */ }
+          }
+
+          // Merge: volume-sorted DataForSEO buying-intent first, then conversational
+          const merged = [
+            ...passingKeywords,
+            ...conversationalQueries.filter(
+              (q) => !passingKeywords.some((p) => p.toLowerCase() === q.toLowerCase())
+            ),
+          ].slice(0, baseKeywordsNeeded);
+
+          baseKeywords.push(...merged);
+          console.log(`[ProspectAudit] Final base keywords: ${baseKeywords.length} (${passingKeywords.length} from DataForSEO volume-sorted, ${conversationalQueries.length} conversational AI supplement)`);
         }
       } catch (llmErr: any) {
         console.warn(`[ProspectAudit] LLM intent filter failed, falling back to volume sort: ${llmErr.message}`);
