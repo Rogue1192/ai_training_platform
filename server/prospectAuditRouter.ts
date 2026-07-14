@@ -707,22 +707,46 @@ export const prospectAuditRouter = router({
 
   /**
    * Widget Step 3: Run the audit and return a share token.
-   * Public — no auth required. No quota gate (widget audits are lead-gen
-   * events, not counted against the agency's monthly quota).
+   * Public — no auth required.
+   * Quota-gated the same way as the internal runAudit: if the audit is scoped
+   * to an agency (agencyId set on the audit record) the run counts against
+   * that agency's monthly allowance and is blocked when the quota is exhausted.
    * Returns the share token so the widget can show results inline.
    */
   widgetRunAudit: publicProcedure
     .input(z.object({ auditId: z.number() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import('./db');
-      const { prospectAudits } = await import('../drizzle/schema');
-      const { eq } = await import('drizzle-orm');
+      const { prospectAudits, agencyAuditQuota, agencies } = await import('../drizzle/schema');
+      const { eq, and, sql } = await import('drizzle-orm');
       const { runProspectAudit } = await import('./prospectAuditEngine');
       const crypto = await import('crypto');
       const db = await getDb();
       if (!db) throw new Error('Database not available');
       const [audit] = await db.select().from(prospectAudits).where(eq(prospectAudits.id, input.auditId)).limit(1);
       if (!audit) throw new Error('Audit not found');
+      // ── Quota check (agency-scoped audits only) ─────────────────────────────
+      if (audit.agencyId) {
+        const [agency] = await db
+          .select({ id: agencies.id, createdAt: agencies.createdAt })
+          .from(agencies)
+          .where(eq(agencies.id, audit.agencyId))
+          .limit(1);
+        if (agency) {
+          const now = new Date();
+          const periodStart = getAnniversaryPeriodStart(agency.createdAt, now);
+          const [qRow] = await db.select().from(agencyAuditQuota)
+            .where(and(eq(agencyAuditQuota.agencyId, agency.id), eq(agencyAuditQuota.periodStart, periodStart)))
+            .limit(1);
+          const included = qRow?.includedQuota ?? 20;
+          const overageAudits = (qRow?.overageBlocksPurchased ?? 0) * 5;
+          const total = included + overageAudits;
+          const used = qRow?.auditsUsed ?? 0;
+          if (used >= total) {
+            throw new Error(`Audit quota exceeded (${used}/${total} used this period). Purchase more audits to continue.`);
+          }
+        }
+      }
       // Ensure share token exists before running so client can poll
       let token = audit.shareToken;
       if (!token) {
@@ -738,6 +762,30 @@ export const prospectAuditRouter = router({
         audit.agencyId,
         queries
       );
+      // ── Increment quota usage (agency-scoped audits only) ──────────────────
+      if (audit.agencyId) {
+        const [agency] = await db
+          .select({ id: agencies.id, createdAt: agencies.createdAt })
+          .from(agencies)
+          .where(eq(agencies.id, audit.agencyId))
+          .limit(1);
+        if (agency) {
+          const now = new Date();
+          const periodStart = getAnniversaryPeriodStart(agency.createdAt, now);
+          const periodMonth = getPeriodMonth(periodStart);
+          await db.insert(agencyAuditQuota).values({
+            agencyId: agency.id,
+            periodMonth,
+            periodStart,
+            auditsUsed: 1,
+            includedQuota: 20,
+            overageBlocksPurchased: 0,
+          }).onConflictDoUpdate({
+            target: [agencyAuditQuota.agencyId, agencyAuditQuota.periodStart],
+            set: { auditsUsed: sql`${agencyAuditQuota.auditsUsed} + 1`, updatedAt: new Date() },
+          });
+        }
+      }
       return { snapshots, scores, shareToken: token };
     }),
 
