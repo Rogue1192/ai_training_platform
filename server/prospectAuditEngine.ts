@@ -251,16 +251,15 @@ export async function generateProspectQueries(
     let dfsKeywords: { keyword: string; searchVolume: number }[] = [];
 
     if (seedList.length > 0) {
-      try {
-        dfsKeywords = await getKeywordSuggestionsForProspect(seedList, {
-          locationCode: 2840,
-          languageCode: "en",
-          limit: 200,
-        });
-        console.log(`[ProspectAudit] DataForSEO returned ${dfsKeywords.length} keyword candidates`);
-      } catch (dfsErr: any) {
-        console.warn(`[ProspectAudit] DataForSEO keyword suggestions failed, using fallback: ${dfsErr.message}`);
-      }
+      // Attempt DataForSEO call — dfsFetch already retries 3x with backoff.
+      // If it still fails, surface the error to the user rather than silently
+      // returning instant template-generated queries that look real but aren't.
+      dfsKeywords = await getKeywordSuggestionsForProspect(seedList, {
+        locationCode: 2840,
+        languageCode: "en",
+        limit: 200,
+      });
+      console.log(`[ProspectAudit] DataForSEO returned ${dfsKeywords.length} keyword candidates`);
     }
 
     // ── Step 2: LLM picks the best transactional queries ────────────────────

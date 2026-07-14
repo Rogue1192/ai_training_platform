@@ -575,6 +575,46 @@ export const prospectAuditRouter = router({
     }),
 
   /**
+   * Admin diagnostic: test DataForSEO credentials and return the exact error
+   * if the connection fails, so we know whether it's a missing key, wrong
+   * credentials, or a network/API error.
+   */
+  testDataForSEOConnection: protectedProcedure
+    .query(async () => {
+      try {
+        const { getServiceKey } = await import('./db');
+        const { decrypt } = await import('./encryption');
+        const record = await getServiceKey('dataforseo');
+        if (!record?.encryptedValue) {
+          // Check env vars as fallback
+          const login = process.env.DATAFORSEO_LOGIN;
+          const password = process.env.DATAFORSEO_PASSWORD;
+          if (!login || !password) {
+            return { ok: false, source: 'none', error: 'DataForSEO credentials not configured. Add them in Settings → Service Keys or set DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD env vars.' };
+          }
+          return { ok: true, source: 'env', login: login.substring(0, 4) + '****' };
+        }
+        const creds = JSON.parse(decrypt(record.encryptedValue)) as { login?: string; password?: string };
+        if (!creds.login || !creds.password) {
+          return { ok: false, source: 'db', error: 'DataForSEO credentials stored in DB are incomplete (missing login or password).' };
+        }
+        // Test the actual API connection
+        const axios = (await import('axios')).default;
+        const auth = 'Basic ' + Buffer.from(`${creds.login}:${creds.password}`).toString('base64');
+        const resp = await axios.get('https://api.dataforseo.com/v3/appendix/user_data', {
+          headers: { Authorization: auth },
+          timeout: 15_000,
+        });
+        if (resp.data?.status_code === 20000) {
+          return { ok: true, source: 'db', login: creds.login.substring(0, 4) + '****', balance: resp.data?.tasks?.[0]?.result?.[0]?.money?.balance ?? null };
+        }
+        return { ok: false, source: 'db', error: `API returned status ${resp.data?.status_code}: ${resp.data?.status_message}` };
+      } catch (err: any) {
+        return { ok: false, source: 'unknown', error: err.message };
+      }
+    }),
+
+  /**
    * Fulfil an overage purchase after Stripe redirects back (success-page poll).
    * Verifies the session with Stripe before crediting.
    */
@@ -597,4 +637,137 @@ export const prospectAuditRouter = router({
       await fulfillAuditOveragePurchase(agency.id, session.auditsGranted, periodMonth, periodStart);
       return { auditsGranted: session.auditsGranted };
     }),
+
+  // ─── Widget (public, no auth) ─────────────────────────────────────────────
+  // Public counterparts of generateQueries / createAudit / runAudit used by
+  // the embeddable /audit-widget page. No auth required; no quota gate.
+
+  /**
+   * Widget Step 1: Generate queries from business info.
+   * Public — no auth required (widget runs on third-party landing pages).
+   */
+  widgetGenerateQueries: publicProcedure
+    .input(
+      z.object({
+        businessName: z.string().min(1),
+        location: z.string().min(1),
+        locations: z.array(z.string().min(1)).optional(),
+        industry: z.string().optional(),
+        seedKeywords: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { generateProspectQueries } = await import('./prospectAuditEngine');
+      const queries = await generateProspectQueries(input);
+      return { queries };
+    }),
+
+  /**
+   * Widget Step 2: Create audit record scoped to an agency.
+   * Public — no auth required.
+   */
+  widgetCreateAudit: publicProcedure
+    .input(
+      z.object({
+        agencyId: z.number().int().positive().optional(),
+        businessName: z.string().min(1),
+        website: z.string().optional(),
+        location: z.string().min(1),
+        locations: z.array(z.string().min(1)).optional(),
+        industry: z.string().optional(),
+        seedKeywords: z.string().optional(),
+        avgJobValue: z.number().int().positive().optional(),
+        queries: z.array(z.object({ searchQuery: z.string(), location: z.string() })),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { getDb } = await import('./db');
+      const { prospectAudits } = await import('../drizzle/schema');
+      const { serializeLocations } = await import('../shared/location');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+      const allLocations = [
+        input.location,
+        ...(input.locations ?? []).filter((l) => l.trim() && l.trim() !== input.location.trim()),
+      ].filter(Boolean);
+      const storedLocation = serializeLocations(allLocations) || input.location;
+      const [audit] = await db.insert(prospectAudits).values({
+        agencyId: input.agencyId ?? null,
+        businessName: input.businessName,
+        website: input.website ?? null,
+        location: storedLocation,
+        industry: input.industry ?? null,
+        seedKeywords: input.seedKeywords ?? null,
+        avgJobValue: input.avgJobValue ?? null,
+        queries: input.queries as any,
+        status: 'pending',
+      }).returning({ id: prospectAudits.id });
+      return { auditId: audit.id };
+    }),
+
+  /**
+   * Widget Step 3: Run the audit and return a share token.
+   * Public — no auth required. No quota gate (widget audits are lead-gen
+   * events, not counted against the agency's monthly quota).
+   * Returns the share token so the widget can show results inline.
+   */
+  widgetRunAudit: publicProcedure
+    .input(z.object({ auditId: z.number() }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import('./db');
+      const { prospectAudits } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const { runProspectAudit } = await import('./prospectAuditEngine');
+      const crypto = await import('crypto');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+      const [audit] = await db.select().from(prospectAudits).where(eq(prospectAudits.id, input.auditId)).limit(1);
+      if (!audit) throw new Error('Audit not found');
+      // Ensure share token exists before running so client can poll
+      let token = audit.shareToken;
+      if (!token) {
+        token = crypto.randomBytes(32).toString('hex');
+        await db.update(prospectAudits).set({ shareToken: token }).where(eq(prospectAudits.id, input.auditId));
+      }
+      const queries = (audit.queries as any[]) || [];
+      const { snapshots, scores } = await runProspectAudit(
+        audit.id,
+        audit.businessName,
+        audit.website,
+        null,
+        audit.agencyId,
+        queries
+      );
+      return { snapshots, scores, shareToken: token };
+    }),
+
+  /**
+   * Widget: Get agency branding (calendar embed code) by agency ID.
+   * Public — used by the widget to show the correct CTA after lead capture.
+   */
+  widgetGetAgencyMeta: publicProcedure
+    .input(z.object({ agencyId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import('./db');
+      const { agencies } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) return null;
+      const [agency] = await db
+        .select({
+          id: agencies.id,
+          name: agencies.name,
+          brandName: agencies.brandName,
+          calendarEmbedCode: agencies.calendarEmbedCode,
+        })
+        .from(agencies)
+        .where(eq(agencies.id, input.agencyId))
+        .limit(1);
+      if (!agency) return null;
+      return {
+        agencyName: agency.brandName || agency.name,
+        calendarEmbedCode: agency.calendarEmbedCode ?? null,
+      };
+    }),
 });
+

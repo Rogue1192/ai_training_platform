@@ -31,6 +31,7 @@ import ProspectAudit from "./pages/ProspectAudit";
 import AuditHistory from "./pages/AuditHistory";
 import PublicAuditReport from "./pages/PublicAuditReport";
 import AuditOverageSuccess from "./pages/AuditOverageSuccess";
+import AuditWidget from "./pages/AuditWidget";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Redirect } from "wouter";
 import { useEffect, useRef, useMemo } from "react";
@@ -237,6 +238,9 @@ function Router() {
 
       {/* Public shareable audit report — no auth required */}
       <Route path="/audit/:token" component={PublicAuditReport} />
+
+      {/* Embeddable audit widget — no auth required, loaded in iframe by embed script */}
+      <Route path="/audit-widget" component={AuditWidget} />
 
       {/* ── Agency portal routes ── */}
       <Route path="/agency">

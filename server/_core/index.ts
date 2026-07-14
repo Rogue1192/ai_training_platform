@@ -132,7 +132,7 @@ async function startServer() {
     closeBtn.innerHTML = '&times;';
     closeBtn.onclick = function() { document.body.removeChild(overlay); };
 
-    var src = ORIGIN + '/prospect-audit';
+    var src = ORIGIN + '/audit-widget';
     if (agencyId) src += '?agency=' + encodeURIComponent(agencyId);
 
     var iframe = document.createElement('iframe');

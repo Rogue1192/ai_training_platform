@@ -28,22 +28,41 @@ async function getAuthHeader(): Promise<string> {
   return "Basic " + Buffer.from(`${login}:${password}`).toString("base64");
 }
 
-async function dfsFetch<T = any>(endpoint: string, body: any[]): Promise<T> {
-  const response = await axios.post(`${DATAFORSEO_BASE}${endpoint}`, body, {
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: await getAuthHeader(),
-    },
-    timeout: 120_000, // 2 minutes — some endpoints are slow
-  });
+async function dfsFetch<T = any>(endpoint: string, body: any[], retries = 3): Promise<T> {
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const auth = await getAuthHeader();
+      const response = await axios.post(`${DATAFORSEO_BASE}${endpoint}`, body, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: auth,
+        },
+        timeout: 120_000, // 2 minutes — some endpoints are slow
+      });
 
-  if (response.data?.status_code !== 20000) {
-    throw new Error(
-      `DataForSEO API error: ${response.data?.status_message || "Unknown error"} (code: ${response.data?.status_code})`
-    );
+      if (response.data?.status_code !== 20000) {
+        throw new Error(
+          `DataForSEO API error: ${response.data?.status_message || "Unknown error"} (code: ${response.data?.status_code})`
+        );
+      }
+
+      return response.data;
+    } catch (err: any) {
+      lastError = err;
+      const isCredentialError = err.message?.includes("credentials not configured") ||
+        err.message?.includes("401") ||
+        err.response?.status === 401;
+      // Don't retry credential errors — they won't fix themselves
+      if (isCredentialError) throw err;
+      if (attempt < retries) {
+        const delay = attempt * 2000; // 2s, 4s backoff
+        console.warn(`[DataForSEO] Attempt ${attempt}/${retries} failed: ${err.message}. Retrying in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
   }
-
-  return response.data;
+  throw lastError ?? new Error("DataForSEO request failed after retries");
 }
 
 // ============= Types =============
