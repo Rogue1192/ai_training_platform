@@ -420,6 +420,94 @@ export const trainingQueryRouter = router({
             : 0,
       };
     }),
+
+  /**
+   * Trigger a test training day for a campaign, bypassing all gate checks
+   * (llmTxtVerified, schemaVerified, publishedUrl).
+   *
+   * This is an admin-only mutation for testing the training engine before
+   * a campaign has completed the full content pipeline.
+   *
+   * It creates a new dayRun record (type: "sprint", status: "pending") and
+   * immediately runs it in the background.
+   */
+  triggerTestTrainingDay: protectedProcedure
+    .input(z.object({ campaignId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      // Admin-only guard
+      if ((ctx.user as any).role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+
+      const { runTrainingDay } = await import('./trainingWorkerV3');
+
+      // Verify campaign exists
+      const [campaign] = await db
+        .select()
+        .from(campaigns)
+        .where(eq(campaigns.id, input.campaignId))
+        .limit(1);
+      if (!campaign) throw new Error('Campaign not found');
+
+      // Verify there are active queries with variations
+      const queries = await db
+        .select()
+        .from(trainingQueries)
+        .where(
+          and(
+            eq(trainingQueries.campaignId, input.campaignId),
+            eq(trainingQueries.isActive, true)
+          )
+        );
+
+      if (queries.length === 0) {
+        throw new Error(
+          'No active training queries found. Save and lock queries first.'
+        );
+      }
+
+      // Determine next run day number
+      const existingRuns = await db
+        .select()
+        .from(trainingDayRuns)
+        .where(eq(trainingDayRuns.campaignId, input.campaignId))
+        .orderBy(desc(trainingDayRuns.runDay))
+        .limit(1);
+
+      const nextRunDay =
+        existingRuns.length > 0 ? existingRuns[0].runDay + 1 : 1;
+      const today = new Date().toISOString().split('T')[0];
+
+      // Create a new day run record
+      const [newRun] = await db
+        .insert(trainingDayRuns)
+        .values({
+          campaignId: input.campaignId,
+          runType: 'sprint',
+          runDay: nextRunDay,
+          scheduledDate: today,
+          status: 'pending',
+          webSearchStatus: 'pending',
+        })
+        .$returningId();
+
+      const dayRunId = (newRun as any).id;
+
+      // Fire and forget — run in background so the HTTP response returns immediately
+      runTrainingDay(input.campaignId, dayRunId).catch((err: any) => {
+        console.error(
+          `[TrainingTest] Background training day failed for campaign ${
+            input.campaignId
+          }, dayRun ${dayRunId}:`,
+          err.message
+        );
+      });
+
+      return { success: true, dayRunId, runDay: nextRunDay };
+    }),
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

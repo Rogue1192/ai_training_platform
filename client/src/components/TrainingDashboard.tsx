@@ -6,11 +6,13 @@
  *   - Per-day run status with session counts and web search results
  *   - Per-phrase graduation status per target AI (OpenAI / Google)
  *   - Cost breakdown including MiniMax trainer costs
+ *   - Admin-only "Run Now" button to trigger a test training day
  */
 
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   CheckCircle2,
@@ -24,10 +26,13 @@ import {
   TrendingUp,
   AlertTriangle,
   RefreshCw,
+  Play,
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface Props {
   campaignId: number;
+  isAdmin?: boolean;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -44,11 +49,21 @@ const STATUS_BG: Record<string, string> = {
   failed: "bg-red-500/10 border-red-500/30",
 };
 
-export function TrainingDashboard({ campaignId }: Props) {
+export function TrainingDashboard({ campaignId, isAdmin = false }: Props) {
   const { data: dashboard, isLoading, refetch } = trpc.trainingQuery.getDashboard.useQuery(
     { campaignId },
     { refetchInterval: 30_000 } // Poll every 30s while running
   );
+
+  const triggerTestMutation = trpc.trainingQuery.triggerTestTrainingDay.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Training day ${data.runDay} started (Day Run ID: ${data.dayRunId})`);
+      refetch();
+    },
+    onError: (err) => {
+      toast.error(`Failed to start training: ${err.message}`);
+    },
+  });
 
   if (isLoading) {
     return (
@@ -64,6 +79,22 @@ export function TrainingDashboard({ campaignId }: Props) {
         <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
           <Brain className="w-10 h-10 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">No training data yet. Lock your queries to start the sprint.</p>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2 gap-2 text-amber-400 border-amber-400/30 hover:bg-amber-400/10"
+              onClick={() => triggerTestMutation.mutate({ campaignId })}
+              disabled={triggerTestMutation.isPending}
+            >
+              {triggerTestMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
+              Run Now (Admin Test)
+            </Button>
+          )}
         </CardContent>
       </Card>
     );
@@ -73,8 +104,37 @@ export function TrainingDashboard({ campaignId }: Props) {
   const sprintRuns = dayRuns.filter((r) => r.runType === "sprint");
   const maintenanceRuns = dayRuns.filter((r) => r.runType === "maintenance");
 
+  // Check if any run is currently in progress
+  const isRunning = dayRuns.some((r) => r.status === "running");
+
   return (
     <div className="space-y-4">
+      {/* Admin "Run Now" button */}
+      {isAdmin && (
+        <div className="flex items-center justify-between p-3 rounded-lg border border-amber-400/20 bg-amber-400/5">
+          <div>
+            <p className="text-sm font-medium text-amber-400">Admin Test Mode</p>
+            <p className="text-xs text-muted-foreground">
+              Bypass gate checks and immediately run a training day. Queries must be saved first.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 text-amber-400 border-amber-400/30 hover:bg-amber-400/10 flex-shrink-0 ml-4"
+            onClick={() => triggerTestMutation.mutate({ campaignId })}
+            disabled={triggerTestMutation.isPending || isRunning}
+          >
+            {triggerTestMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
+            {isRunning ? "Running..." : "Run Now"}
+          </Button>
+        </div>
+      )}
+
       {/* Summary cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="bg-card border-border">
@@ -190,6 +250,45 @@ export function TrainingDashboard({ campaignId }: Props) {
                 );
               })}
             </div>
+
+            {/* Show extra day runs beyond 4 (test runs) */}
+            {sprintRuns.filter((r) => r.runDay > 4).length > 0 && (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-muted-foreground font-medium">Additional Test Runs</p>
+                {sprintRuns.filter((r) => r.runDay > 4).map((run) => (
+                  <div
+                    key={run.id}
+                    className={`rounded-md border p-3 flex items-center justify-between ${STATUS_BG[run.status] || "bg-muted/30"}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {run.status === "running" && <Loader2 className="w-4 h-4 animate-spin text-blue-400" />}
+                      {run.status === "completed" && <CheckCircle2 className="w-4 h-4 text-green-400" />}
+                      {run.status === "pending" && <Clock className="w-4 h-4 text-muted-foreground" />}
+                      {run.status === "failed" && <AlertTriangle className="w-4 h-4 text-red-400" />}
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          Test Run {run.runDay}
+                          {run.scheduledDate && (
+                            <span className="text-xs text-muted-foreground ml-2">
+                              {new Date(run.scheduledDate).toLocaleDateString()}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {run.sessionsCompleted}/{run.sessionsTotal} sessions · {run.phrasesGraduated} graduated
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={`text-xs capitalize ${STATUS_COLORS[run.status]}`}
+                    >
+                      {run.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

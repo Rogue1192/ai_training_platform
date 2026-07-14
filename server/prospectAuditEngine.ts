@@ -195,19 +195,32 @@ export interface ProspectAuditScores {
 // ─── Query Generation ─────────────────────────────────────────────────────────
 
 /**
+ * The 10 prompt family templates from ChatGPT research, ranked by purchase intent.
+ * These are the exact conversational queries real users type into AI assistants.
+ */
+const PROMPT_FAMILY_TEMPLATES = [
+  "Who are the best {service} providers near me?",
+  "Find me a reputable local {service} contractor",
+  "Recommend a good {service} company for my project",
+  "Compare the top local {service} companies",
+  "How much should {service} cost and who should I hire?",
+  "Find a {service} provider meeting these requirements",
+  "Who can fix this {service} issue today?",
+  "Give me {service} companies to contact for quotes",
+  "Is this particular {service} company reputable?",
+  "Which {service} quote or contractor should I choose?"
+];
+
+/**
  * Generate exactly PROSPECT_QUERY_COUNT (15) buying-intent queries for a prospect
- * using DataForSEO keyword suggestions as the source of truth.
+ * using the 10 prompt family templates.
  *
  * Flow:
- *   1. Feed seed keywords into DataForSEO keyword_suggestions
- *   2. Strip all informational/navigational results — keep only commercial + transactional
- *   3. Sort remaining by search volume descending
- *   4. Take the top unique base keywords
- *   5. Distribute locations across those keywords until we hit exactly 15 pairs
- *      e.g. 3 locations + 5 base keywords = 15 (each keyword gets each location)
- *
- * Fallback: if DataForSEO returns no results (no API key, no data), fall back to
- * simple seed+modifier combinations so the audit can still run.
+ *   1. Determine the primary service term (from seedKeywords or industry)
+ *   2. Generate base queries using the 10 templates
+ *   3. If we need more than 10 base queries (e.g. 1 location needs 15 queries),
+ *      we cycle through the templates again with a slight variation or just repeat.
+ *   4. Distribute locations across those base queries until we hit exactly 15 pairs.
  */
 export async function generateProspectQueries(
   input: ProspectQueryInput
@@ -220,217 +233,48 @@ export async function generateProspectQueries(
     ...(input.locations ?? []).filter((l) => l.trim() && l.trim() !== location.trim()),
   ].filter(Boolean);
 
-  // Build seed list — always include industry and businessName so DataForSEO
-  // has something to work with even if seedKeywords is blank.
-  const seedList = [
-    ...(seedKeywords ? seedKeywords.split(",").map((s) => s.trim()).filter(Boolean) : []),
-    ...(industry ? [industry] : []),
-    // businessName as last-resort seed (e.g. "Cullman Fence Company" → "fence company")
-    ...(input.businessName ? [input.businessName] : []),
-  ]
-    .filter(Boolean)
-    .filter((v, i, arr) => arr.indexOf(v) === i) // deduplicate
-    .slice(0, 8);
+  // Determine the primary service term
+  let primaryService = "service";
+  if (seedKeywords) {
+    const seeds = seedKeywords.split(",").map(s => s.trim()).filter(Boolean);
+    if (seeds.length > 0) {
+      primaryService = seeds[0];
+    }
+  } else if (industry) {
+    primaryService = industry;
+  }
 
   const totalCount = PROSPECT_QUERY_COUNT; // 15
   const numLocations = allLocations.length;
 
   // How many unique base keywords do we need?
-  // We want: baseKeywords * numLocations === 15
-  // e.g. 1 location → 15 base keywords
-  //      3 locations → 5 base keywords (5 × 3 = 15)
-  //      5 locations → 3 base keywords (3 × 5 = 15)
-  // If it doesn't divide evenly, we round up and trim the final list to exactly 15.
   const baseKeywordsNeeded = Math.ceil(totalCount / numLocations);
 
   try {
-    // ── Step 1: DataForSEO keyword suggestions ────────────────────────────────────
-    // Pull a large pool of keyword suggestions from DataForSEO. We'll let the
-    // LLM pick the best transactional ones in Step 2 — DataForSEO gives us
-    // real search volume data; the LLM gives us accurate intent classification.
-    let dfsKeywords: { keyword: string; searchVolume: number }[] = [];
-
-    if (seedList.length > 0) {
-      // Attempt DataForSEO call — dfsFetch already retries 3x with backoff.
-      // If it still fails, surface the error to the user rather than silently
-      // returning instant template-generated queries that look real but aren't.
-      dfsKeywords = await getKeywordSuggestionsForProspect(seedList, {
-        locationCode: 2840,
-        languageCode: "en",
-        limit: 200,
-      });
-      console.log(`[ProspectAudit] DataForSEO returned ${dfsKeywords.length} keyword candidates`);
-    }
-
-    // ── Step 2: LLM picks the best transactional queries ────────────────────
-    // Feed the DataForSEO candidates to an LLM and ask it to select only the
-    // queries where someone is actively looking to hire / buy right now.
     const baseKeywords: string[] = [];
-
-    if (dfsKeywords.length > 0) {
-      try {
-        const { getApiKeyByProvider } = await import("./db");
-        const { decrypt } = await import("./encryption");
-        const keyRecord = await getApiKeyByProvider("openai");
-        let openaiKey = process.env.OPENAI_API_KEY || "";
-        if (keyRecord?.encryptedKey) {
-          try { openaiKey = decrypt(keyRecord.encryptedKey); } catch { /* use env fallback */ }
-        }
-
-        if (openaiKey) {
-          // ── Step 2a: LLM classifies ALL top-100 candidates as buying-intent or not ──
-          // Candidates are already sorted by search volume (highest first).
-          // The LLM returns the 1-based indices of candidates that pass the
-          // buying-intent filter. We then take the top baseKeywordsNeeded
-          // by volume from whatever passes — preserving volume ordering.
-          const candidates = dfsKeywords.slice(0, 100);
-          const classifyPrompt = [
-            `You are a search intent classifier for a local service business in the "${industry || seedList[0]}" industry.`,
-            `\n\nBelow is a numbered list of keywords sorted by search volume (highest first).`,
-            `For EACH keyword, decide: does this keyword indicate someone is actively looking to HIRE a company or BUY a service RIGHT NOW?`,
-            `\n\nINCLUDE if the keyword shows: looking to hire, find a contractor, get a quote, compare companies, find the best/top/local/trusted/affordable provider.`,
-            `EXCLUDE if the keyword is: a cost/price research query ("how much does X cost", "X price", "X cost"), DIY/how-to content, product reviews, permit or legal questions, maintenance tips, or purely informational with zero purchase signal.`,
-            `EXCLUDE if the keyword already contains a specific city, state, or geographic location name — location will be appended separately.`,
-            `\n\nReturn ONLY a JSON array of the 1-based index numbers of keywords that PASS the buying-intent filter, in the same order they appear in the list (preserving volume rank). Example: [1,3,5,7,12]. No explanation, no markdown, just the JSON array.`,
-            `\n\nKeywords to classify:\n${candidates.map((k, i) => `${i + 1}. ${k.keyword} (monthly searches: ${k.searchVolume})`).join("\n")}`,
-          ].join("\n");
-
-          const classifyResp = await callAI("openai", openaiKey, "gpt-4o-mini", [
-            { role: "user", content: classifyPrompt },
-          ]);
-          const classifyRaw = classifyResp.content.trim();
-          const classifyMatch = classifyRaw.match(/\[.*?\]/s);
-          let passingIndices: number[] = [];
-          if (classifyMatch) {
-            try {
-              passingIndices = (JSON.parse(classifyMatch[0]) as any[])
-                .filter((n: any) => typeof n === "number");
-            } catch { /* fall through to volume sort */ }
+    
+    // Fill baseKeywords using the templates
+    for (let i = 0; i < baseKeywordsNeeded; i++) {
+      const template = PROMPT_FAMILY_TEMPLATES[i % PROMPT_FAMILY_TEMPLATES.length];
+      // If we loop past the 10 templates, we could add variations, but for now we just reuse them
+      // The location will make the final query unique
+      let query = template.replace(/{service}/g, primaryService);
+      
+      // If we are reusing templates, add a slight variation to make the base query unique
+      if (i >= PROMPT_FAMILY_TEMPLATES.length) {
+          if (i % 2 === 0) {
+              query = query.replace("best", "top").replace("reputable", "trusted").replace("good", "reliable");
+          } else {
+              query = query.replace("near me", "in my area").replace("local", "nearby");
           }
-
-          // Pick the top baseKeywordsNeeded from passing candidates (already volume-sorted)
-          const passingKeywords = passingIndices
-            .map((idx) => candidates[idx - 1])
-            .filter(Boolean)
-            .slice(0, baseKeywordsNeeded)
-            .map((k) => k.keyword);
-
-          console.log(`[ProspectAudit] LLM classified ${passingIndices.length} buying-intent queries from ${candidates.length} candidates; taking top ${passingKeywords.length} by volume`);
-
-          // ── Step 2b: Supplement with LLM-generated conversational AI queries ──
-          // DataForSEO reflects Google search patterns. AI assistants (ChatGPT,
-          // Gemini) receive more conversational queries that don't appear in
-          // Google volume data. We generate a small set to round out the list.
-          const conversationalNeeded = Math.max(0, baseKeywordsNeeded - passingKeywords.length);
-          let conversationalQueries: string[] = [];
-          if (conversationalNeeded > 0) {
-            const convPrompt = [
-              `A homeowner or business owner needs to find a "${industry || seedList[0]}" company.`,
-              `Generate exactly ${conversationalNeeded} conversational questions they would type into ChatGPT or Google Gemini to find the best local provider.`,
-              `These should sound like natural spoken questions (e.g. "Who is the best fence company near me?", "What fence contractor do you recommend?"), NOT Google keyword fragments.`,
-              `Do NOT include any city, state, or location name — location will be appended separately.`,
-              `Do NOT include cost/price questions or DIY questions.`,
-              `Return ONLY a JSON array of question strings. No explanation, no markdown.`,
-            ].join("\n");
-            try {
-              const convResp = await callAI("openai", openaiKey, "gpt-4o-mini", [
-                { role: "user", content: convPrompt },
-              ]);
-              const convRaw = convResp.content.trim();
-              const convMatch = convRaw.match(/\[.*?\]/s);
-              if (convMatch) {
-                conversationalQueries = (JSON.parse(convMatch[0]) as any[])
-                  .filter((k: any) => typeof k === "string" && k.trim())
-                  .map((k: string) => k.trim())
-                  .slice(0, conversationalNeeded);
-              }
-            } catch { /* skip conversational supplement on error */ }
-          }
-
-          // Merge: volume-sorted DataForSEO buying-intent first, then conversational
-          const merged = [
-            ...passingKeywords,
-            ...conversationalQueries.filter(
-              (q) => !passingKeywords.some((p) => p.toLowerCase() === q.toLowerCase())
-            ),
-          ].slice(0, baseKeywordsNeeded);
-
-          baseKeywords.push(...merged);
-          console.log(`[ProspectAudit] Final base keywords: ${baseKeywords.length} (${passingKeywords.length} from DataForSEO volume-sorted, ${conversationalQueries.length} conversational AI supplement)`);
-        }
-      } catch (llmErr: any) {
-        console.warn(`[ProspectAudit] LLM intent filter failed, falling back to volume sort: ${llmErr.message}`);
       }
-
-      // If LLM returned too few, fill remaining slots with modifier-template
-      // variants of the top DataForSEO keyword — NOT raw DataForSEO results
-      // (which may include cost/research queries).
-      if (baseKeywords.length < baseKeywordsNeeded) {
-        const topSeed = dfsKeywords[0]?.keyword || seedList[0] || industry || "services";
-        const FILL_TEMPLATES = [
-          `best ${topSeed}`,
-          `top-rated ${topSeed}`,
-          `affordable ${topSeed}`,
-          `${topSeed} near me`,
-          `trusted ${topSeed}`,
-          `licensed ${topSeed}`,
-          `insured ${topSeed}`,
-          `certified ${topSeed}`,
-          `experienced ${topSeed}`,
-          `highly rated ${topSeed}`,
-          `reputable ${topSeed}`,
-          `recommended ${topSeed}`,
-          `reliable ${topSeed}`,
-          `local ${topSeed}`,
-          `${topSeed} that offers financing`,
-        ];
-        const existing = new Set(baseKeywords.map((k) => k.toLowerCase()));
-        for (const t of FILL_TEMPLATES) {
-          if (baseKeywords.length >= baseKeywordsNeeded) break;
-          if (!existing.has(t.toLowerCase())) {
-            baseKeywords.push(t);
-            existing.add(t.toLowerCase());
-          }
-        }
-        console.log(`[ProspectAudit] Filled ${baseKeywords.length - (baseKeywords.length - FILL_TEMPLATES.length)} slots with modifier templates (LLM returned fewer than needed)`);
-      }
+      
+      baseKeywords.push(query);
     }
 
-    // ── Step 3: Fallback if DataForSEO returned nothing at all ──────────────
-    if (baseKeywords.length === 0) {
-      const service = seedList[0] || industry || "services";
-      const TRANSACTIONAL_TEMPLATES: [string, string][] = [
-        ["best",           "best {s}"],
-        ["top-rated",      "top-rated {s}"],
-        ["highly rated",   "highly rated {s}"],
-        ["five-star",      "five-star {s}"],
-        ["affordable",     "affordable {s}"],
-        ["budget-friendly","budget-friendly {s}"],
-        ["low-cost",       "low-cost {s}"],
-        ["local",          "local {s}"],
-        ["near me",        "{s} near me"],
-        ["trusted",        "trusted {s}"],
-        ["reputable",      "reputable {s}"],
-        ["recommended",    "recommended {s}"],
-        ["reliable",       "reliable {s}"],
-        ["licensed",       "licensed {s}"],
-        ["insured",        "insured {s}"],
-        ["certified",      "certified {s}"],
-        ["experienced",    "experienced {s}"],
-        ["financing",      "{s} that offers financing"],
-        ["payment plans",  "{s} with payment plans"],
-        ["free estimates", "{s} that offers free estimates"],
-      ];
-      baseKeywords.push(
-        ...TRANSACTIONAL_TEMPLATES
-          .map(([, tmpl]) => tmpl.replace("{s}", service))
-          .slice(0, baseKeywordsNeeded)
-      );
-    }
+    console.log(`[ProspectAudit] Generated ${baseKeywords.length} base queries using prompt family templates for service: "${primaryService}"`);
 
-    // ── Step 4: Distribute locations across base keywords → exactly 15 pairs ─
-    // Pattern: for each base keyword, pair it with each location in round-robin
-    // until we hit exactly 15.
+    // ── Distribute locations across base keywords → exactly 15 pairs ─
     const normalized: ProspectQueryResult[] = [];
     let ki = 0; // base keyword index
     let li = 0; // location index

@@ -64,6 +64,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { TrainingQuerySetup } from "@/components/TrainingQuerySetup";
 import { TrainingDashboard } from "@/components/TrainingDashboard";
 import { useRoute, useLocation } from "wouter";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 
 // Pipeline step configuration
@@ -104,6 +105,9 @@ export default function CampaignDetail() {
   const [runningStep, setRunningStep] = useState<string | null>(null);
   const [showModeDialog, setShowModeDialog] = useState(false);
   const [selectedMode, setSelectedMode] = useState<string>("");
+
+  const { user } = useAuth({ redirectOnUnauthenticated: false });
+  const isAdmin = (user as any)?.role === 'admin';
 
   const { data: campaign, isLoading, refetch: refetchCampaign } = trpc.campaign.get.useQuery(
     { id: campaignId },
@@ -865,7 +869,7 @@ export default function CampaignDetail() {
               <TrainingQuerySetup campaignId={campaignId} />
             </TabsContent>
             <TabsContent value="v3-dashboard">
-              <TrainingDashboard campaignId={campaignId} />
+              <TrainingDashboard campaignId={campaignId} isAdmin={isAdmin} />
             </TabsContent>
             <TabsContent value="v3-legacy" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
