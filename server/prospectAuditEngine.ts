@@ -195,32 +195,13 @@ export interface ProspectAuditScores {
 // ─── Query Generation ─────────────────────────────────────────────────────────
 
 /**
- * The 10 prompt family templates from ChatGPT research, ranked by purchase intent.
- * These are the exact conversational queries real users type into AI assistants.
- */
-const PROMPT_FAMILY_TEMPLATES = [
-  "Who are the best {service} providers near me?",
-  "Find me a reputable local {service} contractor",
-  "Recommend a good {service} company for my project",
-  "Compare the top local {service} companies",
-  "How much should {service} cost and who should I hire?",
-  "Find a {service} provider meeting these requirements",
-  "Who can fix this {service} issue today?",
-  "Give me {service} companies to contact for quotes",
-  "Is this particular {service} company reputable?",
-  "Which {service} quote or contractor should I choose?"
-];
-
-/**
  * Generate exactly PROSPECT_QUERY_COUNT (15) buying-intent queries for a prospect
- * using the 10 prompt family templates.
+ * using GPT-4o-mini to write genuinely natural, human-sounding questions that real
+ * people actually type into ChatGPT or Gemini when looking for a local service.
  *
- * Flow:
- *   1. Determine the primary service term (from seedKeywords or industry)
- *   2. Generate base queries using the 10 templates
- *   3. If we need more than 10 base queries (e.g. 1 location needs 15 queries),
- *      we cycle through the templates again with a slight variation or just repeat.
- *   4. Distribute locations across those base queries until we hit exactly 15 pairs.
+ * The LLM receives only the service type (e.g. "fence installation") and is told
+ * to write questions the way a homeowner would actually phrase them — never
+ * keyword-stuffed, never robotic.
  */
 export async function generateProspectQueries(
   input: ProspectQueryInput
@@ -233,67 +214,108 @@ export async function generateProspectQueries(
     ...(input.locations ?? []).filter((l) => l.trim() && l.trim() !== location.trim()),
   ].filter(Boolean);
 
-  // Determine the primary service term
-  let primaryService = "service";
+  // Determine the primary service type — use the seed keyword if available,
+  // otherwise fall back to industry. We want the actual service (e.g. "fence
+  // installation", "roof repair"), NOT a company name.
+  let serviceType = "home services";
   if (seedKeywords) {
     const seeds = seedKeywords.split(",").map(s => s.trim()).filter(Boolean);
-    if (seeds.length > 0) {
-      primaryService = seeds[0];
-    }
+    if (seeds.length > 0) serviceType = seeds[0];
   } else if (industry) {
-    primaryService = industry;
+    serviceType = industry;
   }
 
   const totalCount = PROSPECT_QUERY_COUNT; // 15
   const numLocations = allLocations.length;
+  const baseQueriesNeeded = Math.ceil(totalCount / numLocations);
 
-  // How many unique base keywords do we need?
-  const baseKeywordsNeeded = Math.ceil(totalCount / numLocations);
+  // ── Ask GPT-4o-mini to write the queries ───────────────────────────────────────
+  let baseKeywords: string[] = [];
 
   try {
-    const baseKeywords: string[] = [];
-    
-    // Fill baseKeywords using the templates
-    for (let i = 0; i < baseKeywordsNeeded; i++) {
-      const template = PROMPT_FAMILY_TEMPLATES[i % PROMPT_FAMILY_TEMPLATES.length];
-      // If we loop past the 10 templates, we could add variations, but for now we just reuse them
-      // The location will make the final query unique
-      let query = template.replace(/{service}/g, primaryService);
-      
-      // If we are reusing templates, add a slight variation to make the base query unique
-      if (i >= PROMPT_FAMILY_TEMPLATES.length) {
-          if (i % 2 === 0) {
-              query = query.replace("best", "top").replace("reputable", "trusted").replace("good", "reliable");
-          } else {
-              query = query.replace("near me", "in my area").replace("local", "nearby");
-          }
-      }
-      
-      baseKeywords.push(query);
+    const keyRecord = await getApiKeyByProvider("openai");
+    if (!keyRecord) throw new Error("No OpenAI key configured");
+    const openaiKey = decrypt(keyRecord.encryptedKey);
+
+    const systemPrompt = `You write search queries that real homeowners and property owners type into AI assistants like ChatGPT or Google Gemini when they need to hire a local contractor or service provider.
+
+Rules:
+- Every query must sound like a real person talking — casual, natural, the way someone would actually ask a friend or a chatbot
+- NEVER use the service name as a noun modifier (e.g. never write "fence company contractor" or "fence company provider" — that is not English)
+- Vary the phrasing: mix questions about finding someone, getting quotes, checking reputation, understanding cost, comparing options
+- Some queries should be short and direct ("Who does fence installation near me?"), some longer and conversational ("I need a fence put in — who are the best local companies to call?")
+- Do NOT include location in the query text — location is added separately
+- Output ONLY a JSON array of strings, no explanation, no numbering, no extra text`;
+
+    const userPrompt = `Write ${baseQueriesNeeded} unique, natural-sounding search queries that someone would type into ChatGPT or Gemini when they need to hire a local "${serviceType}" contractor.
+
+Return a JSON array of exactly ${baseQueriesNeeded} strings.`;
+
+    const resp = await callAI("openai", openaiKey, "gpt-4o-mini", [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
+
+    // Parse the JSON array from the response
+    const raw = resp.content.trim();
+    // Strip markdown code fences if present
+    const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const parsed = JSON.parse(jsonStr);
+    if (!Array.isArray(parsed)) throw new Error("LLM did not return an array");
+    baseKeywords = parsed
+      .map((q: any) => String(q).trim())
+      .filter((q: string) => q.length > 0)
+      .slice(0, baseQueriesNeeded);
+
+    // If LLM returned fewer than needed, pad by cycling
+    while (baseKeywords.length < baseQueriesNeeded) {
+      baseKeywords.push(baseKeywords[baseKeywords.length % baseKeywords.length]);
     }
 
-    console.log(`[ProspectAudit] Generated ${baseKeywords.length} base queries using prompt family templates for service: "${primaryService}"`);
-
-    // ── Distribute locations across base keywords → exactly 15 pairs ─
-    const normalized: ProspectQueryResult[] = [];
-    let ki = 0; // base keyword index
-    let li = 0; // location index
-
-    while (normalized.length < totalCount) {
-      const kw = baseKeywords[ki % baseKeywords.length];
-      const loc = allLocations[li % numLocations];
-      normalized.push({ searchQuery: kw, location: loc });
-      // Advance: fill all locations for a keyword before moving to next keyword
-      li++;
-      if (li % numLocations === 0) ki++;
-    }
-
-    return normalized;
+    console.log(`[ProspectAudit] LLM generated ${baseKeywords.length} natural queries for service: "${serviceType}"`);
 
   } catch (err: any) {
-    console.error("[ProspectAudit] generateProspectQueries failed:", err.message);
-    throw new Error(`Failed to generate queries: ${err.message}`);
+    // Fallback: write sensible hardcoded queries using the actual service type
+    // These are written as real English sentences, not template concatenations.
+    console.warn(`[ProspectAudit] LLM query generation failed (${err.message}), using fallback queries`);
+    const s = serviceType;
+    const fallback = [
+      `Who does ${s} near me?`,
+      `Best ${s} companies in my area`,
+      `How much does ${s} cost?`,
+      `Who should I hire for ${s}?`,
+      `Looking for a good ${s} contractor`,
+      `${s} — who are the most trusted local companies?`,
+      `I need ${s} done — who do you recommend?`,
+      `How do I find a reliable ${s} company?`,
+      `What should I look for when hiring someone for ${s}?`,
+      `Can you recommend a ${s} contractor that does good work?`,
+      `Who are the top-rated ${s} companies nearby?`,
+      `I'm getting quotes for ${s} — who should I call?`,
+      `What does ${s} typically cost and who's worth hiring?`,
+      `Any recommendations for ${s} in my area?`,
+      `Who's the best local contractor for ${s}?`,
+    ];
+    baseKeywords = fallback.slice(0, baseQueriesNeeded);
+    while (baseKeywords.length < baseQueriesNeeded) {
+      baseKeywords.push(fallback[baseKeywords.length % fallback.length]);
+    }
   }
+
+  // ── Distribute locations across base queries → exactly 15 pairs ──────────────────
+  const normalized: ProspectQueryResult[] = [];
+  let ki = 0;
+  let li = 0;
+
+  while (normalized.length < totalCount) {
+    const kw = baseKeywords[ki % baseKeywords.length];
+    const loc = allLocations[li % numLocations];
+    normalized.push({ searchQuery: kw, location: loc });
+    li++;
+    if (li % numLocations === 0) ki++;
+  }
+
+  return normalized;
 }
 
 // ─── Audit Runner ─────────────────────────────────────────────────────────────
