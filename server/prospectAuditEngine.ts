@@ -195,13 +195,81 @@ export interface ProspectAuditScores {
 // ─── Query Generation ─────────────────────────────────────────────────────────
 
 /**
- * Generate exactly PROSPECT_QUERY_COUNT (15) buying-intent queries for a prospect
- * using GPT-4o-mini to write genuinely natural, human-sounding questions that real
- * people actually type into ChatGPT or Gemini when looking for a local service.
+ * Ask GPT-4o-mini to write `count` natural, location-aware queries for a given
+ * service type and city. The city is baked into the query text itself so the
+ * question reads like a real person asking a chatbot — never a keyword suffix.
+ */
+async function generateQueriesForLocation(
+  serviceType: string,
+  city: string,
+  count: number,
+  openaiKey: string
+): Promise<string[]> {
+  const systemPrompt = `You write search queries that real homeowners type into AI assistants like ChatGPT or Google Gemini when they need to hire a local contractor.
+
+Rules:
+- Every query must sound like a real person talking — casual and natural
+- The city/area must be woven naturally into the query (e.g. "Who does fence installation in Cullman, AL?" or "Best fence contractors near Cullman?")
+- NEVER stack the service name as a noun modifier (e.g. NEVER write "fence company contractor", "fence company provider", "fence company companies" — these are not English)
+- Vary the phrasing: mix questions about finding someone, getting quotes, checking reputation, cost, comparing options
+- Some short and direct, some longer and conversational
+- Output ONLY a JSON array of strings, no explanation, no numbering, no extra text`;
+
+  const userPrompt = `Write ${count} unique, natural-sounding search queries that someone in or near "${city}" would type into ChatGPT or Gemini when they need to hire someone for "${serviceType}".
+
+The city must appear naturally in each query. Return a JSON array of exactly ${count} strings.`;
+
+  const resp = await callAI("openai", openaiKey, "gpt-4o-mini", [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ]);
+
+  const raw = resp.content.trim();
+  const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const parsed = JSON.parse(jsonStr);
+  if (!Array.isArray(parsed)) throw new Error("LLM did not return an array");
+  return parsed
+    .map((q: any) => String(q).trim())
+    .filter((q: string) => q.length > 0)
+    .slice(0, count);
+}
+
+/**
+ * Fallback queries when the LLM call fails — written as real English sentences
+ * with the city baked in, never template concatenations.
+ */
+function fallbackQueriesForLocation(serviceType: string, city: string, count: number): string[] {
+  const s = serviceType;
+  const c = city;
+  const pool = [
+    `Who does ${s} in ${c}?`,
+    `Best ${s} companies near ${c}`,
+    `How much does ${s} cost in ${c}?`,
+    `Who should I hire for ${s} in ${c}?`,
+    `Looking for a good ${s} contractor near ${c}`,
+    `Who are the most trusted ${s} companies in ${c}?`,
+    `I need ${s} done in ${c} — who do you recommend?`,
+    `How do I find a reliable ${s} contractor in ${c}?`,
+    `What should I look for when hiring someone for ${s} near ${c}?`,
+    `Can you recommend a ${s} contractor in ${c} that does good work?`,
+    `Who are the top-rated ${s} companies near ${c}?`,
+    `I'm getting quotes for ${s} in ${c} — who should I call?`,
+    `What does ${s} typically cost in ${c} and who's worth hiring?`,
+    `Any recommendations for ${s} contractors in ${c}?`,
+    `Who's the best local contractor for ${s} in ${c}?`,
+  ];
+  const result: string[] = [];
+  for (let i = 0; i < count; i++) result.push(pool[i % pool.length]);
+  return result;
+}
+
+/**
+ * Generate exactly PROSPECT_QUERY_COUNT (15) buying-intent queries for a prospect.
  *
- * The LLM receives only the service type (e.g. "fence installation") and is told
- * to write questions the way a homeowner would actually phrase them — never
- * keyword-stuffed, never robotic.
+ * For each target location, GPT-4o-mini writes queries with the city baked in
+ * naturally — so the final query sent to ChatGPT/Gemini is already a complete,
+ * grammatically correct question like "Who does fence installation in Cullman, AL?"
+ * rather than a query with a location suffix tacked on afterward.
  */
 export async function generateProspectQueries(
   input: ProspectQueryInput
@@ -214,9 +282,7 @@ export async function generateProspectQueries(
     ...(input.locations ?? []).filter((l) => l.trim() && l.trim() !== location.trim()),
   ].filter(Boolean);
 
-  // Determine the primary service type — use the seed keyword if available,
-  // otherwise fall back to industry. We want the actual service (e.g. "fence
-  // installation", "roof repair"), NOT a company name.
+  // Determine the primary service type
   let serviceType = "home services";
   if (seedKeywords) {
     const seeds = seedKeywords.split(",").map(s => s.trim()).filter(Boolean);
@@ -227,95 +293,45 @@ export async function generateProspectQueries(
 
   const totalCount = PROSPECT_QUERY_COUNT; // 15
   const numLocations = allLocations.length;
-  const baseQueriesNeeded = Math.ceil(totalCount / numLocations);
+  // Distribute queries as evenly as possible across locations
+  const queriesPerLocation = Math.ceil(totalCount / numLocations);
 
-  // ── Ask GPT-4o-mini to write the queries ───────────────────────────────────────
-  let baseKeywords: string[] = [];
-
+  // Resolve OpenAI key once
+  let openaiKey: string | null = null;
   try {
     const keyRecord = await getApiKeyByProvider("openai");
-    if (!keyRecord) throw new Error("No OpenAI key configured");
-    const openaiKey = decrypt(keyRecord.encryptedKey);
+    if (keyRecord) openaiKey = decrypt(keyRecord.encryptedKey);
+  } catch { /* will fall back to hardcoded */ }
 
-    const systemPrompt = `You write search queries that real homeowners and property owners type into AI assistants like ChatGPT or Google Gemini when they need to hire a local contractor or service provider.
-
-Rules:
-- Every query must sound like a real person talking — casual, natural, the way someone would actually ask a friend or a chatbot
-- NEVER use the service name as a noun modifier (e.g. never write "fence company contractor" or "fence company provider" — that is not English)
-- Vary the phrasing: mix questions about finding someone, getting quotes, checking reputation, understanding cost, comparing options
-- Some queries should be short and direct ("Who does fence installation near me?"), some longer and conversational ("I need a fence put in — who are the best local companies to call?")
-- Do NOT include location in the query text — location is added separately
-- Output ONLY a JSON array of strings, no explanation, no numbering, no extra text`;
-
-    const userPrompt = `Write ${baseQueriesNeeded} unique, natural-sounding search queries that someone would type into ChatGPT or Gemini when they need to hire a local "${serviceType}" contractor.
-
-Return a JSON array of exactly ${baseQueriesNeeded} strings.`;
-
-    const resp = await callAI("openai", openaiKey, "gpt-4o-mini", [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
-
-    // Parse the JSON array from the response
-    const raw = resp.content.trim();
-    // Strip markdown code fences if present
-    const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-    const parsed = JSON.parse(jsonStr);
-    if (!Array.isArray(parsed)) throw new Error("LLM did not return an array");
-    baseKeywords = parsed
-      .map((q: any) => String(q).trim())
-      .filter((q: string) => q.length > 0)
-      .slice(0, baseQueriesNeeded);
-
-    // If LLM returned fewer than needed, pad by cycling
-    while (baseKeywords.length < baseQueriesNeeded) {
-      baseKeywords.push(baseKeywords[baseKeywords.length % baseKeywords.length]);
-    }
-
-    console.log(`[ProspectAudit] LLM generated ${baseKeywords.length} natural queries for service: "${serviceType}"`);
-
-  } catch (err: any) {
-    // Fallback: write sensible hardcoded queries using the actual service type
-    // These are written as real English sentences, not template concatenations.
-    console.warn(`[ProspectAudit] LLM query generation failed (${err.message}), using fallback queries`);
-    const s = serviceType;
-    const fallback = [
-      `Who does ${s} near me?`,
-      `Best ${s} companies in my area`,
-      `How much does ${s} cost?`,
-      `Who should I hire for ${s}?`,
-      `Looking for a good ${s} contractor`,
-      `${s} — who are the most trusted local companies?`,
-      `I need ${s} done — who do you recommend?`,
-      `How do I find a reliable ${s} company?`,
-      `What should I look for when hiring someone for ${s}?`,
-      `Can you recommend a ${s} contractor that does good work?`,
-      `Who are the top-rated ${s} companies nearby?`,
-      `I'm getting quotes for ${s} — who should I call?`,
-      `What does ${s} typically cost and who's worth hiring?`,
-      `Any recommendations for ${s} in my area?`,
-      `Who's the best local contractor for ${s}?`,
-    ];
-    baseKeywords = fallback.slice(0, baseQueriesNeeded);
-    while (baseKeywords.length < baseQueriesNeeded) {
-      baseKeywords.push(fallback[baseKeywords.length % fallback.length]);
-    }
-  }
-
-  // ── Distribute locations across base queries → exactly 15 pairs ──────────────────
+  // ── Generate location-aware queries for each city ──────────────────────────
   const normalized: ProspectQueryResult[] = [];
-  let ki = 0;
-  let li = 0;
 
-  while (normalized.length < totalCount) {
-    const kw = baseKeywords[ki % baseKeywords.length];
-    const loc = allLocations[li % numLocations];
-    normalized.push({ searchQuery: kw, location: loc });
-    li++;
-    if (li % numLocations === 0) ki++;
+  for (const loc of allLocations) {
+    const needed = Math.min(queriesPerLocation, totalCount - normalized.length);
+    if (needed <= 0) break;
+
+    let queries: string[];
+    if (openaiKey) {
+      try {
+        queries = await generateQueriesForLocation(serviceType, loc, needed, openaiKey);
+        // Pad if LLM returned fewer than needed
+        while (queries.length < needed) queries.push(queries[queries.length % queries.length]);
+        console.log(`[ProspectAudit] LLM generated ${queries.length} queries for "${serviceType}" in ${loc}`);
+      } catch (err: any) {
+        console.warn(`[ProspectAudit] LLM failed for ${loc} (${err.message}), using fallback`);
+        queries = fallbackQueriesForLocation(serviceType, loc, needed);
+      }
+    } else {
+      console.warn(`[ProspectAudit] No OpenAI key — using fallback queries for ${loc}`);
+      queries = fallbackQueriesForLocation(serviceType, loc, needed);
+    }
+
+    for (const q of queries) {
+      normalized.push({ searchQuery: q, location: loc });
+    }
   }
 
-  return normalized;
+  return normalized.slice(0, totalCount);
 }
 
 // ─── Audit Runner ─────────────────────────────────────────────────────────────
@@ -379,10 +395,11 @@ export async function runProspectAudit(
   try {
     for (let i = 0; i < queries.length; i++) {
       const { searchQuery, location } = queries[i];
-      const queryWithLocation = `${searchQuery} in ${location}`;
-
+      // The query already has the location baked in naturally by the LLM
+      // (e.g. "Who does fence installation in Cullman, AL?").
+      // Do NOT append " in {location}" again — that produces broken English.
       const mention = await checkLLMVisibilityDirect(
-        queryWithLocation,
+        searchQuery,
         businessName,
         agencyId ?? null,
         website ?? null,
