@@ -82,6 +82,11 @@ export const agencies = pgTable("agencies", {
   // Stored encrypted; pipeline falls back to platform keys if not set
   agencyOpenAiKey: text("agencyOpenAiKey"),
   agencyGeminiKey: text("agencyGeminiKey"),
+  // Lead capture widget settings
+  // Calendar embed code shown in the CTA lightbox on audit report pages
+  calendarEmbedCode: text("calendarEmbedCode"),
+  // CRM webhook URL — fired when a prospect submits their lead info on an audit
+  webhookUrl: varchar("webhookUrl", { length: 1000 }),
   // Status
   isActive: boolean("isActive").default(true).notNull(),
   notes: text("notes"),
@@ -864,6 +869,10 @@ export const prospectAudits = pgTable("prospectAudits", {
   // If this prospect signed up, link to their campaign so baseline can be reused
   campaignId: integer("campaignId").references(() => campaigns.id, { onDelete: "set null" }),
   baselinePromotedAt: timestamp("baselinePromotedAt"), // When results were copied to campaign baseline
+  // Lead capture: true once the prospect has submitted their contact info via the
+  // blurred-results lightbox. The share URL shows the full report without overlay
+  // once this is true — prevents duplicate lead capture on revisit.
+  leadCaptured: boolean("leadCaptured").default(false).notNull(),
   // Status
   status: prospectAuditStatusEnum("status").default("pending").notNull(),
   errorMessage: text("errorMessage"),

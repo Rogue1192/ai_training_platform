@@ -396,6 +396,160 @@ export const prospectAuditRouter = router({
     }),
 
   /**
+   * Public endpoint — submit lead contact info after viewing blurred results.
+   * Saves name/phone/email to the audit record, flips leadCaptured=true,
+   * fires the agency's CRM webhook, and returns the clean report URL.
+   */
+  submitLead: publicProcedure
+    .input(z.object({
+      token: z.string(),
+      firstName: z.string().min(1),
+      lastName: z.string().min(1),
+      phone: z.string().min(7),
+      email: z.string().email(),
+    }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import('./db');
+      const { prospectAudits, agencies } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+
+      const [audit] = await db.select().from(prospectAudits)
+        .where(eq(prospectAudits.shareToken, input.token)).limit(1);
+      if (!audit) throw new Error('Audit not found');
+
+      // Save contact info and flip leadCaptured
+      await db.update(prospectAudits).set({
+        contactFirstName: input.firstName,
+        contactLastName: input.lastName,
+        contactPhone: input.phone,
+        contactEmail: input.email,
+        leadCaptured: true,
+        updatedAt: new Date(),
+      }).where(eq(prospectAudits.id, audit.id));
+
+      // Fire agency CRM webhook (async, non-blocking)
+      if (audit.agencyId) {
+        try {
+          const [agency] = await db.select({ webhookUrl: agencies.webhookUrl })
+            .from(agencies).where(eq(agencies.id, audit.agencyId)).limit(1);
+          if (agency?.webhookUrl) {
+            const reportUrl = `${process.env.PUBLIC_URL ?? ''}/audit/${input.token}`;
+            fetch(agency.webhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                firstName: input.firstName,
+                lastName: input.lastName,
+                phone: input.phone,
+                email: input.email,
+                businessName: audit.businessName,
+                website: audit.website,
+                location: audit.location,
+                overallScore: audit.overallScore,
+                reportUrl,
+                auditId: audit.id,
+                source: 'ai_visibility_audit',
+              }),
+            }).catch((err: Error) => console.error('[Audit] Webhook fire failed:', err.message));
+          }
+        } catch (err: any) {
+          console.error('[Audit] Webhook lookup failed:', err.message);
+        }
+      }
+
+      // Fire super-admin global webhook (async, non-blocking)
+      try {
+        const { getServiceKey } = await import('./db');
+        const { decrypt } = await import('./encryption');
+        const wlRecord = await getServiceKey('whitelabel');
+        if (wlRecord) {
+          const cfg = JSON.parse(decrypt(wlRecord.encryptedValue)) as Record<string, string>;
+          if (cfg.globalAuditWebhookUrl) {
+            const reportUrl = `${process.env.PUBLIC_URL ?? ''}/audit/${input.token}`;
+            fetch(cfg.globalAuditWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                firstName: input.firstName,
+                lastName: input.lastName,
+                phone: input.phone,
+                email: input.email,
+                businessName: audit.businessName,
+                website: audit.website,
+                location: audit.location,
+                overallScore: audit.overallScore,
+                reportUrl,
+                auditId: audit.id,
+                agencyId: audit.agencyId,
+                source: 'ai_visibility_audit',
+              }),
+            }).catch((err: Error) => console.error('[Audit] Global webhook fire failed:', err.message));
+          }
+        }
+      } catch {}
+
+      return { success: true, reportUrl: `/audit/${input.token}` };
+    }),
+
+  /**
+   * Public endpoint — returns minimal metadata for the public report page:
+   * leadCaptured flag, agency calendar embed code, and audit status.
+   * Does NOT return full audit data (that stays in getByShareToken).
+   */
+  getPublicAuditMeta: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import('./db');
+      const { prospectAudits, agencies } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) return null;
+
+      const [audit] = await db
+        .select({
+          id: prospectAudits.id,
+          leadCaptured: prospectAudits.leadCaptured,
+          status: prospectAudits.status,
+          agencyId: prospectAudits.agencyId,
+        })
+        .from(prospectAudits)
+        .where(eq(prospectAudits.shareToken, input.token))
+        .limit(1);
+      if (!audit) return null;
+
+      let calendarEmbedCode: string | null = null;
+      if (audit.agencyId) {
+        const [agency] = await db
+          .select({ calendarEmbedCode: agencies.calendarEmbedCode })
+          .from(agencies)
+          .where(eq(agencies.id, audit.agencyId))
+          .limit(1);
+        calendarEmbedCode = agency?.calendarEmbedCode ?? null;
+      }
+
+      // Fall back to super-admin global calendar embed
+      if (!calendarEmbedCode) {
+        try {
+          const { getServiceKey } = await import('./db');
+          const { decrypt } = await import('./encryption');
+          const wlRecord = await getServiceKey('whitelabel');
+          if (wlRecord) {
+            const cfg = JSON.parse(decrypt(wlRecord.encryptedValue)) as Record<string, string>;
+            calendarEmbedCode = cfg.globalCalendarEmbedCode ?? null;
+          }
+        } catch {}
+      }
+
+      return {
+        leadCaptured: audit.leadCaptured,
+        status: audit.status,
+        calendarEmbedCode,
+      };
+    }),
+
+  /**
    * Create a Stripe Checkout Session for purchasing overage audit blocks.
    */
   createOverageCheckout: protectedProcedure

@@ -4,19 +4,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   Loader2, Palette, CreditCard, CheckCircle, AlertCircle,
-  ArrowLeft, LogOut, Upload, ImageIcon,
+  ArrowLeft, LogOut, Upload, ImageIcon, Webhook, Calendar, Copy, Check,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function AgencySettings() {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
-
   const { data: agency, isLoading } = trpc.agency.myAgency.useQuery();
-
   const updateMutation = trpc.agency.update.useMutation({
     onSuccess: () => {
       toast.success("Settings saved");
@@ -30,11 +29,18 @@ export default function AgencySettings() {
   const [brandFromName, setBrandFromName] = useState("");
   const [brandLogoUrl, setBrandLogoUrl] = useState("");
 
+  // Lead capture widget
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [calendarEmbedCode, setCalendarEmbedCode] = useState("");
+  const [copiedEmbed, setCopiedEmbed] = useState(false);
+
   useEffect(() => {
     if (agency) {
       setBrandName(agency.brandName ?? "");
       setBrandFromName(agency.brandFromName ?? "");
       setBrandLogoUrl(agency.brandLogoUrl ?? "");
+      setWebhookUrl((agency as any).webhookUrl ?? "");
+      setCalendarEmbedCode((agency as any).calendarEmbedCode ?? "");
     }
   }, [agency]);
 
@@ -57,7 +63,7 @@ export default function AgencySettings() {
       });
       const result = await uploadLogoMutation.mutateAsync({ dataUrl, fileName: file.name });
       setBrandLogoUrl(result.url);
-      toast.success('Logo uploaded! Click “Save Branding” to apply.');
+      toast.success('Logo uploaded! Click "Save Branding" to apply.');
     } catch (err: any) {
       toast.error(err.message || 'Upload failed');
     } finally {
@@ -73,6 +79,26 @@ export default function AgencySettings() {
       brandName: brandName || undefined,
       brandFromName: brandFromName || undefined,
       brandLogoUrl: brandLogoUrl || undefined,
+    });
+  };
+
+  const handleSaveWidgetSettings = () => {
+    if (!agency) return;
+    updateMutation.mutate({
+      id: agency.id,
+      webhookUrl: webhookUrl || null,
+      calendarEmbedCode: calendarEmbedCode || null,
+    });
+  };
+
+  const embedSnippet = agency
+    ? `<script src="${window.location.origin}/embed/audit-widget.js"\n  data-agency="${agency.id}"\n  data-button-text="Check Your AI Visibility"\n  data-button-color="#2563eb">\n</script>`
+    : "";
+
+  const handleCopyEmbed = () => {
+    navigator.clipboard.writeText(embedSnippet).then(() => {
+      setCopiedEmbed(true);
+      setTimeout(() => setCopiedEmbed(false), 2000);
     });
   };
 
@@ -244,6 +270,91 @@ export default function AgencySettings() {
         </CardContent>
       </Card>
 
+      {/* Lead Capture Widget */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Webhook className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">AI Visibility Audit Widget</CardTitle>
+          </div>
+          <CardDescription>
+            Configure the embeddable audit widget for your landing pages. Leads captured through the
+            widget are sent to your CRM via webhook.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+
+          {/* Embed code snippet */}
+          <div className="space-y-1.5">
+            <Label>Embed Code</Label>
+            <p className="text-xs text-muted-foreground">
+              Drop this script tag on any landing page to add the audit button. Customize
+              <code className="mx-1 px-1 py-0.5 bg-muted rounded text-xs">data-button-text</code>
+              and
+              <code className="mx-1 px-1 py-0.5 bg-muted rounded text-xs">data-button-color</code>
+              as needed.
+            </p>
+            <div className="relative">
+              <pre className="rounded-lg bg-muted/50 border border-border p-3 text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all">
+                {embedSnippet}
+              </pre>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute top-2 right-2 h-7 w-7"
+                onClick={handleCopyEmbed}
+              >
+                {copiedEmbed ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+          </div>
+
+          {/* CRM Webhook URL */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              <Webhook className="h-3.5 w-3.5" />
+              CRM Webhook URL
+            </Label>
+            <Input
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              placeholder="https://hooks.yourcrm.com/webhook/..."
+              type="url"
+            />
+            <p className="text-xs text-muted-foreground">
+              When a prospect submits their contact info after viewing an audit, we POST their name,
+              phone, email, and the report URL to this webhook. Compatible with GoHighLevel, Zapier,
+              Make, and any standard webhook endpoint.
+            </p>
+          </div>
+
+          {/* Calendar Embed Code */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5" />
+              Calendar Embed Code
+            </Label>
+            <Textarea
+              value={calendarEmbedCode}
+              onChange={(e) => setCalendarEmbedCode(e.target.value)}
+              placeholder='<iframe src="https://calendly.com/yourteam/strategy-call" ...></iframe>'
+              rows={5}
+              className="font-mono text-xs"
+            />
+            <p className="text-xs text-muted-foreground">
+              Paste your Calendly, GoHighLevel, or Cal.com embed snippet here. It will appear inside
+              a lightbox when prospects click the "Get More AI Visibility" button on their audit report.
+            </p>
+          </div>
+
+          <Button onClick={handleSaveWidgetSettings} disabled={updateMutation.isPending}>
+            {updateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Save Widget Settings
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* Billing */}
       <Card>
         <CardHeader>
@@ -279,8 +390,6 @@ export default function AgencySettings() {
 }
 
 // ─── Billing Portal Button ────────────────────────────────────────────────────
-// Opens the Stripe Customer Portal in a new tab so the agency can add/update
-// their payment method, download invoices, and manage subscriptions.
 function BillingPortalButton() {
   const billingPortalMutation = trpc.agency.billingPortal.useMutation({
     onSuccess: ({ url }) => {

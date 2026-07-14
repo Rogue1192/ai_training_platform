@@ -14,7 +14,19 @@ import { trainingWorker } from "../trainingQueue";
 import { startTrainingWorkerV2 } from "../trainingQueueV2";
 import { startScheduler } from "../scheduler";
 import { createWebhookRouter } from "../webhookHandler";
-import { ensureMonkeyIndexerEnumValue, ensureIsTargetLocationColumn, ensureModelConfigEnumValue, ensureCampaignScopeColumn, ensureNoChargeColumn, ensureBusinessNoChargeColumn, ensureCampaignColumns, ensureBusinessCredibilityUrlsColumn, ensureBusinessBillingTypeColumn } from "../db";
+import {
+  ensureMonkeyIndexerEnumValue,
+  ensureIsTargetLocationColumn,
+  ensureModelConfigEnumValue,
+  ensureCampaignScopeColumn,
+  ensureNoChargeColumn,
+  ensureBusinessNoChargeColumn,
+  ensureCampaignColumns,
+  ensureBusinessCredibilityUrlsColumn,
+  ensureBusinessBillingTypeColumn,
+  ensureAuditLeadColumns,
+  ensureAgencyWebhookColumns,
+} from "../db";
 
 // Combined router with all sub-routers including llmInsights, agency, costTracking, and prospectAudit
 const combinedRouter = router({
@@ -58,6 +70,89 @@ async function startServer() {
 
   // Webhook routes (must be before tRPC to avoid conflicts)
   app.use(createWebhookRouter());
+
+  // ── Audit widget embed script ──────────────────────────────────────────────
+  // Served at /embed/audit-widget.js
+  // Drop a <script> tag on any landing page. Supports:
+  //   data-agency       — agency ID to scope the audit (optional)
+  //   data-button-text  — button label (default: "Check Your AI Visibility")
+  //   data-button-color — button background color (default: #2563eb)
+  app.get("/embed/audit-widget.js", (_req, res) => {
+    const origin = process.env.PUBLIC_URL ?? "";
+    const script = `
+(function() {
+  var cfg = document.currentScript || (function() {
+    var scripts = document.getElementsByTagName('script');
+    return scripts[scripts.length - 1];
+  })();
+  var agencyId  = cfg.getAttribute('data-agency') || '';
+  var btnText   = cfg.getAttribute('data-button-text') || 'Check Your AI Visibility';
+  var btnColor  = cfg.getAttribute('data-button-color') || '#2563eb';
+  var ORIGIN    = '${origin}';
+
+  // Inject styles
+  var style = document.createElement('style');
+  style.textContent =
+    '.manus-audit-btn{display:inline-flex;align-items:center;gap:8px;padding:14px 28px;' +
+    'background:' + btnColor + ';color:#fff;font-family:system-ui,sans-serif;font-size:16px;' +
+    'font-weight:700;border:none;border-radius:12px;cursor:pointer;transition:opacity .2s;}' +
+    '.manus-audit-btn:hover{opacity:.88;}' +
+    '.manus-audit-overlay{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.7);' +
+    'backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;}' +
+    '.manus-audit-modal{position:relative;width:min(96vw,520px);height:min(92vh,800px);' +
+    'border-radius:16px;overflow:hidden;box-shadow:0 25px 60px rgba(0,0,0,.6);}' +
+    '.manus-audit-modal iframe{width:100%;height:100%;border:none;}' +
+    '.manus-audit-close{position:absolute;top:10px;right:10px;background:rgba(255,255,255,.15);' +
+    'border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;' +
+    'font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:1;}';
+  document.head.appendChild(style);
+
+  // Create button and insert after the script tag
+  var btn = document.createElement('button');
+  btn.className = 'manus-audit-btn';
+  btn.innerHTML =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"' +
+    ' fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"' +
+    ' stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2">' +
+    '</polygon></svg>' + btnText;
+  cfg.parentNode.insertBefore(btn, cfg.nextSibling);
+
+  btn.addEventListener('click', function() {
+    var overlay = document.createElement('div');
+    overlay.className = 'manus-audit-overlay';
+
+    var modal = document.createElement('div');
+    modal.className = 'manus-audit-modal';
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'manus-audit-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = function() { document.body.removeChild(overlay); };
+
+    var src = ORIGIN + '/prospect-audit';
+    if (agencyId) src += '?agency=' + encodeURIComponent(agencyId);
+
+    var iframe = document.createElement('iframe');
+    iframe.src = src;
+    iframe.allow = 'clipboard-write';
+
+    modal.appendChild(iframe);
+    modal.appendChild(closeBtn);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay) document.body.removeChild(overlay);
+    });
+  });
+})();
+`;
+    res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.send(script);
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",
@@ -107,7 +202,7 @@ async function startServer() {
   });
 }
 
-// Run enum migration before starting the server
+// Run column/enum migrations before starting the server
 ensureMonkeyIndexerEnumValue().catch((err) =>
   console.warn("[Startup] ensureMonkeyIndexerEnumValue failed (non-fatal):", err.message)
 );
@@ -119,7 +214,7 @@ ensureModelConfigEnumValue().catch((err) =>
 );
 ensureCampaignScopeColumn().catch((err) =>
   console.warn("[Startup] ensureCampaignScopeColumn failed (non-fatal):", err.message)
-)
+);
 ensureNoChargeColumn().catch((err) =>
   console.warn("[Startup] ensureNoChargeColumn failed (non-fatal):", err.message)
 );
@@ -136,6 +231,12 @@ ensureBusinessCredibilityUrlsColumn().catch((err) =>
 );
 ensureBusinessBillingTypeColumn().catch((err) =>
   console.warn("[Startup] ensureBusinessBillingTypeColumn failed (non-fatal):", err.message)
+);
+ensureAuditLeadColumns().catch((err) =>
+  console.warn("[Startup] ensureAuditLeadColumns failed (non-fatal):", err.message)
+);
+ensureAgencyWebhookColumns().catch((err) =>
+  console.warn("[Startup] ensureAgencyWebhookColumns failed (non-fatal):", err.message)
 );
 
 startServer().catch(console.error);

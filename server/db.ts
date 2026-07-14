@@ -1581,3 +1581,46 @@ export async function ensureBusinessBillingTypeColumn(): Promise<void> {
     console.warn('[DB] ensureBusinessBillingTypeColumn:', err.message);
   }
 }
+
+/**
+ * ensureAuditLeadColumns
+ *
+ * Adds the leadCaptured column to prospect_audits if it doesn't exist.
+ * Safe to call on every startup — uses ADD COLUMN IF NOT EXISTS.
+ */
+export async function ensureAuditLeadColumns(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE "prospectAudits"
+      ADD COLUMN IF NOT EXISTS "leadCaptured" boolean NOT NULL DEFAULT false
+    `;
+    console.log('[DB] prospectAudits.leadCaptured column ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureAuditLeadColumns:', err.message);
+  }
+}
+
+/**
+ * ensureAgencyWebhookColumns
+ *
+ * Adds webhookUrl and calendarEmbedCode columns to agencies if they don't exist.
+ * Safe to call on every startup — uses ADD COLUMN IF NOT EXISTS.
+ */
+export async function ensureAgencyWebhookColumns(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE "agencies"
+      ADD COLUMN IF NOT EXISTS "webhookUrl" text,
+      ADD COLUMN IF NOT EXISTS "calendarEmbedCode" text
+    `;
+    console.log('[DB] agencies.webhookUrl + calendarEmbedCode columns ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureAgencyWebhookColumns:', err.message);
+  }
+}

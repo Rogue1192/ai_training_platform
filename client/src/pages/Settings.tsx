@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search, Link2, Eye, EyeOff } from "lucide-react";
+import { Loader2, Check, X, Key, PlayCircle, AlertCircle, Database, Mail, Search, Link2, Eye, EyeOff, Webhook, Calendar, Copy } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
 
 type AIProvider = "openai" | "anthropic" | "google" | "minimax";
@@ -277,6 +278,38 @@ export default function Settings() {
   const [showInboundSecret, setShowInboundSecret] = useState(false);
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [showWebhookSecret, setShowWebhookSecret] = useState(false);
+
+  // Global Audit Widget settings — stored in whitelabel service key JSON
+  const savedGlobalAuditWebhook: string = (whitelabelKey?.metadata as any)?.globalAuditWebhookUrl || "";
+  const savedGlobalCalendarEmbed: string = (whitelabelKey?.metadata as any)?.globalCalendarEmbedCode || "";
+  const [globalAuditWebhookInput, setGlobalAuditWebhookInput] = useState("");
+  const [globalCalendarEmbedInput, setGlobalCalendarEmbedInput] = useState("");
+  const [savingGlobalWidget, setSavingGlobalWidget] = useState(false);
+  const [copiedGlobalEmbed, setCopiedGlobalEmbed] = useState(false);
+
+  const handleSaveGlobalWidgetSettings = async () => {
+    setSavingGlobalWidget(true);
+    try {
+      const existing = (whitelabelKey?.metadata as Record<string, string>) || {};
+      const merged: Record<string, string> = { ...existing };
+      if (globalAuditWebhookInput.trim()) merged.globalAuditWebhookUrl = globalAuditWebhookInput.trim();
+      if (globalCalendarEmbedInput.trim()) merged.globalCalendarEmbedCode = globalCalendarEmbedInput.trim();
+      await saveServiceKey.mutateAsync({ service: "whitelabel", value: JSON.stringify(merged) });
+      await refetchServiceKeys();
+      setGlobalAuditWebhookInput("");
+      setGlobalCalendarEmbedInput("");
+      toast.success("Global audit widget settings saved");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save settings");
+    } finally {
+      setSavingGlobalWidget(false);
+    }
+  };
+
+  const globalEmbedSnippet = `<script src="${window.location.origin}/embed/audit-widget.js"
+  data-button-text="Check Your AI Visibility"
+  data-button-color="#2563eb">
+</script>`;
 
   const handleSaveWebhookUrl = async () => {
     const url = webhookUrlInput.trim();
@@ -715,6 +748,100 @@ export default function Settings() {
             );
           })}
         </div>
+      </div>
+
+      {/* Global Audit Widget Settings */}
+      <div>
+        <h2 className="text-xl font-semibold text-foreground mb-1">Global AI Visibility Audit Widget</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Configure the default webhook and calendar embed for your own audit widget deployments.
+          Individual agency partners configure their own settings in their Agency Settings page.
+        </p>
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Webhook className="w-6 h-6 text-primary" />
+              <div>
+                <CardTitle className="text-base">Audit Lead Widget</CardTitle>
+                <CardDescription>Global defaults for your own landing pages</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {/* Embed snippet */}
+            <div className="space-y-1.5">
+              <Label>Default Embed Code</Label>
+              <p className="text-xs text-muted-foreground">Use this on your own landing pages (no agency ID needed).</p>
+              <div className="relative">
+                <pre className="rounded-lg bg-muted/50 border border-border p-3 text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all">
+                  {globalEmbedSnippet}
+                </pre>
+                <button
+                  type="button"
+                  className="absolute top-2 right-2 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                  onClick={() => {
+                    navigator.clipboard.writeText(globalEmbedSnippet).then(() => {
+                      setCopiedGlobalEmbed(true);
+                      setTimeout(() => setCopiedGlobalEmbed(false), 2000);
+                    });
+                  }}
+                >
+                  {copiedGlobalEmbed ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Global webhook URL */}
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <Webhook className="w-3.5 h-3.5" />
+                Global CRM Webhook URL
+              </Label>
+              {savedGlobalAuditWebhook && (
+                <p className="text-xs text-green-500 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Configured: {savedGlobalAuditWebhook}
+                </p>
+              )}
+              <Input
+                type="url"
+                placeholder={savedGlobalAuditWebhook ? "Enter new URL to update" : "https://hooks.yourcrm.com/webhook/..."}
+                value={globalAuditWebhookInput}
+                onChange={(e) => setGlobalAuditWebhookInput(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Receives lead contact info (name, phone, email, report URL) when a prospect submits the lead form.
+              </p>
+            </div>
+
+            {/* Global calendar embed */}
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5" />
+                Global Calendar Embed Code
+              </Label>
+              {savedGlobalCalendarEmbed && (
+                <p className="text-xs text-green-500 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Configured
+                </p>
+              )}
+              <Textarea
+                placeholder={savedGlobalCalendarEmbed ? "Enter new embed code to update" : '<iframe src="https://calendly.com/..." ...></iframe>'}
+                value={globalCalendarEmbedInput}
+                onChange={(e) => setGlobalCalendarEmbedInput(e.target.value)}
+                rows={4}
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                Shown in the CTA lightbox on audit reports when no agency-specific embed code is configured.
+              </p>
+            </div>
+
+            <Button onClick={handleSaveGlobalWidgetSettings} disabled={savingGlobalWidget}>
+              {savingGlobalWidget && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Save Global Widget Settings
+            </Button>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Inbound Webhook Security */}

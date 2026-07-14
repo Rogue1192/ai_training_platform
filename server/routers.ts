@@ -3427,6 +3427,9 @@ export const agencyRouter = router({
       // Agency-provided API keys for training queries (agency absorbs OpenAI + Gemini costs)
       agencyOpenAiKey: z.string().optional().nullable(),
       agencyGeminiKey: z.string().optional().nullable(),
+      // Lead capture widget settings
+      webhookUrl: z.string().optional().nullable(),
+      calendarEmbedCode: z.string().optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { getAgencyByUserId, updateAgency } = await import('./dbAgencies');
@@ -3439,11 +3442,11 @@ export const agencyRouter = router({
       if (ctx.user.role === 'admin') {
         return updateAgency(id, processedUpdates);
       }
-      // Agency user can update their own branding + API keys
+      // Agency user can update their own branding + API keys + lead widget settings
       const myAgency = await getAgencyByUserId(ctx.user.id);
       if (!myAgency || myAgency.id !== id) throw new Error('Forbidden');
-      const { brandName, brandLogoUrl, brandFromName, agencyOpenAiKey, agencyGeminiKey } = processedUpdates;
-      return updateAgency(id, { brandName, brandLogoUrl, brandFromName, agencyOpenAiKey, agencyGeminiKey });
+      const { brandName, brandLogoUrl, brandFromName, agencyOpenAiKey, agencyGeminiKey, webhookUrl, calendarEmbedCode } = processedUpdates;
+      return updateAgency(id, { brandName, brandLogoUrl, brandFromName, agencyOpenAiKey, agencyGeminiKey, webhookUrl, calendarEmbedCode });
     }),
 
   // Admin: delete an agency

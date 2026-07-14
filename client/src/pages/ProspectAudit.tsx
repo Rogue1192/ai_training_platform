@@ -61,7 +61,9 @@ function BusinessInfoForm({
     website: string;
     locations: string[];
     industry: string;
-    seedKeywords: string;
+    keyword1: string;
+    keyword2: string;
+    keyword3: string;
     avgJobValue: string;
   }) => void;
 }) {
@@ -70,18 +72,32 @@ function BusinessInfoForm({
     website: "",
     locations: [""] as string[],
     industry: "",
-    seedKeywords: "",
+    keyword1: "",
+    keyword2: "",
+    keyword3: "",
     avgJobValue: "",
   });
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const generateMutation = trpc.prospectAudit.generateQueries.useMutation();
-
+  const MAX_LOCATIONS = 3;
   const validLocations = form.locations.filter((l) => l.trim().length > 0);
+  const seedKeywords = [form.keyword1, form.keyword2, form.keyword3]
+    .map((k) => k.trim())
+    .filter(Boolean)
+    .join(", ");
+
+  const isValid =
+    form.businessName.trim() &&
+    form.website.trim() &&
+    validLocations.length > 0 &&
+    form.industry.trim() &&
+    form.keyword1.trim() &&
+    form.avgJobValue &&
+    parseFloat(form.avgJobValue) > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.businessName.trim() || validLocations.length === 0) return;
+    if (!isValid) return;
     setIsGenerating(true);
     try {
       await onGenerate({ ...form, locations: validLocations });
@@ -90,12 +106,11 @@ function BusinessInfoForm({
     }
   };
 
-  const field = (
+  const textField = (
     key: keyof typeof form,
     label: string,
     placeholder: string,
     icon: React.ElementType,
-    required = false,
     hint?: string
   ) => {
     const Icon = icon;
@@ -103,16 +118,16 @@ function BusinessInfoForm({
       <div>
         <label className="block text-sm font-medium text-gray-300 mb-1.5">
           {label}
-          {required && <span className="text-red-400 ml-1">*</span>}
+          <span className="text-red-400 ml-1">*</span>
         </label>
         <div className="relative">
           <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
           <input
             type="text"
-            value={form[key]}
+            value={form[key] as string}
             onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
             placeholder={placeholder}
-            required={required}
+            required
             className="w-full bg-white/[0.04] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/60 focus:bg-white/[0.06] transition-all"
           />
         </div>
@@ -149,13 +164,16 @@ function BusinessInfoForm({
           onSubmit={handleSubmit}
           className="bg-white/[0.02] border border-white/5 rounded-2xl p-8 space-y-5"
         >
-          {field("businessName", "Business Name", "e.g. Titan Cleaning Company", Building2, true)}
+          {textField("businessName", "Business Name", "e.g. Titan Cleaning Company", Building2)}
+          {textField("website", "Website", "https://titancleaningco.com", Globe)}
+          {textField("industry", "Industry / Trade", "e.g. HVAC, Plumbing, Residential Cleaning", Tag)}
 
-          {/* Multi-location input */}
+          {/* Locations — max 3 */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1.5">
-              Target Locations
+              Target Location(s)
               <span className="text-red-400 ml-1">*</span>
+              <span className="text-gray-600 text-xs font-normal ml-2">(up to 3)</span>
             </label>
             <div className="space-y-2">
               {form.locations.map((loc, i) => (
@@ -172,6 +190,7 @@ function BusinessInfoForm({
                         setForm((f) => ({ ...f, locations: next }));
                       }}
                       placeholder="City, State — e.g. Cullman, AL"
+                      required={i === 0}
                       className="w-full bg-white/[0.04] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/60 focus:bg-white/[0.06] transition-all"
                     />
                   </div>
@@ -186,27 +205,61 @@ function BusinessInfoForm({
                   )}
                 </div>
               ))}
-              <button
-                type="button"
-                onClick={() => setForm((f) => ({ ...f, locations: [...f.locations, ""] }))}
-                className="flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors mt-1"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add location
-              </button>
+              {form.locations.length < MAX_LOCATIONS && (
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, locations: [...f.locations, ""] }))}
+                  className="flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors mt-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add location
+                </button>
+              )}
             </div>
             <p className="text-xs text-gray-600 mt-1.5">15 queries distributed across all locations</p>
           </div>
 
-          {field("website", "Website", "e.g. https://titancleaningco.com", Globe, false)}
-          {field("industry", "Industry", "e.g. Residential Cleaning, HVAC, Plumbing", Tag, false)}
-          {field(
-            "seedKeywords",
-            "Seed Keywords",
-            "e.g. house cleaning, maid service, deep clean",
-            Tag,
-            false,
-            "Comma-separated keywords — the AI will use these to generate 15 targeted queries"
-          )}
+          {/* Keywords — 3 separate fields */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+              Primary Services / Keywords
+              <span className="text-red-400 ml-1">*</span>
+              <span className="text-gray-600 text-xs font-normal ml-2">(up to 3)</span>
+            </label>
+            <div className="space-y-2">
+              <div className="relative">
+                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                  type="text"
+                  value={form.keyword1}
+                  onChange={(e) => setForm((f) => ({ ...f, keyword1: e.target.value }))}
+                  placeholder="Primary service — e.g. AC repair"
+                  required
+                  className="w-full bg-white/[0.04] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/60 focus:bg-white/[0.06] transition-all"
+                />
+              </div>
+              <div className="relative">
+                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                  type="text"
+                  value={form.keyword2}
+                  onChange={(e) => setForm((f) => ({ ...f, keyword2: e.target.value }))}
+                  placeholder="Second service — e.g. furnace installation"
+                  className="w-full bg-white/[0.04] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/60 focus:bg-white/[0.06] transition-all"
+                />
+              </div>
+              <div className="relative">
+                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                  type="text"
+                  value={form.keyword3}
+                  onChange={(e) => setForm((f) => ({ ...f, keyword3: e.target.value }))}
+                  placeholder="Third service — e.g. heat pump service"
+                  className="w-full bg-white/[0.04] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/60 focus:bg-white/[0.06] transition-all"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-600 mt-1.5">The AI uses these to generate 15 targeted queries</p>
+          </div>
 
           {/* Average Job Value */}
           <div>
@@ -232,8 +285,8 @@ function BusinessInfoForm({
 
           <button
             type="submit"
-            disabled={isGenerating || !form.businessName.trim() || validLocations.length === 0 || !form.avgJobValue || parseFloat(form.avgJobValue) <= 0}
-            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors mt-2"
+            disabled={isGenerating || !isValid}
+            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-colors mt-2 text-base"
           >
             {isGenerating ? (
               <>
@@ -242,7 +295,7 @@ function BusinessInfoForm({
               </>
             ) : (
               <>
-                Generate Queries
+                Get Your AI Visibility Report Now
                 <ChevronRight className="w-4 h-4" />
               </>
             )}
@@ -853,7 +906,9 @@ export default function ProspectAudit() {
     website: string;
     locations: string[];
     industry: string;
-    seedKeywords: string;
+    keyword1: string;
+    keyword2: string;
+    keyword3: string;
     avgJobValue: string;
   } | null>(null);
   const [queries, setQueries] = useState<QueryItem[]>([]);
@@ -875,13 +930,17 @@ export default function ProspectAudit() {
     if (!data) return;
     setFormData(data);
     setError(null);
+    const seedKeywords = [data.keyword1, data.keyword2, data.keyword3]
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .join(", ");
     try {
       const res = await generateMutation.mutateAsync({
         businessName: data.businessName,
         location: data.locations[0],
         locations: data.locations,
         industry: data.industry || undefined,
-        seedKeywords: data.seedKeywords || undefined,
+        seedKeywords: seedKeywords || undefined,
       });
       setQueries(res.queries as QueryItem[]);
       setStep("queries");
@@ -899,13 +958,17 @@ export default function ProspectAudit() {
 
     try {
       // Create the audit record
+      const seedKeywords = [formData.keyword1, formData.keyword2, formData.keyword3]
+        .map((k) => k.trim())
+        .filter(Boolean)
+        .join(", ");
       const { auditId: id } = await createAuditMutation.mutateAsync({
         businessName: formData.businessName,
         website: formData.website || undefined,
         location: formData.locations[0],
         locations: formData.locations,
         industry: formData.industry || undefined,
-        seedKeywords: formData.seedKeywords || undefined,
+        seedKeywords: seedKeywords || undefined,
         avgJobValue: formData.avgJobValue ? parseInt(formData.avgJobValue, 10) : undefined,
         queries: confirmedQueries,
       });
