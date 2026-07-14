@@ -390,6 +390,16 @@ function AuditRow({ audit, onDeleted }: { audit: any; onDeleted: () => void }) {
           >
             {audit.status}
           </Badge>
+          {/* Source badge */}
+          {audit.source === 'widget' ? (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-500/30 text-orange-400">
+              Lead Gen
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-sky-500/30 text-sky-400">
+              Visibility Audit
+            </Badge>
+          )}
           {audit.campaignId && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-purple-500/30 text-purple-400">
               Linked to Campaign

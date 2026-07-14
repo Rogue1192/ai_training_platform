@@ -869,6 +869,8 @@ export const prospectAudits = pgTable("prospectAudits", {
   // If this prospect signed up, link to their campaign so baseline can be reused
   campaignId: integer("campaignId").references(() => campaigns.id, { onDelete: "set null" }),
   baselinePromotedAt: timestamp("baselinePromotedAt"), // When results were copied to campaign baseline
+  // Source: 'internal' = run by agency in the app; 'widget' = submitted via embedded lead-gen widget
+  source: varchar("source", { length: 20 }).default("internal").notNull(),
   // Lead capture: true once the prospect has submitted their contact info via the
   // blurred-results lightbox. The share URL shows the full report without overlay
   // once this is true — prevents duplicate lead capture on revisit.

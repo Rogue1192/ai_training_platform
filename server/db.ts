@@ -1626,6 +1626,27 @@ export async function ensureAgencyWebhookColumns(): Promise<void> {
 }
 
 /**
+ * ensureAuditSourceColumn
+ *
+ * Adds the source column to prospectAudits if it doesn't exist.
+ * Existing rows default to 'internal'. Safe to call on every startup.
+ */
+export async function ensureAuditSourceColumn(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE "prospectAudits"
+      ADD COLUMN IF NOT EXISTS "source" varchar(20) NOT NULL DEFAULT 'internal'
+    `;
+    console.log('[DB] prospectAudits.source column ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureAuditSourceColumn:', err.message);
+  }
+}
+
+/**
  * ensureTrainingQueryTables
  *
  * Creates the three new training tables if they don't exist:

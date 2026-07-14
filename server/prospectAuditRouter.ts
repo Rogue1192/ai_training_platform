@@ -511,6 +511,7 @@ export const prospectAuditRouter = router({
         .select({
           id: prospectAudits.id,
           leadCaptured: prospectAudits.leadCaptured,
+          source: prospectAudits.source,
           status: prospectAudits.status,
           agencyId: prospectAudits.agencyId,
         })
@@ -544,6 +545,7 @@ export const prospectAuditRouter = router({
 
       return {
         leadCaptured: audit.leadCaptured,
+        source: audit.source ?? 'internal',
         status: audit.status,
         calendarEmbedCode,
       };
@@ -700,6 +702,7 @@ export const prospectAuditRouter = router({
         seedKeywords: input.seedKeywords ?? null,
         avgJobValue: input.avgJobValue ?? null,
         queries: input.queries as any,
+        source: 'widget',
         status: 'pending',
       }).returning({ id: prospectAudits.id });
       return { auditId: audit.id };

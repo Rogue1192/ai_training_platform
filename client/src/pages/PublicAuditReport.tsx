@@ -537,10 +537,13 @@ export default function PublicAuditReport() {
 
   const avgJobValue = (audit as any).avgJobValue as number | null;
 
-  // Lead gate: authenticated agency/admin users always see the full report (no blur)
+  // Lead gate logic:
+  // - 'internal' (Visibility Audit): never gated — always show full report
+  // - 'widget' (Lead Gen): gated until leadCaptured=true (fires once at widget submission)
+  // - Authenticated users: always see full report regardless of source
   const { isAuthenticated } = useAuth({ redirectOnUnauthenticated: false });
-  // Lead gate: show overlay if not yet captured (check both DB state and local state)
-  const isLeadCaptured = isAuthenticated || leadCapturedLocally || (meta?.leadCaptured ?? false);
+  const auditSource = meta?.source ?? 'internal';
+  const isLeadCaptured = isAuthenticated || auditSource === 'internal' || leadCapturedLocally || (meta?.leadCaptured ?? false);
   const calendarEmbedCode = meta?.calendarEmbedCode ?? null;
 
   // The report content (always rendered; blurred when not captured)

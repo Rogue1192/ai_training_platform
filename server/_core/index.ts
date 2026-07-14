@@ -27,6 +27,7 @@ import {
   ensureBusinessBillingTypeColumn,
   ensureAuditLeadColumns,
   ensureAgencyWebhookColumns,
+  ensureAuditSourceColumn,
   ensureTrainingQueryTables,
 } from "../db";
 
@@ -240,6 +241,9 @@ ensureAuditLeadColumns().catch((err) =>
 );
 ensureAgencyWebhookColumns().catch((err) =>
   console.warn("[Startup] ensureAgencyWebhookColumns failed (non-fatal):", err.message)
+);
+ensureAuditSourceColumn().catch((err) =>
+  console.warn("[Startup] ensureAuditSourceColumn failed (non-fatal):", err.message)
 );
 ensureTrainingQueryTables().catch((err) =>
   console.warn("[Startup] ensureTrainingQueryTables failed (non-fatal):", err.message)

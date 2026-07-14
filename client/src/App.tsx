@@ -65,11 +65,11 @@ const adminNavigationItems = [
   // just removed the menu item to reduce clutter.
   { href: "/llm-insights", label: "LLM Insights", icon: BarChart3 },
   { href: "/emails", label: "Emails", icon: Mail },
-  { href: "/settings", label: "Settings", icon: SettingsIcon },
   { href: "/agencies", label: "Agencies", icon: Users },
   { href: "/cost-tracking", label: "Cost Tracking", icon: DollarSign },
   { href: "/prospect-audit", label: "AI Visibility Audit", icon: FileBarChart, openInNewWindow: true },
   { href: "/audit-history", label: "Audit History", icon: BarChart3 },
+  { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 // Base agency nav — alertCount is injected dynamically by AgencyNavWrapper
@@ -81,6 +81,7 @@ const BASE_AGENCY_NAV = [
   { href: "/audit-history", label: "Audit History", icon: BarChart3 },
   { href: "/agency/settings", label: "Settings", icon: SettingsIcon },
 ];
+// Note: Settings is intentionally last in both nav arrays — it should always appear at the bottom.
 
 /** Wraps agency routes and injects the blocked-client count badge into the nav. */
 function AgencyRoute({ children }: { children: React.ReactNode }) {
