@@ -13,7 +13,7 @@
 import { getDb, getApiKeyByProvider } from "./db";
 import { decrypt } from "./encryption";
 import { callAI } from "./aiProviders";
-import { checkLLMVisibilityDirect, getAIKeywordSearchVolume, getGoogleAdsSearchVolume, getKeywordsForSite, getKeywordSuggestionsForProspect, getCityLocationCode } from "./dataforseoService";
+import { checkLLMVisibilityDirect, getAIKeywordSearchVolume, getGoogleAdsSearchVolume, getKeywordsForSite, getKeywordSuggestionsForProspect, getCityLocationCode, getSerpQueriesForProspect } from "./dataforseoService";
 import { calculateVisibilityScore } from "./rankTrackingEngine";
 import { prospectAudits } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -195,48 +195,8 @@ export interface ProspectAuditScores {
 // ─── Query Generation ─────────────────────────────────────────────────────────
 
 /**
- * Ask GPT-4o-mini to write `count` natural, location-aware queries for a given
- * service type and city. The city is baked into the query text itself so the
- * question reads like a real person asking a chatbot — never a keyword suffix.
- */
-async function generateQueriesForLocation(
-  serviceType: string,
-  city: string,
-  count: number,
-  openaiKey: string
-): Promise<string[]> {
-  const systemPrompt = `You write search queries that real homeowners type into AI assistants like ChatGPT or Google Gemini when they need to hire a local contractor.
-
-Rules:
-- Every query must sound like a real person talking — casual and natural
-- The city/area must be woven naturally into the query (e.g. "Who does fence installation in Cullman, AL?" or "Best fence contractors near Cullman?")
-- NEVER stack the service name as a noun modifier (e.g. NEVER write "fence company contractor", "fence company provider", "fence company companies" — these are not English)
-- Vary the phrasing: mix questions about finding someone, getting quotes, checking reputation, cost, comparing options
-- Some short and direct, some longer and conversational
-- Output ONLY a JSON array of strings, no explanation, no numbering, no extra text`;
-
-  const userPrompt = `Write ${count} unique, natural-sounding search queries that someone in or near "${city}" would type into ChatGPT or Gemini when they need to hire someone for "${serviceType}".
-
-The city must appear naturally in each query. Return a JSON array of exactly ${count} strings.`;
-
-  const resp = await callAI("openai", openaiKey, "gpt-4o-mini", [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userPrompt },
-  ]);
-
-  const raw = resp.content.trim();
-  const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  const parsed = JSON.parse(jsonStr);
-  if (!Array.isArray(parsed)) throw new Error("LLM did not return an array");
-  return parsed
-    .map((q: any) => String(q).trim())
-    .filter((q: string) => q.length > 0)
-    .slice(0, count);
-}
-
-/**
- * Fallback queries when the LLM call fails — written as real English sentences
- * with the city baked in, never template concatenations.
+ * Fallback queries when SERP data is unavailable — written as real English
+ * sentences with the city baked in naturally.
  */
 function fallbackQueriesForLocation(serviceType: string, city: string, count: number): string[] {
   const s = serviceType;
@@ -266,10 +226,23 @@ function fallbackQueriesForLocation(serviceType: string, city: string, count: nu
 /**
  * Generate exactly PROSPECT_QUERY_COUNT (15) buying-intent queries for a prospect.
  *
- * For each target location, GPT-4o-mini writes queries with the city baked in
- * naturally — so the final query sent to ChatGPT/Gemini is already a complete,
- * grammatically correct question like "Who does fence installation in Cullman, AL?"
- * rather than a query with a location suffix tacked on afterward.
+ * Strategy (in priority order):
+ *
+ * 1. PRIMARY — DataForSEO SERP related searches + commercial PAA questions.
+ *    These are queries real people are already typing into Google for this
+ *    service + location. They have real Google Ads search volume, sound
+ *    completely natural, and are already location-specific.
+ *
+ *    Related searches are preferred over PAA because they are shorter, more
+ *    transactional, and have better volume data. PAA questions are included
+ *    when filtered to commercial/transactional intent.
+ *
+ *    Queries are distributed across locations: if there are 2 locations, we
+ *    run a SERP call for each and take ~8 queries per location.
+ *
+ * 2. FALLBACK — If SERP returns fewer queries than needed, the remainder are
+ *    filled with hardcoded natural-language sentences that include the city.
+ *    These are grammatically correct and readable, just not SERP-sourced.
  */
 export async function generateProspectQueries(
   input: ProspectQueryInput
@@ -282,7 +255,7 @@ export async function generateProspectQueries(
     ...(input.locations ?? []).filter((l) => l.trim() && l.trim() !== location.trim()),
   ].filter(Boolean);
 
-  // Determine the primary service type
+  // Determine the primary service type (seed keyword preferred over industry)
   let serviceType = "home services";
   if (seedKeywords) {
     const seeds = seedKeywords.split(",").map(s => s.trim()).filter(Boolean);
@@ -293,40 +266,41 @@ export async function generateProspectQueries(
 
   const totalCount = PROSPECT_QUERY_COUNT; // 15
   const numLocations = allLocations.length;
-  // Distribute queries as evenly as possible across locations
   const queriesPerLocation = Math.ceil(totalCount / numLocations);
 
-  // Resolve OpenAI key once
-  let openaiKey: string | null = null;
-  try {
-    const keyRecord = await getApiKeyByProvider("openai");
-    if (keyRecord) openaiKey = decrypt(keyRecord.encryptedKey);
-  } catch { /* will fall back to hardcoded */ }
-
-  // ── Generate location-aware queries for each city ──────────────────────────
   const normalized: ProspectQueryResult[] = [];
 
   for (const loc of allLocations) {
     const needed = Math.min(queriesPerLocation, totalCount - normalized.length);
     if (needed <= 0) break;
 
-    let queries: string[];
-    if (openaiKey) {
-      try {
-        queries = await generateQueriesForLocation(serviceType, loc, needed, openaiKey);
-        // Pad if LLM returned fewer than needed
-        while (queries.length < needed) queries.push(queries[queries.length % queries.length]);
-        console.log(`[ProspectAudit] LLM generated ${queries.length} queries for "${serviceType}" in ${loc}`);
-      } catch (err: any) {
-        console.warn(`[ProspectAudit] LLM failed for ${loc} (${err.message}), using fallback`);
-        queries = fallbackQueriesForLocation(serviceType, loc, needed);
-      }
-    } else {
-      console.warn(`[ProspectAudit] No OpenAI key — using fallback queries for ${loc}`);
-      queries = fallbackQueriesForLocation(serviceType, loc, needed);
+    // Resolve location code for this city
+    let locationCode = 2840;
+    try {
+      locationCode = await getCityLocationCode(loc);
+    } catch { /* use US national */ }
+
+    // ── Pass 1: SERP-sourced queries (real searches, real volume) ──────────────
+    let serpQueries: string[] = [];
+    try {
+      const candidates = await getSerpQueriesForProspect(serviceType, loc, locationCode, needed * 2);
+      // related_search first, then PAA
+      const related = candidates.filter(c => c.source === "related_search").map(c => c.query);
+      const paa     = candidates.filter(c => c.source === "paa").map(c => c.query);
+      serpQueries = [...related, ...paa].slice(0, needed);
+      console.log(`[ProspectAudit] SERP gave ${serpQueries.length} queries for "${serviceType}" in ${loc}`);
+    } catch (err: any) {
+      console.warn(`[ProspectAudit] SERP query fetch failed for ${loc}: ${err.message}`);
     }
 
-    for (const q of queries) {
+    // ── Pass 2: Fill remaining slots with fallback sentences ─────────────────
+    const stillNeeded = needed - serpQueries.length;
+    const fallback = stillNeeded > 0
+      ? fallbackQueriesForLocation(serviceType, loc, stillNeeded)
+      : [];
+
+    const allForLoc = [...serpQueries, ...fallback];
+    for (const q of allForLoc) {
       normalized.push({ searchQuery: q, location: loc });
     }
   }

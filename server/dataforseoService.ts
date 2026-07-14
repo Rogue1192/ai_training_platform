@@ -1094,25 +1094,77 @@ export async function checkLLMVisibilityDirect(
   }
 
   // ── AI Overview check helper ─────────────────────────────────────────────────
+  // Uses the real DataForSEO SERP endpoint to check whether Google's AI Overview
+  // feature actually surfaces the business for this query.
+  //
+  // Google does NOT show an AI Overview for every query — local service queries
+  // often return no AI Overview at all. In that case we record mentioned=false
+  // and snippet="No AI Overview found for this query" which is honest data.
+  //
+  // We set load_async_ai_overview=true so we catch both cached (synchronous)
+  // and on-the-fly (asynchronous) AI Overviews. DataForSEO refunds the extra
+  // charge if no async overview exists.
   async function runAIOverview(): Promise<void> {
-    if (!googleKey) {
-      console.warn(`[DirectCheck] No Google API key — skipping AI Overview check for "${query}"`);
-      return;
-    }
     try {
-      const searchQuery = query
-        .replace(/^(can you |please |could you |i('m| am) looking for |who (are|is) |what (are|is) )/i, "")
-        .replace(/\?$/, "")
-        .trim();
-      const resp = await callAI("google", googleKey, "gemini-2.5-flash", [
-        { role: "system", content: "You are a Google Search AI assistant that generates AI Overview summaries for local business queries. Provide concise, factual summaries highlighting relevant local options." },
-        { role: "user", content: searchQuery },
-      ], { webSearch: true });
-      const mentioned = detectMention(resp.content, businessName);
-      result.llmResponses.aiOverview = { mentioned, position: null, snippet: resp.content.substring(0, 500), sourcesCited: [] };
-      console.log(`[DirectCheck] AI Overview for "${query}": mentioned=${mentioned}`);
+      const serpData = await dfsFetch("/serp/google/organic/live/advanced", [
+        {
+          keyword: query,
+          location_code: 2840,   // United States — AI Overview availability is US-only
+          language_code: "en",
+          depth: 10,
+          load_async_ai_overview: true,
+        },
+      ]);
+
+      const items: any[] = serpData?.tasks?.[0]?.result?.[0]?.items ?? [];
+      const aiOverviewItem = items.find((item: any) => item.type === "ai_overview");
+
+      if (!aiOverviewItem) {
+        // Google did not serve an AI Overview for this query — that's valid data
+        result.llmResponses.aiOverview = {
+          mentioned: false,
+          position: null,
+          snippet: "No AI Overview found for this query",
+          sourcesCited: [],
+        };
+        console.log(`[DirectCheck] AI Overview for "${query}": no overview present in SERP`);
+        return;
+      }
+
+      // Extract text from the ai_overview item
+      // The item has a top-level markdown field and nested ai_overview_element items
+      const overviewText = [
+        aiOverviewItem.markdown ?? "",
+        ...(aiOverviewItem.items ?? [])
+          .map((el: any) => el.text ?? el.markdown ?? "")
+          .filter(Boolean),
+      ].join("\n").trim();
+
+      // Extract cited source URLs from references
+      const sourcesCited: string[] = [
+        ...(aiOverviewItem.references ?? []),
+        ...(aiOverviewItem.items ?? []).flatMap((el: any) => el.references ?? []),
+      ]
+        .map((ref: any) => ref.url as string)
+        .filter(Boolean);
+
+      const mentioned = detectMention(overviewText, businessName);
+      result.llmResponses.aiOverview = {
+        mentioned,
+        position: null,
+        snippet: overviewText.substring(0, 500),
+        sourcesCited,
+      };
+      console.log(`[DirectCheck] AI Overview (real SERP) for "${query}": mentioned=${mentioned}, sources=${sourcesCited.length}`);
     } catch (err: any) {
-      console.error(`[DirectCheck] AI Overview check failed for "${query}":`, err.message);
+      console.error(`[DirectCheck] AI Overview SERP check failed for "${query}":`, err.message);
+      // On failure, record as not found rather than leaving it undefined
+      result.llmResponses.aiOverview = {
+        mentioned: false,
+        position: null,
+        snippet: "AI Overview check failed",
+        sourcesCited: [],
+      };
     }
   }
 
@@ -1216,4 +1268,110 @@ export async function getCityLocationCode(location: string): Promise<number> {
       return 2840;
     }
   }
+}
+
+// ============= SERP-Based Query Generation for Prospect Audits =============
+
+export interface SerpQueryCandidate {
+  query: string;
+  source: "related_search" | "paa";
+}
+
+/**
+ * Fetch PAA questions and related searches from a real Google SERP for a given
+ * seed keyword + location. These are queries real people are already typing into
+ * Google, so they:
+ *   1. Sound completely natural (no template concatenation)
+ *   2. Have real Google Ads search volume we can look up
+ *   3. Are already location-specific when the seed includes the city
+ *
+ * Strategy:
+ *   - Related searches are preferred (short, location-specific, commercial intent)
+ *   - PAA questions are included but filtered to commercial/transactional intent
+ *   - Branded results (e.g. "Parris fence company") are excluded
+ *   - Results are deduplicated
+ */
+export async function getSerpQueriesForProspect(
+  seedKeyword: string,
+  locationName: string,  // e.g. "Cullman, AL"
+  locationCode: number,  // DataForSEO location_code
+  maxResults: number = 15
+): Promise<SerpQueryCandidate[]> {
+  // Build a seed that naturally includes the location
+  // e.g. "fence company Cullman Alabama"
+  const cityPart = locationName.replace(/,\s*[A-Z]{2}$/, "").trim(); // strip state abbr
+  const seedWithLocation = `${seedKeyword} ${cityPart}`;
+
+  let serpItems: any[] = [];
+  try {
+    const serpData = await dfsFetch("/serp/google/organic/live/advanced", [
+      {
+        keyword: seedWithLocation,
+        location_code: locationCode,
+        language_code: "en",
+        depth: 10,
+      },
+    ]);
+    serpItems = serpData?.tasks?.[0]?.result?.[0]?.items ?? [];
+  } catch (err: any) {
+    console.warn(`[SerpQueries] SERP fetch failed for "${seedWithLocation}": ${err.message}`);
+    return [];
+  }
+
+  const candidates: SerpQueryCandidate[] = [];
+  const seen = new Set<string>();
+
+  // ── Extract related searches (highest priority — short, local, commercial) ──
+  for (const item of serpItems) {
+    if (item.type !== "related_searches") continue;
+    const searches: string[] = item.items ?? [];
+    for (const s of searches) {
+      const q = s.trim().toLowerCase();
+      if (!q || seen.has(q)) continue;
+      // Skip branded results (contain a proper noun that isn't the service type)
+      // Simple heuristic: skip if it contains a word that's capitalized in the original
+      // and doesn't match the seed keyword words
+      const seedWords = new Set(seedKeyword.toLowerCase().split(/\s+/));
+      const words = s.split(/\s+/);
+      const hasBrandWord = words.some(w => /^[A-Z]/.test(w) && !seedWords.has(w.toLowerCase()));
+      if (hasBrandWord) continue;
+      seen.add(q);
+      candidates.push({ query: s.trim(), source: "related_search" });
+    }
+  }
+
+  // ── Extract PAA questions (filter to commercial/transactional intent) ──
+  const COMMERCIAL_PAA_PATTERNS = [
+    /how much (does|do|should|will|would)/i,
+    /who (does|should|can|will|would|is the best|are the best)/i,
+    /what (does|should|is the best|are the best|is a good)/i,
+    /where (can|should|do)/i,
+    /how (do|can|should) (i|you) (find|hire|choose|pick|get)/i,
+    /how to (find|hire|choose|pick|negotiate|get)/i,
+    /best .*(company|contractor|service|provider)/i,
+    /how long does/i,
+    /is it worth/i,
+    /should i (hire|get|use)/i,
+    /what to (look for|expect|ask)/i,
+  ];
+
+  for (const item of serpItems) {
+    if (item.type !== "people_also_ask") continue;
+    const paaItems: any[] = item.items ?? [];
+    for (const paa of paaItems) {
+      const title: string = paa.title ?? "";
+      if (!title) continue;
+      const q = title.trim().toLowerCase();
+      if (seen.has(q)) continue;
+      // Only include if it matches a commercial/transactional pattern
+      const isCommercial = COMMERCIAL_PAA_PATTERNS.some(p => p.test(title));
+      if (!isCommercial) continue;
+      seen.add(q);
+      candidates.push({ query: title.trim(), source: "paa" });
+    }
+  }
+
+  console.log(`[SerpQueries] Found ${candidates.length} candidates for "${seedWithLocation}" (${candidates.filter(c => c.source === "related_search").length} related, ${candidates.filter(c => c.source === "paa").length} PAA)`);
+
+  return candidates.slice(0, maxResults);
 }
