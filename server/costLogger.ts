@@ -17,8 +17,8 @@
  *   Google Gemini 2.0 Flash:     $0.10 / $0.40 per 1M tokens
  *   Google Gemini 1.5 Pro:       $1.25 / $5.00 per 1M tokens
  *   Google Gemini 1.5 Flash:     $0.075 / $0.30 per 1M tokens
- *   MiniMax M2.7:                $0.80 / $3.20 per 1M tokens (estimated)
- *   MiniMax M2.7-highspeed:      $0.40 / $1.60 per 1M tokens (estimated)
+ *   MiniMax M2.7:                $0.30 / $1.20 per 1M tokens (verified platform.minimax.io)
+ *   MiniMax M2.7-highspeed:      $0.60 / $2.40 per 1M tokens (verified platform.minimax.io)
  *   DataForSEO LLM mentions search/live: $0.0020 per request
  *   DataForSEO AI keyword volume:        $0.0005 per keyword
  *   DataForSEO keywords_for_site:        $0.0020 per request
@@ -52,10 +52,10 @@ const TOKEN_PRICING: Record<string, TokenPricing> = {
   "gemini-2.0-flash":   { inputPer1M: 0.10,  outputPer1M: 0.40  },
   "gemini-1.5-pro":     { inputPer1M: 1.25,  outputPer1M: 5.00  },
   "gemini-1.5-flash":   { inputPer1M: 0.075, outputPer1M: 0.30  },
-  // MiniMax (estimated)
-  "MiniMax-M2.7":            { inputPer1M: 0.80, outputPer1M: 3.20 },
-  "MiniMax-M2.7-highspeed":  { inputPer1M: 0.40, outputPer1M: 1.60 },
-  "MiniMax-M2.5":            { inputPer1M: 0.40, outputPer1M: 1.60 },
+  // MiniMax (verified from platform.minimax.io/docs/guides/pricing-paygo)
+  "MiniMax-M2.7":            { inputPer1M: 0.30, outputPer1M: 1.20 },
+  "MiniMax-M2.7-highspeed":  { inputPer1M: 0.60, outputPer1M: 2.40 },
+  "MiniMax-M2.5":            { inputPer1M: 0.20, outputPer1M: 0.80 },
 };
 
 // DataForSEO per-call costs (USD)

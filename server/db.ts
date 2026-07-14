@@ -1624,3 +1624,99 @@ export async function ensureAgencyWebhookColumns(): Promise<void> {
     console.warn('[DB] ensureAgencyWebhookColumns:', err.message);
   }
 }
+
+/**
+ * ensureTrainingQueryTables
+ *
+ * Creates the three new training tables if they don't exist:
+ *   - trainingQueries
+ *   - trainingPhraseStatus
+ *   - trainingDayRuns
+ *
+ * Also adds new columns to trainingSessions for the new worker:
+ *   - queryId, queryVariationIndex, trainerTurns,
+ *     trainerTokensInput, trainerTokensOutput, sessionWin
+ *
+ * And adds trainerProvider + trainerModel to costLogs.
+ *
+ * Safe to call on every startup — uses CREATE TABLE IF NOT EXISTS
+ * and ADD COLUMN IF NOT EXISTS.
+ */
+export async function ensureTrainingQueryTables(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+
+    await client`
+      CREATE TABLE IF NOT EXISTS "trainingQueries" (
+        "id"               serial PRIMARY KEY,
+        "campaignId"       integer NOT NULL REFERENCES "campaigns"("id") ON DELETE CASCADE,
+        "businessId"       integer NOT NULL REFERENCES "businesses"("id") ON DELETE CASCADE,
+        "phraseText"       text NOT NULL,
+        "phraseVariations" json DEFAULT '[]',
+        "sortOrder"        integer NOT NULL,
+        "aiSearchVolume"   integer,
+        "isActive"         boolean NOT NULL DEFAULT true,
+        "lockedAt"         timestamp,
+        "createdAt"        timestamp NOT NULL DEFAULT now(),
+        "updatedAt"        timestamp NOT NULL DEFAULT now()
+      )
+    `;
+
+    await client`
+      CREATE TABLE IF NOT EXISTS "trainingPhraseStatus" (
+        "id"                    serial PRIMARY KEY,
+        "campaignId"            integer NOT NULL REFERENCES "campaigns"("id") ON DELETE CASCADE,
+        "queryId"               integer NOT NULL REFERENCES "trainingQueries"("id") ON DELETE CASCADE,
+        "targetAiProvider"      varchar(20) NOT NULL,
+        "consecutiveWins"       integer NOT NULL DEFAULT 0,
+        "isGraduated"           boolean NOT NULL DEFAULT false,
+        "lastTrainedAt"         timestamp,
+        "lastWebSearchAt"       timestamp,
+        "lastWebSearchResult"   varchar(20),
+        "lastWebSearchSnippet"  text,
+        "createdAt"             timestamp NOT NULL DEFAULT now(),
+        "updatedAt"             timestamp NOT NULL DEFAULT now()
+      )
+    `;
+
+    await client`
+      CREATE TABLE IF NOT EXISTS "trainingDayRuns" (
+        "id"                serial PRIMARY KEY,
+        "campaignId"        integer NOT NULL REFERENCES "campaigns"("id") ON DELETE CASCADE,
+        "runType"           varchar(20) NOT NULL,
+        "runDay"            integer NOT NULL,
+        "scheduledDate"     date NOT NULL,
+        "status"            varchar(20) NOT NULL DEFAULT 'pending',
+        "webSearchStatus"   varchar(20) NOT NULL DEFAULT 'pending',
+        "sessionsTotal"     integer NOT NULL DEFAULT 0,
+        "sessionsCompleted" integer NOT NULL DEFAULT 0,
+        "phrasesGraduated"  integer NOT NULL DEFAULT 0,
+        "phrasesInRotation" integer NOT NULL DEFAULT 0,
+        "createdAt"         timestamp NOT NULL DEFAULT now(),
+        "completedAt"       timestamp
+      )
+    `;
+
+    await client`
+      ALTER TABLE "trainingSessions"
+      ADD COLUMN IF NOT EXISTS "queryId"             integer REFERENCES "trainingQueries"("id") ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS "queryVariationIndex" integer,
+      ADD COLUMN IF NOT EXISTS "trainerTurns"        integer,
+      ADD COLUMN IF NOT EXISTS "trainerTokensInput"  integer,
+      ADD COLUMN IF NOT EXISTS "trainerTokensOutput" integer,
+      ADD COLUMN IF NOT EXISTS "sessionWin"          boolean
+    `;
+
+    await client`
+      ALTER TABLE "costLogs"
+      ADD COLUMN IF NOT EXISTS "trainerProvider" varchar(30),
+      ADD COLUMN IF NOT EXISTS "trainerModel"    varchar(100)
+    `;
+
+    console.log('[DB] Training query tables and columns ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureTrainingQueryTables:', err.message);
+  }
+}

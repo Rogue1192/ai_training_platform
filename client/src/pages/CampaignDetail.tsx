@@ -61,6 +61,8 @@ import {
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
+import { TrainingQuerySetup } from "@/components/TrainingQuerySetup";
+import { TrainingDashboard } from "@/components/TrainingDashboard";
 import { useRoute, useLocation } from "wouter";
 import { toast } from "sonner";
 
@@ -852,6 +854,20 @@ export default function CampaignDetail() {
 
         {/* ─── TRAINING TAB ─── */}
         <TabsContent value="training" className="space-y-4">
+          {/* V3 Training Engine sub-tabs */}
+          <Tabs defaultValue="v3-setup" className="space-y-3">
+            <TabsList className="bg-muted/30">
+              <TabsTrigger value="v3-setup">Query Setup</TabsTrigger>
+              <TabsTrigger value="v3-dashboard">Sprint Dashboard</TabsTrigger>
+              <TabsTrigger value="v3-legacy">Legacy Config</TabsTrigger>
+            </TabsList>
+            <TabsContent value="v3-setup">
+              <TrainingQuerySetup campaignId={campaignId} />
+            </TabsContent>
+            <TabsContent value="v3-dashboard">
+              <TrainingDashboard campaignId={campaignId} />
+            </TabsContent>
+            <TabsContent value="v3-legacy" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
             {/* Schedule Config */}
             {scheduleStatus && (
@@ -979,6 +995,8 @@ export default function CampaignDetail() {
               </div>
             </CardContent>
           </Card>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         {/* ─── RANKINGS TAB ─── */}

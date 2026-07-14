@@ -7,6 +7,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter, llmInsightsRouter, agencyRouter } from "../routers";
 import { costTrackingRouter } from "../costTrackingRouter";
 import { prospectAuditRouter } from "../prospectAuditRouter";
+import { trainingQueryRouter } from "../trainingQueryRouter";
 import { router } from "./trpc";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -26,15 +27,17 @@ import {
   ensureBusinessBillingTypeColumn,
   ensureAuditLeadColumns,
   ensureAgencyWebhookColumns,
+  ensureTrainingQueryTables,
 } from "../db";
 
-// Combined router with all sub-routers including llmInsights, agency, costTracking, and prospectAudit
+// Combined router with all sub-routers including llmInsights, agency, costTracking, prospectAudit, and trainingQuery
 const combinedRouter = router({
   ...appRouter._def.procedures,
   llmInsights: llmInsightsRouter,
   agency: agencyRouter,
   costTracking: costTrackingRouter,
   prospectAudit: prospectAuditRouter,
+  trainingQuery: trainingQueryRouter,
 });
 export type CombinedRouter = typeof combinedRouter;
 
@@ -237,6 +240,9 @@ ensureAuditLeadColumns().catch((err) =>
 );
 ensureAgencyWebhookColumns().catch((err) =>
   console.warn("[Startup] ensureAgencyWebhookColumns failed (non-fatal):", err.message)
+);
+ensureTrainingQueryTables().catch((err) =>
+  console.warn("[Startup] ensureTrainingQueryTables failed (non-fatal):", err.message)
 );
 
 startServer().catch(console.error);

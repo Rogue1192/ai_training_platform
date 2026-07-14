@@ -834,6 +834,19 @@ export function startScheduler(): void {
     cleanupStuckProspectAudits().catch((err: Error) => console.error("[Scheduler] Stuck audit cleanup failed:", err));
   }, 5 * 60 * 1000); // every 5 minutes
 
+  // V3 Training Engine — sprint and maintenance day runs.
+  // Checks every 30 minutes for pending training day runs scheduled for today.
+  checkV3SprintRuns().catch((err: Error) => console.error("[SchedulerV3] Sprint run check failed:", err));
+  setInterval(() => {
+    checkV3SprintRuns().catch((err: Error) => console.error("[SchedulerV3] Sprint run check failed:", err));
+  }, 30 * 60 * 1000); // every 30 minutes
+
+  // V3 Weekly maintenance — creates new maintenance run records once per day.
+  checkV3WeeklyMaintenance().catch((err: Error) => console.error("[SchedulerV3] Weekly maintenance check failed:", err));
+  setInterval(() => {
+    checkV3WeeklyMaintenance().catch((err: Error) => console.error("[SchedulerV3] Weekly maintenance check failed:", err));
+  }, 24 * 60 * 60 * 1000); // once per day
+
   console.log("[Scheduler] Scheduler started successfully");
 }
 
@@ -1369,6 +1382,168 @@ async function cleanupStuckProspectAudits(): Promise<void> {
     }
   } catch (err: any) {
     console.error('[Scheduler] cleanupStuckProspectAudits error:', err.message);
+  }
+}
+
+// ─── V3 Training Scheduler ────────────────────────────────────────────────────
+
+/**
+ * checkV3SprintRuns
+ *
+ * Runs every 30 minutes. Finds any pending V3 sprint or maintenance day runs
+ * scheduled for today or earlier and executes them:
+ *   1. Run all training sessions for the day
+ *   2. Run the end-of-day web search probe
+ */
+export async function checkV3SprintRuns(): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+
+    const { trainingDayRuns: tdrTable, campaigns: cTable, contentPages: cpTable } = await import('../drizzle/schema');
+    const { eq: eqV3, and: andV3, lte: lteV3, isNull: isNullV3 } = await import('drizzle-orm');
+    const { runTrainingDay, runEndOfDayWebSearch } = await import('./trainingWorkerV3');
+
+    const today = new Date().toISOString().split('T')[0];
+
+    const pendingRuns = await db
+      .select()
+      .from(tdrTable)
+      .where(
+        andV3(
+          eqV3(tdrTable.status, 'pending'),
+          lteV3(tdrTable.scheduledDate, today)
+        )
+      )
+      .orderBy(tdrTable.scheduledDate, tdrTable.runDay);
+
+    if (pendingRuns.length === 0) return;
+
+    console.log(`[SchedulerV3] Found ${pendingRuns.length} pending training day run(s)`);
+
+    for (const run of pendingRuns) {
+      // Verify campaign still passes all gates
+      const [campaign] = await db
+        .select()
+        .from(cTable)
+        .where(
+          andV3(
+            eqV3(cTable.id, run.campaignId),
+            eqV3(cTable.llmTxtVerified, true),
+            eqV3(cTable.schemaVerified, true)
+          )
+        )
+        .limit(1);
+
+      if (!campaign) {
+        console.log(`[SchedulerV3] Campaign ${run.campaignId} failed gate check — skipping run ${run.id}`);
+        continue;
+      }
+
+      // Check all content page URLs are present
+      const missingUrlPages = await db
+        .select({ id: cpTable.id })
+        .from(cpTable)
+        .where(
+          andV3(
+            eqV3(cpTable.campaignId, run.campaignId),
+            isNullV3(cpTable.publishedUrl)
+          )
+        )
+        .limit(1);
+
+      if (missingUrlPages.length > 0) {
+        console.log(`[SchedulerV3] Campaign ${run.campaignId} has missing content URLs — skipping run ${run.id}`);
+        continue;
+      }
+
+      try {
+        console.log(`[SchedulerV3] Executing training day run ${run.id} (campaign ${run.campaignId}, day ${run.runDay})`);
+        await runTrainingDay(run.campaignId, run.id);
+        await runEndOfDayWebSearch(run.campaignId, run.id);
+      } catch (err: any) {
+        console.error(`[SchedulerV3] Training day run ${run.id} failed:`, err.message);
+        await db
+          .update(tdrTable)
+          .set({ status: 'failed' })
+          .where(eqV3(tdrTable.id, run.id));
+      }
+    }
+  } catch (err: any) {
+    console.error('[SchedulerV3] checkV3SprintRuns error:', err.message);
+  }
+}
+
+/**
+ * checkV3WeeklyMaintenance
+ *
+ * Runs once per day. For each active V3 campaign that has completed its
+ * 4-day sprint and has no pending maintenance run and whose last completed
+ * run was > 7 days ago, creates a new weekly maintenance run.
+ */
+export async function checkV3WeeklyMaintenance(): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+
+    const { trainingDayRuns: tdrTable, campaigns: cTable, trainingQueries: tqTable } = await import('../drizzle/schema');
+    const { eq: eqV3, and: andV3, sql: sqlV3 } = await import('drizzle-orm');
+    const { createWeeklyMaintenanceRun } = await import('./trainingWorkerV3');
+
+    const SEVEN_DAYS_AGO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const v3Campaigns = await db
+      .selectDistinct({ campaignId: tqTable.campaignId })
+      .from(tqTable)
+      .where(eqV3(tqTable.isActive, true));
+
+    for (const { campaignId } of v3Campaigns) {
+      const [campaign] = await db
+        .select()
+        .from(cTable)
+        .where(
+          andV3(
+            eqV3(cTable.id, campaignId),
+            eqV3(cTable.llmTxtVerified, true),
+            eqV3(cTable.schemaVerified, true)
+          )
+        )
+        .limit(1);
+
+      if (!campaign) continue;
+
+      const sprintRuns = await db
+        .select()
+        .from(tdrTable)
+        .where(andV3(eqV3(tdrTable.campaignId, campaignId), eqV3(tdrTable.runType, 'sprint')));
+
+      const sprintComplete = sprintRuns.length >= 4 && sprintRuns.every(r => r.status === 'completed');
+      if (!sprintComplete) continue;
+
+      const pendingMaintenance = await db
+        .select()
+        .from(tdrTable)
+        .where(andV3(eqV3(tdrTable.campaignId, campaignId), eqV3(tdrTable.runType, 'maintenance'), eqV3(tdrTable.status, 'pending')))
+        .limit(1);
+
+      if (pendingMaintenance.length > 0) continue;
+
+      const lastCompleted = await db
+        .select()
+        .from(tdrTable)
+        .where(andV3(eqV3(tdrTable.campaignId, campaignId), eqV3(tdrTable.status, 'completed')))
+        .orderBy(sqlV3`${tdrTable.completedAt} DESC`)
+        .limit(1);
+
+      if (lastCompleted.length > 0 && lastCompleted[0].completedAt && lastCompleted[0].completedAt > SEVEN_DAYS_AGO) {
+        continue;
+      }
+
+      await createWeeklyMaintenanceRun(campaignId);
+      console.log(`[SchedulerV3] Created weekly maintenance run for campaign ${campaignId}`);
+    }
+  } catch (err: any) {
+    console.error('[SchedulerV3] checkV3WeeklyMaintenance error:', err.message);
   }
 }
 
