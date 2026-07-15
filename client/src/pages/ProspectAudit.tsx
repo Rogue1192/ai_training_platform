@@ -673,7 +673,7 @@ function ResultsStep({
                   {visibilityPct}%
                 </p>
                 <p className="text-xs text-gray-400 mt-2">
-                  {visibleSearches.toLocaleString()} searches where you were found
+                  Found in {scores.queriesMentioned} of {scores.totalQueries} queries
                 </p>
               </div>
 

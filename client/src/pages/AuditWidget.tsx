@@ -821,7 +821,7 @@ function ResultsStep({
       : 0;
 
   // Revenue calculator state
-  const [captureRate, setCaptureRate] = useState(10);
+  const [captureRate, setCaptureRate] = useState(20); // default 20% = 1 of 5 AI results
   const [closeRateInput, setCloseRateInput] = useState(
     avgJobValue && avgJobValue > 0 ? "30" : ""
   );
@@ -890,7 +890,7 @@ function ResultsStep({
                   {visibilityPct}%
                 </p>
                 <p className="text-xs text-gray-400 mt-2">
-                  {visibleSearches.toLocaleString()} searches where you were found
+                  Found in {scores.queriesMentioned} of {scores.totalQueries} queries
                 </p>
               </div>
               <div className="rounded-2xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-transparent p-6 text-center">
