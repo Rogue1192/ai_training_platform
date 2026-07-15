@@ -48,7 +48,7 @@ const LOOKING_FOR_PHRASES = [
   "I'm searching for a",
   "I'm trying to find a",
   "Can you help me find a",
-  "I want to hire a",
+  "I want to find a",
 ];
 const RECOMMENDATION_PHRASES = [
   "Can you recommend a good",
