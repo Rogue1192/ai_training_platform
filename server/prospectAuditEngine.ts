@@ -13,7 +13,7 @@
 import { getDb, getApiKeyByProvider } from "./db";
 import { decrypt } from "./encryption";
 import { callAI } from "./aiProviders";
-import { checkLLMVisibilityDirect, getAIKeywordSearchVolume, getGoogleAdsSearchVolume, getCityLocationCode } from "./dataforseoService";
+import { checkLLMVisibilityDirect, getAIKeywordSearchVolume, getGoogleAdsSearchVolume, getCityLocationCode, getCityCountyLocationCode } from "./dataforseoService";
 import { calculateVisibilityScore } from "./rankTrackingEngine";
 import { prospectAudits } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -793,7 +793,11 @@ export async function runProspectAudit(
   const queryVolumeMap = new Map<number, { estimatedVolume: number; usedFallback: boolean }>();
 
   for (const [loc, indices] of locationGroups) {
-    const locCode = await getCityLocationCode(loc);
+    // Use county-level location code for volume lookups — gives realistic market-size
+    // data for both small towns (city limits too small) and large cities (residential
+    // population lives in surrounding suburbs, not city limits).
+    const { locationCode: locCode, resolvedAs } = await getCityCountyLocationCode(loc);
+    console.log(`[ProspectAudit] Volume lookup for "${loc}" using location code ${locCode} (${resolvedAs})`);
     const topicVol = await fetchTopicVolume(svcType, loc, locCode, indices.length, scope);
     for (const idx of indices) {
       queryVolumeMap.set(idx, {

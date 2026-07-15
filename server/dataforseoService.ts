@@ -1369,6 +1369,93 @@ export async function getCityLocationCode(location: string): Promise<number> {
   }
 }
 
+/**
+ * getCityCountyLocationCode
+ *
+ * Resolves a city/location string to its parent county's DataForSEO location code.
+ * This gives more realistic search volume than city-limits data because:
+ *  - Small towns (Hartselle, AL) have near-zero city-limits data but Morgan County
+ *    has meaningful volume.
+ *  - Large cities (Houston, TX) have most residential population in surrounding
+ *    suburbs/counties, not the city limits.
+ *
+ * Strategy:
+ *  1. Use the US Census Geocoder to resolve city → county name.
+ *  2. Search the DataForSEO locations list for a County match in that state.
+ *  3. Fall back to city-level code, then state-level if county not found.
+ *
+ * Results are cached in-process.
+ */
+const _countyCodeCache = new Map<string, number>();
+
+export async function getCityCountyLocationCode(location: string): Promise<{ locationCode: number; resolvedAs: string }> {
+  if (!location) return { locationCode: 2840, resolvedAs: 'national' };
+
+  const cacheKey = `county:${location.trim().toLowerCase()}`;
+  if (_countyCodeCache.has(cacheKey)) return { locationCode: _countyCodeCache.get(cacheKey)!, resolvedAs: 'cached' };
+
+  // Parse city and state from "City, ST" format
+  const cityMatch = location.trim().match(/^([^,]+)/);
+  const cityName = cityMatch ? cityMatch[1].trim() : location.trim();
+  const stateMatch = location.trim().match(/,?\s+([A-Z]{2})$/);
+  const stateAbbr = stateMatch ? stateMatch[1].toUpperCase() : null;
+
+  let countyName: string | null = null;
+
+  // Step 1: Resolve city → county via US Census Geocoder (free, no key needed)
+  try {
+    const geocodeUrl = `https://geocoding.geo.census.gov/geocoder/geographies/address?street=1+Main+St&city=${encodeURIComponent(cityName)}&state=${stateAbbr ?? ''}&benchmark=Public_AR_Current&vintage=Current_Current&layers=Counties&format=json`;
+    const geoResp = await axios.get(geocodeUrl, { timeout: 8_000 });
+    const matches = geoResp.data?.result?.addressMatches ?? [];
+    if (matches.length > 0) {
+      const county = matches[0]?.geographies?.Counties?.[0];
+      if (county?.NAME) {
+        // Census returns e.g. "Morgan County" — strip " County" suffix for DataForSEO matching
+        countyName = county.NAME.replace(/\s+County$/i, '').trim();
+        console.log(`[CountyCode] Census resolved "${cityName}" → county "${countyName}"`);
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[CountyCode] Census geocoder failed for "${cityName}": ${err.message}`);
+  }
+
+  // Step 2: Find county in DataForSEO locations list
+  if (countyName && stateAbbr) {
+    try {
+      const auth = await getAuthHeader();
+      const resp = await axios.get(
+        `${DATAFORSEO_BASE}/keywords_data/google_ads/locations`,
+        { headers: { Authorization: auth }, params: { country_iso_code: 'US' }, timeout: 15_000 }
+      );
+      const locations: Array<{ location_code: number; location_name: string; location_type: string }> = resp.data?.locations ?? [];
+      const countyLower = countyName.toLowerCase();
+      const stateLower = stateAbbr.toLowerCase();
+
+      // DataForSEO county names are like "Morgan County,Alabama" or "Morgan County, AL"
+      const countyMatch = locations.find(
+        (l) =>
+          l.location_type === 'County' &&
+          l.location_name.toLowerCase().startsWith(countyLower) &&
+          l.location_name.toLowerCase().includes(stateLower)
+      );
+
+      if (countyMatch) {
+        console.log(`[CountyCode] Resolved "${location}" → county code ${countyMatch.location_code} (${countyMatch.location_name})`);
+        _countyCodeCache.set(cacheKey, countyMatch.location_code);
+        return { locationCode: countyMatch.location_code, resolvedAs: countyMatch.location_name };
+      }
+    } catch (err: any) {
+      console.warn(`[CountyCode] DataForSEO county lookup failed: ${err.message}`);
+    }
+  }
+
+  // Step 3: Fall back to city-level code
+  console.log(`[CountyCode] County not found for "${location}", falling back to city-level code`);
+  const cityCode = await getCityLocationCode(location);
+  _countyCodeCache.set(cacheKey, cityCode);
+  return { locationCode: cityCode, resolvedAs: 'city-fallback' };
+}
+
 // ============= SERP-Based Query Generation for Prospect Audits =============
 
 export interface SerpQueryCandidate {
