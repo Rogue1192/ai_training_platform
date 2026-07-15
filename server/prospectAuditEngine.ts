@@ -143,10 +143,9 @@ async function fetchTopicVolume(
   campaignScope: "local" | "national" | "ecommerce"
 ): Promise<{ estimatedVolumePerQuery: number; totalTopicVolume: number; usedFallback: boolean }> {
   const seeds = buildVolumeSeeds(serviceType, location, campaignScope);
-  // For local scope, locationCode is always 2840 (national) — getCityCountyLocationCode
-  // now returns national code + county/US ratio to avoid DataForSEO state-level inflation.
-  // For national/ecommerce, also use 2840 and ratio=1.
-  const locCode = 2840;
+  // Use the locationCode passed in (from getCityCountyLocationCode) for local scope.
+  // For national/ecommerce, always use 2840.
+  const locCode = campaignScope === "local" ? locationCode : 2840;
   // For national/ecommerce, ratio is always 1; for local, use county/US ratio
   const ratio = campaignScope === "local" ? Math.min(1, Math.max(0.000001, populationRatio)) : 1;
 
