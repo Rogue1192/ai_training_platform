@@ -1640,6 +1640,59 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { runCampaignKeywordResearch } = await import("./keywordResearchPipeline");
         return runCampaignKeywordResearch(input.campaignId);
       }),
+    // Regenerate queries for an existing campaign:
+    // merges new locations into business.location, optionally appends seed keywords,
+    // clears the old query-location matrix, and re-runs keyword research.
+    rerunKeywordResearch: protectedProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        // New locations to ADD (merged with existing; duplicates are dropped)
+        additionalLocations: z.array(z.string().min(1)).optional(),
+        // Comma-separated seed keywords to APPEND to business.specialties
+        additionalSeeds: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { getCampaignById, updateCampaign, deleteQueryLocationsByCampaignId } = await import('./dbCampaigns');
+        const { getBusinessById, updateBusiness } = await import('./db');
+        const { parseLocations, serializeLocations } = await import('../shared/location');
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign) throw new Error('Campaign not found');
+        const business = await getBusinessById(campaign.businessId);
+        if (!business) throw new Error('Business not found');
+        // 1. Merge locations
+        if (input.additionalLocations && input.additionalLocations.length > 0) {
+          const existing = parseLocations(business.location);
+          const incoming = input.additionalLocations.map((l) => l.trim()).filter(Boolean);
+          const merged = Array.from(
+            new Map([...existing, ...incoming].map((l) => [l.toLowerCase(), l])).values()
+          );
+          await updateBusiness(business.id, { location: serializeLocations(merged) });
+        }
+        // 2. Append seed keywords
+        if (input.additionalSeeds && input.additionalSeeds.trim()) {
+          const existing = business.specialties ? business.specialties.trim() : '';
+          const merged = existing
+            ? `${existing}, ${input.additionalSeeds.trim()}`
+            : input.additionalSeeds.trim();
+          await updateBusiness(business.id, { specialties: merged });
+        }
+        // 3. Clear existing query-location matrix
+        const deleted = await deleteQueryLocationsByCampaignId(input.campaignId);
+        console.log(`[rerunKeywordResearch] Deleted ${deleted} query-location rows for campaign ${input.campaignId}`);
+        // 4. Reset keyword research timestamps so the pipeline treats this as fresh
+        await updateCampaign(input.campaignId, {
+          keywordResearchCompletedAt: null,
+          baselineCheckCompletedAt: null,
+        });
+        // 5. Re-run keyword research
+        const { runCampaignKeywordResearch } = await import('./keywordResearchPipeline');
+        const result = await runCampaignKeywordResearch(input.campaignId);
+        return {
+          ...result,
+          deletedQueryCount: deleted,
+        };
+      }),
+
     // Trigger baseline rank check for a campaign
     runBaselineCheck: protectedProcedure
       .input(z.object({ campaignId: z.number() }))

@@ -663,3 +663,18 @@ export async function seedDefaultPackageTiers(): Promise<PackageTier[]> {
   console.log(`[Seed] Created ${results.length} default package tiers`);
   return results;
 }
+
+/**
+ * Delete ALL query-location rows for a campaign.
+ * Used by the "Regenerate Queries" flow to clear the old matrix before
+ * re-running keyword research with updated locations / seed keywords.
+ */
+export async function deleteQueryLocationsByCampaignId(campaignId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const deleted = await db
+    .delete(campaignQueryLocations)
+    .where(eq(campaignQueryLocations.campaignId, campaignId))
+    .returning({ id: campaignQueryLocations.id });
+  return deleted.length;
+}

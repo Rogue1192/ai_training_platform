@@ -62,6 +62,7 @@ import {
 import { useState, useMemo, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { TrainingQuerySetup } from "@/components/TrainingQuerySetup";
+import { RegenerateQueriesModal } from "@/components/RegenerateQueriesModal";
 import { TrainingDashboard } from "@/components/TrainingDashboard";
 import { useRoute, useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -105,6 +106,7 @@ export default function CampaignDetail() {
   const [runningStep, setRunningStep] = useState<string | null>(null);
   const [showModeDialog, setShowModeDialog] = useState(false);
   const [selectedMode, setSelectedMode] = useState<string>("");
+  const [showRegenerateModal, setShowRegenerateModal] = useState(false);
 
   const { user } = useAuth({ redirectOnUnauthenticated: false });
   const isAdmin = (user as any)?.role === 'admin';
@@ -344,6 +346,13 @@ export default function CampaignDetail() {
               </>
             )}
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowRegenerateModal(true)}
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Regenerate Queries
+          </Button>
           <Button onClick={handleRunFull} disabled={runFullMutation.isPending}>
             {runFullMutation.isPending ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -354,6 +363,19 @@ export default function CampaignDetail() {
           </Button>
         </div>
       </div>
+
+      {/* ── Regenerate Queries Modal ── */}
+      <RegenerateQueriesModal
+        open={showRegenerateModal}
+        onOpenChange={setShowRegenerateModal}
+        campaignId={campaignId}
+        currentLocation={(campaign as any).business?.location}
+        currentSpecialties={(campaign as any).business?.specialties}
+        onSuccess={() => {
+          refetchCampaign();
+          refetchPipeline();
+        }}
+      />
 
       {/* ── Query Review Banner ── */}
       {campaign.status === 'query_review' && (() => {
