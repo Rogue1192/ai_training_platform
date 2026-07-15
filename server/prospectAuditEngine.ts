@@ -511,6 +511,20 @@ export async function generateProspectQueries(
     if (keyRecord) openaiKey = decrypt(keyRecord.encryptedKey);
   } catch { /* will use heuristic fallback */ }
 
+  // ── Convert raw seed keyword to a proper service description phrase ─────────
+  // e.g. "fence contractor" → "fence installation", "roofing company" → "roof installation"
+  // This prevents GPT-4o from treating the keyword as a noun modifier in sentences.
+  const serviceDesc = openaiKey
+    ? await toServiceDescription(serviceType, openaiKey)
+    : serviceType
+        .replace(/\bcompan(y|ies)\b/gi, "")
+        .replace(/\bcontractor(s)?\b/gi, "")
+        .replace(/\bprovider(s)?\b/gi, "")
+        .trim()
+        .replace(/\s+/g, " ") + " services";
+
+  console.log(`[ProspectAudit] Service description: "${serviceType}" → "${serviceDesc}"`);
+
   const normalized: ProspectQueryResult[] = [];
 
   for (const loc of locationsToProcess) {
@@ -522,7 +536,7 @@ export async function generateProspectQueries(
     // ── PRIMARY: GPT-4o fan-out ───────────────────────────────────────────────
     if (openaiKey) {
       const candidates = await fanOutQueriesForLocation(
-        serviceType,
+        serviceDesc,   // ← use converted service description, NOT raw seed keyword
         loc,
         needed,
         campaignScope,
@@ -530,17 +544,13 @@ export async function generateProspectQueries(
       );
       if (candidates.length > 0) {
         queriesForLoc = scoreAndRankCandidates(candidates, needed);
-        console.log(`[ProspectAudit] Fan-out scored ${queriesForLoc.length} queries for "${serviceType}" in ${loc}`);
+        console.log(`[ProspectAudit] Fan-out scored ${queriesForLoc.length} queries for "${serviceDesc}" in ${loc}`);
       }
     }
 
     // ── FALLBACK: hardcoded natural sentences ────────────────────────────────
     if (queriesForLoc.length < needed) {
       const stillNeeded = needed - queriesForLoc.length;
-      const serviceDesc = serviceType
-        .replace(/\bcompan(y|ies)\b/gi, "contractor")
-        .replace(/\bservice\b/gi, "services")
-        .trim();
       const fallback = buildFallbackQueries(serviceDesc, loc, campaignScope, stillNeeded);
       queriesForLoc = [...queriesForLoc, ...fallback];
     }
