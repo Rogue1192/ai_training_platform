@@ -390,25 +390,33 @@ async function fanOutQueriesForLocation(
 
   const bucket1Label = isEmergencyService
     ? 'TRANSACTIONAL/URGENT (7 queries): The person needs someone NOW. Urgency is implied.'
-    : 'TRANSACTIONAL/READY TO BOOK (7 queries): The person has decided they need this service and is actively looking for a contractor to call. They are not researching — they are ready to pick up the phone.';  
+    : 'TRANSACTIONAL/READY TO ACT (7 queries): The person has decided they want this and is looking for the right place, person, or business to use. They are not researching — they want a specific name or recommendation.';
 
+  // Build dynamic examples from the actual seed keywords so GPT-4o
+  // pattern-matches off the real business type, not hardcoded fence examples.
+  const seed1 = servicesList[0] ?? serviceType;
+  const seed2 = servicesList[1] ?? servicesList[0] ?? serviceType;
   const bucket1Examples = isEmergencyService
-    ? `- "Who does emergency repair in ${location}?"
-- "I need someone to come out today in ${location} — who should I call?"
-- "Best contractors available now in ${location}"`
-    : `- "Looking for a fence company in Cullman to install a wood privacy fence"
-- "Who installs chain link fences in Hartselle, AL?"
-- "Need someone to put up a fence in Cullman this spring"`;
+    ? `- "Who does emergency ${seed1} in ${location}?"
+- "I need ${seed1} help right now in ${location} — who should I call?"
+- "Best ${seed1} available now in ${location}"`
+    : isLocal
+      ? `- "Who does ${seed1} in ${location}?"
+- "Looking for ${seed2} in ${location}"
+- "I need ${seed1} in ${location} — who do you recommend?"`
+      : `- "Who does ${seed1}?"
+- "Best ${seed2} with good reviews"
+- "I need ${seed1} — who do you recommend?"`;
 
   const noUrgencyRule = isEmergencyService ? '' : `
 7. NEVER use urgency, speed, or emergency framing. Do NOT use words like: emergency, urgent, ASAP, fastest, quickest, today, tonight, right now, immediately, hurry, rush, quick. This service is NOT emergency-based. Real people do not search for it with urgency.`;
 
-  const systemPrompt = `You are an expert at writing the exact phrases real people type into ChatGPT, Gemini, and Perplexity when they want to FIND and BOOK a contractor for a service. You understand the difference between someone who is ready to call a contractor vs. someone who is just researching.
+  const systemPrompt = `You are an expert at writing the exact phrases real people type into ChatGPT, Gemini, and Perplexity when they are ready to take action — find a specific business, call someone, visit a place, or get something done. You understand the difference between someone who is ready to act vs. someone who is still researching.
 
 BUSINESS CONTEXT — use this to understand what the business does and generate queries that reflect their specific services:
 ${contextBlock}
 
-Your task: Generate exactly ${FAN_OUT_CANDIDATES} queries for someone looking to find and book this type of contractor${locationClause}.
+Your task: Generate exactly ${FAN_OUT_CANDIDATES} queries from someone who has already decided they want this and is now looking for the right place or person to use${locationClause}.
 
 ${locationInstruction}
 
@@ -417,19 +425,19 @@ Generate queries across these 3 intent buckets:
 BUCKET 1 — ${bucket1Label} Examples of good queries:
 ${bucket1Examples}
 
-BUCKET 2 — COMMERCIAL/COMPARISON (7 queries): The person is vetting options, comparing companies, or looking for the best. Examples:
-- "Best fence companies in Cullman, AL with good reviews"
-- "Who installs chain link fences in Cullman, Alabama?"
-- "Who are the most trusted fence contractors in Cullman?"
+BUCKET 2 — COMMERCIAL/COMPARISON (7 queries): The person is vetting options, comparing businesses, or looking for the best. Examples:
+- "Best ${seed1}${isLocal ? ` in ${location}` : ''} with good reviews"
+- "Who are the most trusted ${seed2}${isLocal ? ` in ${location}` : ''}?"
+- "Top rated ${seed1}${isLocal ? ` near ${location}` : ''}"
 
-BUCKET 3 — REPUTATION/TRUST (6 queries): The person wants to validate a specific company or find one with a strong reputation. Examples:
-- "Who is the most reputable fence company in Cullman, AL?"
-- "Best reviewed fence installer near Cullman, Alabama"
-- "Highly rated fence companies in Cullman with good reviews"
+BUCKET 3 — REPUTATION/TRUST (6 queries): The person wants to find a business with a strong reputation or verified reviews. Examples:
+- "Most reputable ${seed1}${isLocal ? ` in ${location}` : ''}"
+- "Best reviewed ${seed2}${isLocal ? ` near ${location}` : ''}"
+- "Highly rated ${seed1}${isLocal ? ` in ${location}` : ''} with good reviews"
 
 CRITICAL RULES — violating any of these will make the query useless:
 1. Write EXACTLY how a real person types on their phone. Natural, conversational, sometimes incomplete sentences.
-2. NEVER use a business-category word as a noun modifier. "fence installation contractor" is ok. "fence company contractor" is NOT ok. "fence company provider" is NOT ok.
+2. NEVER stack two business-category words together as modifiers. "fence installation company" is ok. "fence company contractor" is NOT ok. "restaurant dining provider" is NOT ok.
 3. NEVER include price, cost, budget, or how-to questions. Those are informational, not service-seeking intent.
 4. NEVER use corporate jargon: "provider", "meeting these requirements", "solutions", "services" as a standalone noun.
 5. SPREAD ACROSS ALL SERVICES — if multiple services are listed in the context, you MUST use each service in at least 2-3 queries. Do NOT use the same service in more than 4 queries total. This is mandatory.
@@ -437,7 +445,7 @@ CRITICAL RULES — violating any of these will make the query useless:
 
 Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No explanations, no bucket labels, no extra text. NEVER wrap a query in quotation marks.`;
 
-  const userPrompt = `Generate ${FAN_OUT_CANDIDATES} queries from someone ready to find and book a contractor for this business${locationClause}. Use the business context above. Follow all rules exactly. Do NOT use quotation marks around any query.`;
+  const userPrompt = `Generate ${FAN_OUT_CANDIDATES} queries from someone who has decided they want this and is actively looking for the right business to use${locationClause}. Use the business context above. Follow all rules exactly. Do NOT use quotation marks around any query.`;
 
   try {
     const response = await callAI(
