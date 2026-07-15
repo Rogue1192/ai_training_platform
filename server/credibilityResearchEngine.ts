@@ -23,7 +23,8 @@ export interface CredibilityFact {
   details: string; // Expanded details about this fact
   source: string; // Where this was found or inferred from
   confidence: "high" | "medium" | "low"; // How confident we are this is accurate
-  verificationUrl?: string; // URL where this can be verified
+  verificationUrl?: string; // URL where this can be verified (resolved to direct result page by licenseVerificationService)
+  lookupFlag?: string; // Set when automated license lookup failed — instructs agency to verify manually
 }
 
 export interface CredibilityResearchResult {

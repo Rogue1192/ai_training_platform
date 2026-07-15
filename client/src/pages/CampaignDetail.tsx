@@ -1304,6 +1304,10 @@ function ContentTab({ campaignId }: { campaignId: number }) {
     onError: (err) => toast.error(err.message),
   });
 
+  const updateContentPageContent = trpc.campaign.updateContentPageContent.useMutation({
+    onError: (err) => toast.error(err.message),
+  });
+
   // Parse the schema delivery plan from the DB content page.
   // NOTE: every hook must run before the early return below, or the hook
   // count changes between the loading/loaded renders (React error #310).
@@ -1463,6 +1467,9 @@ function ContentTab({ campaignId }: { campaignId: number }) {
                         ? page.pageContent.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\n{3,}/g, '\n\n').trim()
                         : '';
                       const contentTab = expandedPages[`${page.id}_tab`] ?? 'html';
+                      const editDraftKey = `${page.id}_editDraft`;
+                      const editDraft = expandedPages[editDraftKey] as string | undefined;
+                      const isEditing = contentTab === 'edit';
                       return (
                         <div className="border-t border-border mx-3 mb-3">
                           <div className="flex items-center justify-between pt-2 pb-1">
@@ -1479,26 +1486,111 @@ function ContentTab({ campaignId }: { campaignId: number }) {
                                 className="h-7 text-xs"
                                 onClick={() => setExpandedPages(prev => ({ ...prev, [`${page.id}_tab`]: 'plain' }))}
                               >Plain Text</Button>
+                              <Button
+                                variant={contentTab === 'edit' ? 'secondary' : 'ghost'}
+                                size="sm"
+                                className="h-7 text-xs gap-1"
+                                onClick={() => {
+                                  // Seed the draft with current content when opening edit tab
+                                  setExpandedPages(prev => ({
+                                    ...prev,
+                                    [`${page.id}_tab`]: 'edit',
+                                    [editDraftKey]: prev[editDraftKey] !== undefined
+                                      ? prev[editDraftKey]
+                                      : (page.pageContent ?? ''),
+                                  }));
+                                }}
+                              >
+                                <Save className="w-3 h-3" />
+                                Edit
+                              </Button>
                             </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs gap-1.5"
-                              onClick={() => {
-                                const toCopy = contentTab === 'plain' ? plainText : page.pageContent;
-                                navigator.clipboard.writeText(toCopy);
-                                toast.success(contentTab === 'plain' ? 'Plain text copied!' : 'HTML copied!');
-                              }}
-                            >
-                              <Copy className="w-3 h-3" />
-                              Copy {contentTab === 'plain' ? 'Plain Text' : 'HTML'}
-                            </Button>
+                            {!isEditing && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs gap-1.5"
+                                onClick={() => {
+                                  const toCopy = contentTab === 'plain' ? plainText : page.pageContent;
+                                  navigator.clipboard.writeText(toCopy);
+                                  toast.success(contentTab === 'plain' ? 'Plain text copied!' : 'HTML copied!');
+                                }}
+                              >
+                                <Copy className="w-3 h-3" />
+                                Copy {contentTab === 'plain' ? 'Plain Text' : 'HTML'}
+                              </Button>
+                            )}
+                            {isEditing && (
+                              <div className="flex gap-1.5">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  onClick={() => {
+                                    // Discard changes and go back to HTML view
+                                    setExpandedPages(prev => ({
+                                      ...prev,
+                                      [`${page.id}_tab`]: 'html',
+                                      [editDraftKey]: undefined as any,
+                                    }));
+                                  }}
+                                >Cancel</Button>
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs gap-1"
+                                  disabled={updateContentPageContent.isPending}
+                                  onClick={() => {
+                                    const draft = expandedPages[editDraftKey] as string | undefined;
+                                    if (!draft) return;
+                                    updateContentPageContent.mutate(
+                                      { pageId: page.id, pageContent: draft },
+                                      {
+                                        onSuccess: () => {
+                                          utils.campaign.getContentPages.invalidate({ campaignId });
+                                          // Clear draft and return to HTML view
+                                          setExpandedPages(prev => ({
+                                            ...prev,
+                                            [`${page.id}_tab`]: 'html',
+                                            [editDraftKey]: undefined as any,
+                                          }));
+                                          toast.success('Content saved.');
+                                        },
+                                        onError: (err) => toast.error(err.message),
+                                      }
+                                    );
+                                  }}
+                                >
+                                  {updateContentPageContent.isPending ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Save className="w-3 h-3" />
+                                  )}
+                                  Save Changes
+                                </Button>
+                              </div>
+                            )}
                           </div>
-                          <div className="rounded-md bg-muted/40 p-3 max-h-72 overflow-y-auto">
-                            <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
-                              {contentTab === 'plain' ? plainText : page.pageContent}
-                            </pre>
-                          </div>
+                          {!isEditing && (
+                            <div className="rounded-md bg-muted/40 p-3 max-h-72 overflow-y-auto">
+                              <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
+                                {contentTab === 'plain' ? plainText : page.pageContent}
+                              </pre>
+                            </div>
+                          )}
+                          {isEditing && (
+                            <div className="mt-1">
+                              <p className="text-xs text-muted-foreground mb-1.5">
+                                Edit the HTML content below. You can update links, fix text, or replace any ⚠️ manual-review placeholders with real URLs.
+                              </p>
+                              <Textarea
+                                className="text-xs font-mono min-h-[260px] bg-muted/40 border-border"
+                                value={editDraft ?? page.pageContent ?? ''}
+                                onChange={(e) =>
+                                  setExpandedPages(prev => ({ ...prev, [editDraftKey]: e.target.value }))
+                                }
+                              />
+                            </div>
+                          )}
                         </div>
                       );
                     })()}

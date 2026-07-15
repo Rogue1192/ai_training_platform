@@ -2123,6 +2123,45 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         // No audit result — schema_package only
         return { success: true, mode: "package_only", deliveryMode: "full_replace", blockCount: 0, gapFieldCount: 0 };
       }),
+
+    // Update the HTML content of a content page (allows editing links/text even after page is published)
+    updateContentPageContent: protectedProcedure
+      .input(z.object({
+        pageId: z.number(),
+        pageContent: z.string().min(1, 'Content cannot be empty'),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { getDb } = await import('./db');
+        const { contentPages: cpTable, campaigns: campaignsTable, businesses: bizTable } = await import('../drizzle/schema');
+        const { eq, and } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        // Find the page and verify it belongs to the current user's agency
+        const [page] = await db
+          .select({ id: cpTable.id, campaignId: cpTable.campaignId })
+          .from(cpTable)
+          .where(eq(cpTable.id, input.pageId))
+          .limit(1);
+        if (!page || !page.campaignId) throw new Error('Content page not found');
+        // Admins can edit any page; agency users can only edit their own
+        if (ctx.user.role !== 'admin') {
+          const { getAgencyByUserId } = await import('./dbAgencies');
+          const agency = await getAgencyByUserId(ctx.user.id);
+          if (!agency) throw new Error('Agency not found');
+          const [campaign] = await db
+            .select({ id: campaignsTable.id })
+            .from(campaignsTable)
+            .innerJoin(bizTable, eq(bizTable.id, campaignsTable.businessId))
+            .where(and(eq(campaignsTable.id, page.campaignId), eq(bizTable.agencyId, agency.id)))
+            .limit(1);
+          if (!campaign) throw new Error('Not authorized to update this page');
+        }
+        await db
+          .update(cpTable)
+          .set({ pageContent: input.pageContent, updatedAt: new Date() })
+          .where(eq(cpTable.id, input.pageId));
+        return { success: true };
+      }),
   }),
 
   // ============= AI ANSWER FORGE — Webhook Logs =============
@@ -4532,6 +4571,55 @@ export const agencyRouter = router({
         });
       }
       return { success: true, allUrlsEntered: allHaveUrls };
+    }),
+
+  // Update the HTML content of a content page (allows editing links/text even after page is published)
+  updateContentPageContent: protectedProcedure
+    .input(z.object({
+      pageId: z.number(),
+      pageContent: z.string().min(1, 'Content cannot be empty'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { getDb } = await import('./db');
+      const { contentPages, campaigns, businesses } = await import('../drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+      // Resolve agency (support admin impersonation)
+      const impersonatedAgencyId = (ctx as any).impersonatedAgencyId as number | undefined;
+      let agencyId: number;
+      if (impersonatedAgencyId) {
+        if (ctx.user.role !== 'admin') throw new Error('Forbidden');
+        agencyId = impersonatedAgencyId;
+      } else {
+        const agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency) throw new Error('Agency not found');
+        agencyId = agency.id;
+      }
+      // Verify the page belongs to a campaign under this agency
+      const [page] = await db
+        .select({ id: contentPages.id, campaignId: contentPages.campaignId })
+        .from(contentPages)
+        .where(eq(contentPages.id, input.pageId))
+        .limit(1);
+      if (!page || !page.campaignId) throw new Error('Content page not found');
+      const [campaign] = await db
+        .select({ id: campaigns.id })
+        .from(campaigns)
+        .innerJoin(businesses, eq(businesses.id, campaigns.businessId))
+        .where(and(eq(campaigns.id, page.campaignId), eq(businesses.agencyId, agencyId)))
+        .limit(1);
+      if (!campaign) throw new Error('Not authorized to update this page');
+      // Save the updated content
+      await db
+        .update(contentPages)
+        .set({
+          pageContent: input.pageContent,
+          updatedAt: new Date(),
+        })
+        .where(eq(contentPages.id, input.pageId));
+      return { success: true };
     }),
 
   // Super admin: start impersonating an agency (returns the agency user id for context switching)

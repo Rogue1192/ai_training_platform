@@ -251,13 +251,17 @@ function buildPagePrompt(
   
   const otherPages = allPageTypes.filter(t => t !== config.type);
   
-  // Format facts — include verificationUrl so the LLM can create hyperlinks
+  // Format facts — include verificationUrl or lookupFlag so the LLM can create hyperlinks or manual-review notices
+  const hasVerifiableLinks = relevantFacts.some(f => !!f.verificationUrl);
+  const hasFlaggedLinks = relevantFacts.some(f => !!(f as any).lookupFlag);
+
   const factLines = relevantFacts.map(f => {
     const urlNote = f.verificationUrl ? ` [VERIFICATION URL: ${f.verificationUrl}]` : "";
-    return `- [${f.category}] ${f.fact} (${f.details}) — Confidence: ${f.confidence}${urlNote}`;
+    const flagNote = !f.verificationUrl && (f as any).lookupFlag
+      ? ` [MANUAL REVIEW REQUIRED: ${(f as any).lookupFlag}]`
+      : "";
+    return `- [${f.category}] ${f.fact} (${f.details}) — Confidence: ${f.confidence}${urlNote}${flagNote}`;
   }).join("\n");
-
-  const hasVerifiableLinks = relevantFacts.some(f => !!f.verificationUrl);
 
   return `Generate ${config.promptContext}
 
@@ -276,6 +280,10 @@ ${hasVerifiableLinks ? `IMPORTANT — EXTERNAL VERIFICATION LINKS:
 Some facts above include a [VERIFICATION URL]. When you write about those facts in the HTML content, you MUST include a hyperlink to that URL using this exact pattern:
 <a href="[VERIFICATION URL]" target="_blank" rel="noopener noreferrer">Verify [certification/award/profile name]</a>
 Place the link naturally inline — for example: "...is NATE-certified (<a href=\"https://natex.org/...\" target=\"_blank\" rel=\"noopener noreferrer\">verify certification</a>)" or as a standalone "View our BBB profile" link. This is critical for trust signals — do NOT omit these links.\n` : ""}
+${hasFlaggedLinks ? `IMPORTANT — MANUAL REVIEW NOTICES:
+Some facts above include a [MANUAL REVIEW REQUIRED] note. For those facts, you MUST include a visible HTML notice block immediately after you mention the fact, using this exact HTML:
+<div class="license-lookup-notice" style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:8px 12px;margin:8px 0;font-size:0.875em;color:#856404;">⚠️ [paste the full MANUAL REVIEW REQUIRED text here]</div>
+This notice tells the agency to manually verify and update the link before publishing. Do NOT omit these notices — they are critical for content accuracy.\n` : ""}
 Other pages on this site that you can interlink to: ${otherPages.join(", ")}
 
 Remember: Follow the exact content structure (H1 → Summary → Bullets → Detailed Content → FAQ → Interlinks). Return ONLY valid JSON.`;

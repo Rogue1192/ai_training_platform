@@ -193,10 +193,25 @@ export async function runPipelineStep(
           location: business.location || "",
           credibilityUrls: parsedCredibilityUrls,
         });
+
+        // ── License / certification URL resolution ────────────────────────────
+        // Attempt to resolve each verificationUrl from a generic search-form page
+        // to a direct result page for this specific business. Facts that cannot
+        // be resolved automatically get a lookupFlag so the agency knows to
+        // update the link manually before publishing.
+        let licenseResolutionSummary = "";
+        try {
+          const { resolveAllLicenseUrls } = await import("./licenseVerificationService");
+          const licenseStats = await resolveAllLicenseUrls(credResult.facts, business.name);
+          licenseResolutionSummary = ` License lookups: ${licenseStats.resolved} resolved, ${licenseStats.flagged} flagged for manual review.`;
+        } catch (licErr: any) {
+          console.warn("[Pipeline] License verification step failed (non-fatal):", licErr.message);
+        }
+
         result = {
           step,
           success: true,
-          message: `Credibility research complete. Score: ${credResult.overallScore}/100, ${credResult.facts.length} facts found, ${credResult.suggestedPages.length} pages suggested.`,
+          message: `Credibility research complete. Score: ${credResult.overallScore}/100, ${credResult.facts.length} facts found, ${credResult.suggestedPages.length} pages suggested.${licenseResolutionSummary}`,
           data: { score: credResult.overallScore, factCount: credResult.facts.length },
           nextStep: "content_generation",
         };
