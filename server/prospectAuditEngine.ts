@@ -75,14 +75,9 @@ export function normalizeDomain(website: string | null | undefined): string | nu
  */
 const AI_VOLUME_FALLBACK_RATE = 0.25;
 
-/**
- * Suburban uplift: city-limits data from Google Ads/AI volume endpoints
- * captures only searches originating within city limits. Service businesses
- * draw customers from suburbs, surrounding towns, and rural areas that
- * Google's geo-targeting excludes. We apply a flat 20% uplift to all
- * volume figures to account for this systematic under-reporting.
- */
-const SUBURBAN_UPLIFT = 1.20;
+// Suburban uplift removed: we now resolve to county level via Google Maps,
+// so the county population already includes suburbs and surrounding areas.
+// No additional multiplier needed.
 
 /**
  * Build the short seed phrases used for topic-level volume lookup.
@@ -93,10 +88,13 @@ function buildVolumeSeeds(
   location: string,
   campaignScope: "local" | "national" | "ecommerce"
 ): string[] {
-  // Normalize service type: strip trailing "company/companies/services" for cleaner seeds
+  // By the time this is called, serviceType is already a clean service description
+  // (e.g. "fence installation", "home services", "roof installation") produced by
+  // toServiceDescription(). Do NOT strip "services" here — that turns "home services"
+  // into "home", which is a useless generic seed that returns massive unrelated volumes.
+  // Only strip "company/companies" which toServiceDescription may not always catch.
   const base = serviceType
     .replace(/\bcompan(y|ies)\b/gi, "")
-    .replace(/\bservices?\b/gi, "")
     .trim()
     || serviceType;
 
@@ -192,8 +190,8 @@ async function fetchTopicVolume(
   // Google Ads fallback from Pass 2 also needs the 0.25 AI adoption rate multiplier.
   const scaledVolume = totalVolume * ratio;
   const totalAIVolume = usedFallback
-    ? Math.round(scaledVolume * AI_VOLUME_FALLBACK_RATE * SUBURBAN_UPLIFT)
-    : Math.round(scaledVolume * SUBURBAN_UPLIFT);
+    ? Math.round(scaledVolume * AI_VOLUME_FALLBACK_RATE)
+    : Math.round(scaledVolume);
   const perQuery = Math.max(1, Math.round(totalAIVolume / queryCount));
 
   console.log(`[ProspectAudit] Final volume for "${location}": national=${totalVolume} × county_ratio=${(ratio * 100).toFixed(4)}% = ${Math.round(scaledVolume)} → AI=${totalAIVolume}/mo`);
@@ -211,7 +209,6 @@ export interface ProspectQueryInput {
   location: string;
   /** All target locations — if provided, queries are generated for each */
   locations?: string[];
-  industry?: string;
   seedKeywords?: string; // comma-separated
   /** Controls query framing and volume lookup strategy */
   campaignScope?: "local" | "national" | "ecommerce";
@@ -346,7 +343,6 @@ async function fanOutQueriesForLocation(
   needed: number,
   campaignScope: "local" | "national" | "ecommerce",
   openaiKey: string,
-  industry?: string,
   allSeedKeywords?: string[]
 ): Promise<string[]> {
   const isLocal = campaignScope === "local";
@@ -355,17 +351,15 @@ async function fanOutQueriesForLocation(
     ? `The city is ${location}. Every query MUST naturally include the city name or a clear local reference. Do NOT append the city as a suffix after a question mark — weave it into the sentence naturally.`
     : `This is a ${campaignScope} business. Do NOT include any city or location in the queries.`;
 
-  // Build the business context block from industry + all seed keywords
-  // Use the raw seed keywords directly — do NOT collapse them into one phrase.
-  // GPT-4o understands "fence company", "chain link fence installation" etc. as-is.
-  const industryLine = industry ? `Industry / Trade: ${industry}` : "";
+  // Build the business context block from seed keywords only.
+  // The seeds ARE the context — no separate industry line needed.
   const servicesList = allSeedKeywords && allSeedKeywords.length > 0
     ? allSeedKeywords
     : [serviceType];
   const servicesLine = servicesList.length === 1
     ? `Service: ${servicesList[0]}`
     : servicesList.map((s, i) => `Service ${i + 1}: ${s}`).join("\n");
-  const contextBlock = [industryLine, servicesLine].filter(Boolean).join("\n");
+  const contextBlock = servicesLine;
 
   const systemPrompt = `You are an expert at writing the exact phrases real people type into ChatGPT, Gemini, and Perplexity when they want to HIRE someone for a service. You understand the difference between someone who is ready to hire vs. someone who is just researching.
 
@@ -576,7 +570,7 @@ function scoreAndRankCandidates(candidates: string[], needed: number, allSeedKey
 export async function generateProspectQueries(
   input: ProspectQueryInput
 ): Promise<ProspectQueryResult[]> {
-  const { location, industry, seedKeywords, campaignScope = "local" } = input;
+  const { location, seedKeywords, campaignScope = "local" } = input;
 
   // Deduplicate and filter blank locations; always include primary
   const allLocations = [
@@ -587,14 +581,16 @@ export async function generateProspectQueries(
   // For national/ecommerce, we only generate one set of queries (no location variation)
   const locationsToProcess = campaignScope === "local" ? allLocations : [allLocations[0]];
 
-  // Determine the primary service type (seed keyword preferred over industry)
-  let serviceType = "home services";
-  if (seedKeywords) {
-    const seeds = seedKeywords.split(",").map(s => s.trim()).filter(Boolean);
-    if (seeds.length > 0) serviceType = seeds[0];
-  } else if (industry) {
-    serviceType = industry;
+  // Determine the primary service type (seed keyword preferred over industry).
+  // serviceType comes from keywords only — industry is not used here.
+  if (!seedKeywords) {
+    throw new Error("Audit requires at least one seed keyword to generate queries.");
   }
+  const seedList = seedKeywords.split(",").map(s => s.trim()).filter(Boolean);
+  if (seedList.length === 0) {
+    throw new Error("Audit requires at least one seed keyword to generate queries.");
+  }
+  const serviceType = seedList[0];
 
   const totalCount = PROSPECT_QUERY_COUNT; // 15
   const numLocations = locationsToProcess.length;
@@ -655,7 +651,6 @@ export async function generateProspectQueries(
           queriesNeededPerSeed,
           campaignScope,
           openaiKey,
-          industry,
           [seed]  // pass only THIS seed so GPT-4o focuses on it
         );
         console.log(`[ProspectAudit] Fan-out got ${seedCandidates.length} candidates for seed "${seed}" → "${seedDesc}" in ${loc}`);
@@ -794,7 +789,11 @@ export async function runProspectAudit(
 
   const snapshots: ProspectSnapshotResult[] = [];
   const scope = campaignScope ?? "local";
-  const svcType = serviceType ?? "home services";
+  // No default — if serviceType is missing the router has a bug; fail loudly.
+  if (!serviceType) {
+    throw new Error("runProspectAudit called without a serviceType — check that the router passes audit.seedKeywords.");
+  }
+  const svcType = serviceType;
 
   // ── Topic-level volume lookup (per location) ─────────────────────────────
   // We look up volume for SHORT SEED PHRASES (e.g. "fence installation Cullman")

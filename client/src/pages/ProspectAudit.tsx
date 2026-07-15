@@ -71,7 +71,6 @@ function BusinessInfoForm({
     businessName: string;
     website: string;
     locations: string[];
-    industry: string;
     keyword1: string;
     keyword2: string;
     keyword3: string;
@@ -83,7 +82,6 @@ function BusinessInfoForm({
     businessName: "",
     website: "",
     locations: [""] as string[],
-    industry: "",
     keyword1: "",
     keyword2: "",
     keyword3: "",
@@ -103,7 +101,6 @@ function BusinessInfoForm({
     form.businessName.trim() &&
     form.website.trim() &&
     (form.campaignScope === "ecommerce" || validLocations.length > 0) &&
-    form.industry.trim() &&
     form.keyword1.trim() &&
     form.avgJobValue &&
     parseFloat(form.avgJobValue) > 0;
@@ -211,7 +208,6 @@ function BusinessInfoForm({
 
           {textField("businessName", "Business Name", "e.g. Titan Cleaning Company", Building2)}
           {textField("website", "Website", "https://titancleaningco.com", Globe)}
-          {textField("industry", "Industry / Trade", "e.g. HVAC, Plumbing, Residential Cleaning", Tag)}
 
           {/* Locations — max 3 — hidden for ecommerce */}
           {form.campaignScope !== "ecommerce" && <div>
@@ -950,7 +946,6 @@ export default function ProspectAudit() {
     businessName: string;
     website: string;
     locations: string[];
-    industry: string;
     keyword1: string;
     keyword2: string;
     keyword3: string;
@@ -985,7 +980,6 @@ export default function ProspectAudit() {
         businessName: data.businessName,
         location: data.locations[0] ?? "United States",
         locations: data.locations,
-        industry: data.industry || undefined,
         seedKeywords: seedKeywords || undefined,
         campaignScope: data.campaignScope ?? "local",
       });
@@ -1014,7 +1008,6 @@ export default function ProspectAudit() {
         website: formData.website || undefined,
         location: formData.locations[0] ?? "United States",
         locations: formData.locations,
-        industry: formData.industry || undefined,
         seedKeywords: seedKeywords || undefined,
         avgJobValue: formData.avgJobValue ? parseInt(formData.avgJobValue, 10) : undefined,
         campaignScope: formData.campaignScope ?? "local",

@@ -154,16 +154,27 @@ export const prospectAuditRouter = router({
       }
 
       const queries = (audit.queries as any[]) || [];
+
+      // serviceType comes from seedKeywords only — industry is not used.
+      let auditServiceType: string | undefined;
+      if (audit.seedKeywords) {
+        const seeds = (audit.seedKeywords as string).split(',').map((s: string) => s.trim()).filter(Boolean);
+        if (seeds.length > 0) auditServiceType = seeds[0];
+      }
+
       const { snapshots, scores } = await runProspectAudit(
         audit.id,
         audit.businessName,
         audit.website,
         null,
         audit.agencyId,
-        queries
+        queries,
+        undefined,
+        auditServiceType,
+        (audit.campaignScope as any) ?? 'local'
       );
 
-      // ── Increment quota usage (agency users only) ───────────────────────────
+      // ── Increment quota usage (agency users only) ─────────────────────────────────────────────
       if (agency) {
         const now = new Date();
         const periodStart = getAnniversaryPeriodStart(agency.createdAt, now);
@@ -763,13 +774,25 @@ export const prospectAuditRouter = router({
         await db.update(prospectAudits).set({ shareToken: token }).where(eq(prospectAudits.id, input.auditId));
       }
       const queries = (audit.queries as any[]) || [];
+
+      // Derive serviceType from stored audit fields — seed keywords take priority over industry.
+      // serviceType comes from seedKeywords only — industry is not used.
+      let auditServiceType2: string | undefined;
+      if (audit.seedKeywords) {
+        const seeds2 = (audit.seedKeywords as string).split(',').map((s: string) => s.trim()).filter(Boolean);
+        if (seeds2.length > 0) auditServiceType2 = seeds2[0];
+      }
+
       const { snapshots, scores } = await runProspectAudit(
         audit.id,
         audit.businessName,
         audit.website,
         null,
         audit.agencyId,
-        queries
+        queries,
+        undefined,
+        auditServiceType2,
+        (audit.campaignScope as any) ?? 'local'
       );
       // ── Increment quota usage (agency-scoped audits only) ──────────────────
       if (audit.agencyId) {

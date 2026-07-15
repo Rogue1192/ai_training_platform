@@ -1,6 +1,6 @@
 import axios from "axios";
 import { US_STATE_LOCATION_CODES, STATE_FIPS_TO_ABBR } from "../shared/locationCodes";
-import { COUNTY_POPULATION, STATE_POPULATION, US_POPULATION } from "../shared/countyPopulation";
+import { COUNTY_POPULATION, STATE_POPULATION, US_POPULATION, COUNTY_NAME_TO_FIPS } from "../shared/countyPopulation";
 
 // ============= DataForSEO API Client =============
 
@@ -1456,57 +1456,69 @@ export async function getCityCountyLocationCode(
 
   const { cityName, stateAbbr } = parseLocationString(location);
 
-  // Get the DataForSEO state-level code (most granular available for this endpoint)
+  // DataForSEO state-level code — most granular available for Google Ads volume
   const stateCode = stateAbbr ? (US_STATE_LOCATION_CODES[stateAbbr] ?? 2840) : 2840;
 
-  // Default ratio = 1 (use full state volume if we can't resolve county)
-  let populationRatio = 1;
-  let resolvedAs = stateAbbr ? `state:${stateAbbr}` : 'national';
+  // Safe fallback: median US county is ~0.1% of its state.
+  // This is only used if ALL resolution attempts fail.
+  let populationRatio = 0.001;
+  let resolvedAs = stateAbbr ? `state:${stateAbbr} (fallback)` : 'national';
 
-  // ── Step 1: Check if input is already a county ──────────────────────────────
-  const countyInputMatch = cityName.match(/^(.+?)\s+(County|Parish|Borough)$/i);
-  if (countyInputMatch && stateAbbr) {
-    // Find county FIPS by name in our population table
-    const countyBaseName = countyInputMatch[1].trim().toLowerCase();
-    const stateFips = Object.entries(STATE_FIPS_TO_ABBR).find(([, abbr]) => abbr === stateAbbr)?.[0];
-    if (stateFips) {
-      const countyFips = Object.entries(COUNTY_POPULATION).find(([fips]) => {
-        // We don't have names in the table, so fall through to geocoder
-        return false;
-      })?.[0];
-      // Fall through to geocoder for county-name → FIPS resolution
-    }
-  }
+  const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_API_KEY ?? '';
 
-  // ── Step 2: Census Geocoder → county FIPS ──────────────────────────────────
-  try {
-    const geocodeUrl = `https://geocoding.geo.census.gov/geocoder/geographies/address` +
-      `?street=1+Main+St&city=${encodeURIComponent(cityName)}&state=${stateAbbr ?? ''}` +
-      `&benchmark=Public_AR_Current&vintage=Current_Current&layers=Counties&format=json`;
-    const geoResp = await axios.get(geocodeUrl, { timeout: 8_000 });
-    const matches = geoResp.data?.result?.addressMatches ?? [];
-    if (matches.length > 0) {
-      const county = matches[0]?.geographies?.Counties?.[0];
-      if (county?.GEOID && county?.STATE) {
-        // GEOID is the 5-digit county FIPS (e.g. "01103" = Morgan County, AL)
-        const countyFips = county.GEOID as string;
-        const stateFips = county.STATE as string;
-        const countyPop = COUNTY_POPULATION[countyFips];
-        const statePop = STATE_POPULATION[stateFips];
-
-        if (countyPop && statePop && statePop > 0) {
-          populationRatio = countyPop / statePop;
-          resolvedAs = `${county.NAME ?? countyFips} (${(populationRatio * 100).toFixed(1)}% of state)`;
-          console.log(`[PopRatio] "${location}" → ${county.NAME}: pop ${countyPop.toLocaleString()} / state ${statePop.toLocaleString()} = ${(populationRatio * 100).toFixed(2)}%`);
-        } else {
-          console.warn(`[PopRatio] No population data for county FIPS ${countyFips}`);
+  // ── Step 1: Google Maps Geocoding API → county name + state ─────────────────
+  // Always resolve to county level — city limits undercount the real service area.
+  // Google Maps reliably returns the county for any city, town, or suburb.
+  if (GOOGLE_MAPS_KEY && stateAbbr) {
+    try {
+      const mapsUrl = `https://maps.googleapis.com/maps/api/geocode/json` +
+        `?address=${encodeURIComponent(cityName + ', ' + stateAbbr)}&key=${GOOGLE_MAPS_KEY}`;
+      const mapsResp = await axios.get(mapsUrl, { timeout: 8_000 });
+      const result = mapsResp.data?.results?.[0];
+      if (result) {
+        let countyName: string | null = null;
+        let resolvedState: string | null = null;
+        for (const comp of result.address_components ?? []) {
+          if (comp.types?.includes('administrative_area_level_2')) {
+            countyName = comp.long_name as string; // e.g. "Morgan County"
+          }
+          if (comp.types?.includes('administrative_area_level_1')) {
+            resolvedState = comp.short_name as string; // e.g. "AL"
+          }
         }
+        if (countyName && resolvedState) {
+          // Strip " County" / " Parish" / " Borough" suffix to get base name
+          let countyBase = countyName;
+          for (const suffix of [' County', ' Parish', ' Borough', ' Census Area', ' Municipality', ' City and Borough', ' Municipio']) {
+            if (countyBase.endsWith(suffix)) { countyBase = countyBase.slice(0, -suffix.length).trim(); break; }
+          }
+          const lookupKey = `${resolvedState}:${countyBase.toLowerCase()}`;
+          const countyFips = COUNTY_NAME_TO_FIPS[lookupKey];
+          if (countyFips) {
+            const stateFips = countyFips.slice(0, 2);
+            const countyPop = COUNTY_POPULATION[countyFips];
+            const statePop = STATE_POPULATION[stateFips];
+            if (countyPop && statePop && statePop > 0) {
+              populationRatio = countyPop / statePop;
+              resolvedAs = `${countyName}, ${resolvedState} (${(populationRatio * 100).toFixed(2)}% of state)`;
+              console.log(`[PopRatio] "${location}" → Google Maps → ${countyName}: pop ${countyPop.toLocaleString()} / state ${statePop.toLocaleString()} = ${(populationRatio * 100).toFixed(2)}%`);
+            } else {
+              console.warn(`[PopRatio] No population data for county FIPS ${countyFips} (${countyName})`);
+            }
+          } else {
+            console.warn(`[PopRatio] COUNTY_NAME_TO_FIPS: no entry for key "${lookupKey}"`);
+          }
+        } else {
+          console.warn(`[PopRatio] Google Maps: no county component for "${cityName}, ${stateAbbr}"`);
+        }
+      } else {
+        console.warn(`[PopRatio] Google Maps: no results for "${cityName}, ${stateAbbr}"`);
       }
-    } else {
-      console.warn(`[PopRatio] Census geocoder returned no matches for "${cityName}, ${stateAbbr}"`);
+    } catch (err: any) {
+      console.warn(`[PopRatio] Google Maps geocoder failed for "${cityName}": ${err.message}`);
     }
-  } catch (err: any) {
-    console.warn(`[PopRatio] Census geocoder failed for "${cityName}": ${err.message}`);
+  } else if (!GOOGLE_MAPS_KEY) {
+    console.warn('[PopRatio] GOOGLE_MAPS_API_KEY not set — using fallback ratio');
   }
 
   const result = { locationCode: stateCode, populationRatio, resolvedAs };
