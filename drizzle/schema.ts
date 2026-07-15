@@ -833,6 +833,9 @@ export const prospectAudits = pgTable("prospectAudits", {
   location: varchar("location", { length: 255 }).notNull(),
   industry: varchar("industry", { length: 100 }),
   seedKeywords: text("seedKeywords"), // comma-separated seed keywords provided by user
+  // Campaign scope — controls query generation and volume lookup strategy
+  // 'local' = service-area business (default), 'national' = nationwide, 'ecommerce' = online store
+  campaignScope: varchar("campaignScope", { length: 20 }).default("local").notNull(),
   // Normalized domain for prospect-to-client matching (e.g. "titancleaningco.com")
   normalizedDomain: varchar("normalizedDomain", { length: 253 }),
   // Public share token — allows viewing the audit report without login

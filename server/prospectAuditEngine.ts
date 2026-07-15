@@ -13,7 +13,7 @@
 import { getDb, getApiKeyByProvider } from "./db";
 import { decrypt } from "./encryption";
 import { callAI } from "./aiProviders";
-import { checkLLMVisibilityDirect, getAIKeywordSearchVolume, getGoogleAdsSearchVolume, getKeywordsForSite, getKeywordSuggestionsForProspect, getCityLocationCode, getSerpQueriesForProspect } from "./dataforseoService";
+import { checkLLMVisibilityDirect, getAIKeywordSearchVolume, getGoogleAdsSearchVolume, getCityLocationCode } from "./dataforseoService";
 import { calculateVisibilityScore } from "./rankTrackingEngine";
 import { prospectAudits } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -49,13 +49,22 @@ export function normalizeDomain(website: string | null | undefined): string | nu
 }
 
 /**
- * Two-pass volume lookup for the prospect audit report.
+ * Topic-level volume lookup for the prospect audit report.
  *
- * Pass 1: AI volume endpoint on the final query+location strings.
- * Pass 2: For any query that comes back zero from AI volume, hit Google Ads
- *         search volume and multiply by 25% to estimate AI searches.
+ * Instead of looking up volume per conversational query (which always returns
+ * zero because long-tail LLM queries are not indexed), we look up volume for
+ * SHORT SEED PHRASES that represent the service category in this market.
  *
- * Returns a map of lowercased query string → { estimatedVolume, usedFallback }.
+ * For local scope:
+ *   Seeds: "[service] [city]", "[service] near me", "best [service] [city]"
+ * For national scope:
+ *   Seeds: "[service]", "best [service]", "[service] company"
+ * For ecommerce scope:
+ *   Seeds: "[service]", "buy [service]", "best [service]"
+ *
+ * The aggregate Google Ads volume across these seeds is divided evenly across
+ * all queries for that location, then multiplied by the 25% AI adoption rate.
+ * This gives a meaningful, defensible per-query estimate instead of a floor.
  *
  * 25% blended estimate rationale:
  *   - AI Overviews trigger on ~40% of local-intent queries
@@ -75,69 +84,105 @@ const AI_VOLUME_FALLBACK_RATE = 0.25;
  */
 const SUBURBAN_UPLIFT = 1.20;
 
-async function fetchQueryAIVolumes(
-  queries: string[], // final query+location strings, e.g. "aluminum fence installation Cullman AL"
-  locationCode: number
-): Promise<Map<string, { estimatedVolume: number; usedFallback: boolean }>> {
-  const result = new Map<string, { estimatedVolume: number; usedFallback: boolean }>();
+/**
+ * Build the short seed phrases used for topic-level volume lookup.
+ * These are short enough to have real Google Ads search volume.
+ */
+function buildVolumeSeeds(
+  serviceType: string,
+  location: string,
+  campaignScope: "local" | "national" | "ecommerce"
+): string[] {
+  // Normalize service type: strip trailing "company/companies/services" for cleaner seeds
+  const base = serviceType
+    .replace(/\bcompan(y|ies)\b/gi, "")
+    .replace(/\bservices?\b/gi, "")
+    .trim()
+    || serviceType;
 
-  // ── Pass 1: AI volume endpoint ────────────────────────────────────────────
-  const aiVolumeMap = new Map<string, number>();
+  if (campaignScope === "local") {
+    const city = location.replace(/,.*$/, "").trim(); // "Cullman, AL" → "Cullman"
+    return [
+      `${base} ${city}`,
+      `${base} near me`,
+      `best ${base} ${city}`,
+      `${base} contractor ${city}`,
+    ];
+  } else if (campaignScope === "national") {
+    return [
+      base,
+      `best ${base}`,
+      `${base} company`,
+      `${base} agency`,
+    ];
+  } else {
+    return [
+      base,
+      `buy ${base}`,
+      `best ${base}`,
+      `${base} online`,
+    ];
+  }
+}
+
+/**
+ * Fetch topic-level Google Ads volume for a set of seed phrases, then
+ * distribute the aggregate volume evenly across `queryCount` queries.
+ *
+ * Returns { estimatedVolumePerQuery, totalTopicVolume, usedFallback }.
+ */
+async function fetchTopicVolume(
+  serviceType: string,
+  location: string,
+  locationCode: number,
+  queryCount: number,
+  campaignScope: "local" | "national" | "ecommerce"
+): Promise<{ estimatedVolumePerQuery: number; totalTopicVolume: number; usedFallback: boolean }> {
+  const seeds = buildVolumeSeeds(serviceType, location, campaignScope);
+  const locCode = campaignScope === "local" ? locationCode : 2840; // national = US
+
+  let totalGoogleVolume = 0;
+  let usedFallback = false;
+
+  // ── Pass 1: Google Ads volume on seed phrases ─────────────────────────────
   try {
-    const aiVolumes = await getAIKeywordSearchVolume(queries, { locationCode });
-    for (const v of aiVolumes) {
-      aiVolumeMap.set(v.keyword.toLowerCase(), v.aiSearchVolume || 0);
+    const googleVolMap = await getGoogleAdsSearchVolume(seeds, { locationCode: locCode });
+    for (const seed of seeds) {
+      totalGoogleVolume += googleVolMap.get(seed.toLowerCase()) ?? 0;
     }
+    console.log(`[ProspectAudit] Topic volume for "${serviceType}" in ${location}: ${totalGoogleVolume}/mo Google (seeds: ${seeds.join(", ")})`);
   } catch (err: any) {
-    console.warn("[ProspectAudit] AI volume fetch failed, falling back to Google Ads:", err.message);
+    console.warn(`[ProspectAudit] Google Ads volume failed for seeds: ${err.message}`);
   }
 
-  // Separate queries with real AI volume from those that need Google fallback
-  const needsGoogleFallback: string[] = [];
-  for (const q of queries) {
-    const aiVol = aiVolumeMap.get(q.toLowerCase()) ?? 0;
-    if (aiVol > 0) {
-      result.set(q.toLowerCase(), { estimatedVolume: Math.round(aiVol * SUBURBAN_UPLIFT), usedFallback: false });
-    } else {
-      needsGoogleFallback.push(q);
-    }
-  }
-
-  // ── Pass 2: Google Ads volume × 25% for zero-AI-volume queries ───────────
-  if (needsGoogleFallback.length > 0) {
+  // ── Pass 2: AI volume endpoint on seeds (may supplement) ─────────────────
+  if (totalGoogleVolume === 0) {
     try {
-      const googleVolMap = await getGoogleAdsSearchVolume(needsGoogleFallback, { locationCode });
-      for (const q of needsGoogleFallback) {
-        const googleVol = googleVolMap.get(q.toLowerCase()) ?? 0;
-        if (googleVol > 0) {
-          // Real Google volume × 25% AI estimate × 20% suburban uplift
-          result.set(q.toLowerCase(), {
-            estimatedVolume: Math.round(googleVol * AI_VOLUME_FALLBACK_RATE * SUBURBAN_UPLIFT),
-            usedFallback: true,
-          });
-        } else {
-          // Last resort: conservative floor of 100/mo × 25% × 20% uplift = 30
-          result.set(q.toLowerCase(), {
-            estimatedVolume: Math.round(100 * AI_VOLUME_FALLBACK_RATE * SUBURBAN_UPLIFT),
-            usedFallback: true,
-          });
-        }
+      const aiVolumes = await getAIKeywordSearchVolume(seeds, { locationCode: locCode });
+      for (const v of aiVolumes) {
+        totalGoogleVolume += v.aiSearchVolume || 0;
       }
-    } catch (err: any) {
-      console.warn("[ProspectAudit] Google Ads volume fallback failed, using floor:", err.message);
-      for (const q of needsGoogleFallback) {
-        result.set(q.toLowerCase(), {
-          estimatedVolume: Math.round(100 * AI_VOLUME_FALLBACK_RATE),
-          usedFallback: true,
-        });
-      }
-    }
+      if (totalGoogleVolume > 0) usedFallback = false;
+    } catch { /* ignore */ }
   }
 
-  return result;
+  // ── Floor: if both return zero, use market-size-based estimate ───────────
+  if (totalGoogleVolume === 0) {
+    // Conservative floor: 200 searches/mo for a local service category
+    totalGoogleVolume = campaignScope === "local" ? 200 : 1000;
+    usedFallback = true;
+    console.log(`[ProspectAudit] Using volume floor for "${serviceType}" in ${location}`);
+  }
+
+  // Apply AI adoption rate and suburban uplift, then divide across queries
+  const totalAIVolume = Math.round(totalGoogleVolume * AI_VOLUME_FALLBACK_RATE * SUBURBAN_UPLIFT);
+  const perQuery = Math.max(1, Math.round(totalAIVolume / queryCount));
+
+  return { estimatedVolumePerQuery: perQuery, totalTopicVolume: totalAIVolume, usedFallback };
 }
 
 const PROSPECT_QUERY_COUNT = 15;
+const FAN_OUT_CANDIDATES = 20; // GPT-4o generates this many per location before scoring
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,6 +194,8 @@ export interface ProspectQueryInput {
   locations?: string[];
   industry?: string;
   seedKeywords?: string; // comma-separated
+  /** Controls query framing and volume lookup strategy */
+  campaignScope?: "local" | "national" | "ecommerce";
 }
 
 export interface ProspectQueryResult {
@@ -195,65 +242,245 @@ export interface ProspectAuditScores {
 // ─── Query Generation ─────────────────────────────────────────────────────────
 
 /**
+ * Convert a raw seed keyword (e.g. "fence company") into a proper service
+ * description phrase that works as a noun in sentences (e.g. "fence installation",
+ * "fencing services", "fence contractors").
+ *
+ * This prevents the fallback from producing broken English like:
+ *   "Who does fence company in Cullman?" → "Who does fence installation in Cullman?"
+ *   "Best fence company companies" → "Best fence contractors"
+ *
+ * Uses GPT-4o-mini for the conversion; returns a simple heuristic if unavailable.
+ */
+async function toServiceDescription(seedKeyword: string, openaiKey: string | null): Promise<string> {
+  // Simple heuristic first: if the seed ends in "company" or "companies", strip it
+  // and add "installation" or "contractors" based on context
+  const lower = seedKeyword.toLowerCase().trim();
+
+  // If it already sounds like a service description (ends in -ing, -tion, -ers, -ors)
+  // just return it as-is
+  if (/(?:ing|tion|ors|ers|ment|work|repair|service|services|installation|replacement|cleaning|painting|roofing|plumbing|electrical|landscaping|remodeling|renovation|construction|inspection|maintenance)$/i.test(lower)) {
+    return seedKeyword;
+  }
+
+  if (!openaiKey) {
+    // Heuristic: strip "company" / "companies" / "contractor" and add "services"
+    return lower
+      .replace(/\b(company|companies|contractor|contractors|provider|providers|service|services)\b/gi, "")
+      .trim()
+      .replace(/\s+/g, " ") + " services";
+  }
+
+  try {
+    const resp = await callAI("openai", openaiKey, "gpt-4o-mini", [
+      {
+        role: "system",
+        content: `Convert a business category keyword into a natural service description phrase that works as a noun in English sentences.
+Examples:
+  "fence company" → "fence installation"
+  "roofing company" → "roof installation"
+  "plumber" → "plumbing services"
+  "HVAC" → "HVAC services"
+  "tree service" → "tree removal"
+  "cleaning company" → "cleaning services"
+  "painting contractor" → "painting services"
+Return ONLY the phrase, no explanation, no punctuation.`,
+      },
+      { role: "user", content: seedKeyword },
+    ]);
+    const phrase = resp.content.trim().replace(/["'.]/g, "").toLowerCase();
+    return phrase || seedKeyword;
+  } catch {
+    return lower
+      .replace(/\b(company|companies|contractor|contractors|provider|providers)\b/gi, "")
+      .trim()
+      .replace(/\s+/g, " ") + " services";
+  }
+}
+
+/**
  * Fallback queries when SERP data is unavailable — written as real English
  * sentences with the city baked in naturally.
+ *
+ * @param serviceDesc  A proper service description phrase (e.g. "fence installation"),
+ *                     NOT the raw seed keyword (e.g. "fence company").
  */
-function fallbackQueriesForLocation(serviceType: string, city: string, count: number): string[] {
-  const s = serviceType;
-  const c = city;
-  const pool = [
-    `Who does ${s} in ${c}?`,
-    `Best ${s} companies near ${c}`,
-    `How much does ${s} cost in ${c}?`,
-    `Who should I hire for ${s} in ${c}?`,
-    `Looking for a good ${s} contractor near ${c}`,
-    `Who are the most trusted ${s} companies in ${c}?`,
-    `I need ${s} done in ${c} — who do you recommend?`,
-    `How do I find a reliable ${s} contractor in ${c}?`,
-    `What should I look for when hiring someone for ${s} near ${c}?`,
-    `Can you recommend a ${s} contractor in ${c} that does good work?`,
-    `Who are the top-rated ${s} companies near ${c}?`,
-    `I'm getting quotes for ${s} in ${c} — who should I call?`,
-    `What does ${s} typically cost in ${c} and who's worth hiring?`,
-    `Any recommendations for ${s} contractors in ${c}?`,
-    `Who's the best local contractor for ${s} in ${c}?`,
+/**
+ * GPT-4o fan-out: generate FAN_OUT_CANDIDATES query candidates per location
+ * across 3 intent buckets (transactional, commercial/comparison, reputation/trust).
+ * Then score each candidate and return the top `needed` by score.
+ *
+ * For national/ecommerce scope, location is omitted from the prompt.
+ */
+async function fanOutQueriesForLocation(
+  serviceType: string,
+  location: string,
+  needed: number,
+  campaignScope: "local" | "national" | "ecommerce",
+  openaiKey: string
+): Promise<string[]> {
+  const isLocal = campaignScope === "local";
+  const locationClause = isLocal ? ` in ${location}` : "";
+  const locationInstruction = isLocal
+    ? `The city is ${location}. Every query MUST naturally include the city name or a clear local reference. Do NOT append the city as a suffix after a question mark — weave it into the sentence naturally.`
+    : `This is a ${campaignScope} business. Do NOT include any city or location in the queries.`;
+
+  const systemPrompt = `You are an expert at writing the exact phrases real people type into ChatGPT, Gemini, and Perplexity when they want to HIRE someone for a service. You understand the difference between someone who is ready to hire vs. someone who is just researching.
+
+Your task: Generate exactly ${FAN_OUT_CANDIDATES} queries for someone looking to hire a "${serviceType}" business${locationClause}.
+
+${locationInstruction}
+
+Generate queries across these 3 intent buckets:
+
+BUCKET 1 — TRANSACTIONAL/EMERGENCY (7 queries): The person needs someone NOW. Urgency is implied. Examples of good queries:
+- "Who does emergency fence repair in Cullman, AL?"
+- "I need a fence installed in Cullman this week — who should I call?"
+- "Best fence contractors available now in Cullman, Alabama"
+
+BUCKET 2 — COMMERCIAL/COMPARISON (7 queries): The person is vetting options, comparing companies, or looking for the best. Examples:
+- "Best fence companies in Cullman, AL with good reviews"
+- "Compare fence installation companies in Cullman, Alabama"
+- "Who are the most trusted fence contractors in Cullman?"
+
+BUCKET 3 — REPUTATION/TRUST (6 queries): The person wants to validate a specific company or find one with a strong reputation. Examples:
+- "Does [company name] in Cullman have good reviews?"
+- "Who is the most reputable fence company in Cullman, AL?"
+- "Best reviewed fence company near Cullman, Alabama"
+
+CRITICAL RULES — violating any of these will make the query useless:
+1. Write EXACTLY how a real person types on their phone. Natural, conversational, sometimes incomplete sentences.
+2. NEVER use the service name as a noun modifier. "fence installation contractor" is ok. "fence company contractor" is NOT ok. "fence company provider" is NOT ok.
+3. NEVER include price, cost, budget, or how-to questions. Those are informational, not hiring intent.
+4. NEVER use corporate jargon: "provider", "meeting these requirements", "solutions", "services" as a standalone noun.
+5. Vary the phrasing — do not repeat the same structure more than twice.
+6. Each query must be a complete, grammatically correct phrase that stands alone.
+
+Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No explanations, no bucket labels, no extra text.`;
+
+  const userPrompt = `Generate ${FAN_OUT_CANDIDATES} hiring-intent queries for a "${serviceType}" business${locationClause}. Follow all rules exactly.`;
+
+  try {
+    const response = await callAI({
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: openaiKey,
+      systemPrompt,
+      userPrompt,
+      maxTokens: 1200,
+      temperature: 0.7,
+    });
+
+    const text = response.text || "";
+    const lines = text.split("\n");
+    const queries: string[] = [];
+    for (const line of lines) {
+      const cleaned = line.replace(/^\d+[\.)\s]+/, "").replace(/\*\*/g, "").trim();
+      if (cleaned.length > 10 && cleaned.length < 200) {
+        queries.push(cleaned);
+      }
+    }
+    console.log(`[ProspectAudit] GPT-4o fan-out generated ${queries.length} candidates for "${serviceType}"${locationClause}`);
+    return queries.slice(0, FAN_OUT_CANDIDATES);
+  } catch (err: any) {
+    console.warn(`[ProspectAudit] GPT-4o fan-out failed: ${err.message}`);
+    return [];
+  }
+}
+
+/**
+ * Score each candidate query for hiring intent and natural language quality.
+ * Returns the top `needed` candidates sorted by score descending.
+ *
+ * Scoring is done with a fast keyword heuristic (no LLM call needed):
+ * - Hiring intent signals: +2 each (hire, recommend, who does, who should, find me, looking for, best X in, near me, near [city])
+ * - Informational penalty: -3 each (cost, price, how much, how to, diy, what is, define)
+ * - Unnatural phrase penalty: -2 each (provider, meeting these requirements, solutions provider, services provider)
+ */
+function scoreAndRankCandidates(candidates: string[], needed: number): string[] {
+  const HIRE_SIGNALS = [
+    /\b(hire|hiring)\b/i,
+    /\b(recommend|recommendation)\b/i,
+    /\bwho (does|do|should|can|will)\b/i,
+    /\bfind (me|a|the)\b/i,
+    /\blooking for\b/i,
+    /\bbest .+ (in|near)\b/i,
+    /\bnear me\b/i,
+    /\bnear [A-Z]/i,
+    /\b(top.rated|top rated|highest.rated|highest rated)\b/i,
+    /\bwho (are|is) the\b/i,
+    /\bany recommendations\b/i,
+    /\bwho (to|should I) call\b/i,
+    /\bI need\b/i,
+    /\bI want\b/i,
+    /\bI'm (looking|getting|trying)\b/i,
+    /\bcan you (recommend|suggest|find)\b/i,
+    /\bcontractor\b/i,
+    /\bcompan(y|ies)\b/i,
   ];
-  const result: string[] = [];
-  for (let i = 0; i < count; i++) result.push(pool[i % pool.length]);
-  return result;
+
+  const INFO_PENALTIES = [
+    /\b(cost|costs|price|pricing|how much|budget|cheap|affordable|expensive)\b/i,
+    /\bhow to\b/i,
+    /\bdiy\b/i,
+    /\bwhat is\b/i,
+    /\bwhat are\b/i,
+    /\bdefine\b/i,
+    /\blaw(s)?\b/i,
+    /\bregulation\b/i,
+    /\bpermit\b/i,
+  ];
+
+  const UNNATURAL_PENALTIES = [
+    /\bprovider\b/i,
+    /meeting these requirements/i,
+    /solutions provider/i,
+    /services provider/i,
+    /\bservice provider\b/i,
+  ];
+
+  const scored = candidates.map((q) => {
+    let score = 0;
+    for (const re of HIRE_SIGNALS) if (re.test(q)) score += 2;
+    for (const re of INFO_PENALTIES) if (re.test(q)) score -= 3;
+    for (const re of UNNATURAL_PENALTIES) if (re.test(q)) score -= 2;
+    return { q, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, needed).map((s) => s.q);
 }
 
 /**
  * Generate exactly PROSPECT_QUERY_COUNT (15) buying-intent queries for a prospect.
  *
- * Strategy (in priority order):
+ * Strategy:
+ * 1. PRIMARY — GPT-4o fan-out: generate FAN_OUT_CANDIDATES (20) query candidates
+ *    per location across 3 intent buckets (transactional, commercial/comparison,
+ *    reputation/trust). Score each candidate on hiring intent and natural language
+ *    quality. Take the top N by score.
  *
- * 1. PRIMARY — DataForSEO SERP related searches + commercial PAA questions.
- *    These are queries real people are already typing into Google for this
- *    service + location. They have real Google Ads search volume, sound
- *    completely natural, and are already location-specific.
+ * 2. FALLBACK — If GPT-4o fails, use hardcoded natural-language sentences.
+ *    These are grammatically correct and include the city name naturally.
  *
- *    Related searches are preferred over PAA because they are shorter, more
- *    transactional, and have better volume data. PAA questions are included
- *    when filtered to commercial/transactional intent.
- *
- *    Queries are distributed across locations: if there are 2 locations, we
- *    run a SERP call for each and take ~8 queries per location.
- *
- * 2. FALLBACK — If SERP returns fewer queries than needed, the remainder are
- *    filled with hardcoded natural-language sentences that include the city.
- *    These are grammatically correct and readable, just not SERP-sourced.
+ * Campaign scope controls query framing:
+ * - local: queries include city name, hiring intent is geo-specific
+ * - national: no location in queries, brand/service intent
+ * - ecommerce: no location, purchase/product intent
  */
 export async function generateProspectQueries(
   input: ProspectQueryInput
 ): Promise<ProspectQueryResult[]> {
-  const { location, industry, seedKeywords } = input;
+  const { location, industry, seedKeywords, campaignScope = "local" } = input;
 
   // Deduplicate and filter blank locations; always include primary
   const allLocations = [
     location,
     ...(input.locations ?? []).filter((l) => l.trim() && l.trim() !== location.trim()),
   ].filter(Boolean);
+
+  // For national/ecommerce, we only generate one set of queries (no location variation)
+  const locationsToProcess = campaignScope === "local" ? allLocations : [allLocations[0]];
 
   // Determine the primary service type (seed keyword preferred over industry)
   let serviceType = "home services";
@@ -265,47 +492,121 @@ export async function generateProspectQueries(
   }
 
   const totalCount = PROSPECT_QUERY_COUNT; // 15
-  const numLocations = allLocations.length;
+  const numLocations = locationsToProcess.length;
   const queriesPerLocation = Math.ceil(totalCount / numLocations);
+
+  // Resolve OpenAI key
+  let openaiKey: string | null = null;
+  try {
+    const keyRecord = await getApiKeyByProvider("openai");
+    if (keyRecord) openaiKey = decrypt(keyRecord.encryptedKey);
+  } catch { /* will use heuristic fallback */ }
 
   const normalized: ProspectQueryResult[] = [];
 
-  for (const loc of allLocations) {
+  for (const loc of locationsToProcess) {
     const needed = Math.min(queriesPerLocation, totalCount - normalized.length);
     if (needed <= 0) break;
 
-    // Resolve location code for this city
-    let locationCode = 2840;
-    try {
-      locationCode = await getCityLocationCode(loc);
-    } catch { /* use US national */ }
+    let queriesForLoc: string[] = [];
 
-    // ── Pass 1: SERP-sourced queries (real searches, real volume) ──────────────
-    let serpQueries: string[] = [];
-    try {
-      const candidates = await getSerpQueriesForProspect(serviceType, loc, locationCode, needed * 2);
-      // related_search first, then PAA
-      const related = candidates.filter(c => c.source === "related_search").map(c => c.query);
-      const paa     = candidates.filter(c => c.source === "paa").map(c => c.query);
-      serpQueries = [...related, ...paa].slice(0, needed);
-      console.log(`[ProspectAudit] SERP gave ${serpQueries.length} queries for "${serviceType}" in ${loc}`);
-    } catch (err: any) {
-      console.warn(`[ProspectAudit] SERP query fetch failed for ${loc}: ${err.message}`);
+    // ── PRIMARY: GPT-4o fan-out ───────────────────────────────────────────────
+    if (openaiKey) {
+      const candidates = await fanOutQueriesForLocation(
+        serviceType,
+        loc,
+        needed,
+        campaignScope,
+        openaiKey
+      );
+      if (candidates.length > 0) {
+        queriesForLoc = scoreAndRankCandidates(candidates, needed);
+        console.log(`[ProspectAudit] Fan-out scored ${queriesForLoc.length} queries for "${serviceType}" in ${loc}`);
+      }
     }
 
-    // ── Pass 2: Fill remaining slots with fallback sentences ─────────────────
-    const stillNeeded = needed - serpQueries.length;
-    const fallback = stillNeeded > 0
-      ? fallbackQueriesForLocation(serviceType, loc, stillNeeded)
-      : [];
+    // ── FALLBACK: hardcoded natural sentences ────────────────────────────────
+    if (queriesForLoc.length < needed) {
+      const stillNeeded = needed - queriesForLoc.length;
+      const serviceDesc = serviceType
+        .replace(/\bcompan(y|ies)\b/gi, "contractor")
+        .replace(/\bservice\b/gi, "services")
+        .trim();
+      const fallback = buildFallbackQueries(serviceDesc, loc, campaignScope, stillNeeded);
+      queriesForLoc = [...queriesForLoc, ...fallback];
+    }
 
-    const allForLoc = [...serpQueries, ...fallback];
-    for (const q of allForLoc) {
+    for (const q of queriesForLoc) {
+      // For national/ecommerce, assign the primary location as the display location
+      // but it won't appear in the query text itself
       normalized.push({ searchQuery: q, location: loc });
     }
   }
 
   return normalized.slice(0, totalCount);
+}
+
+/**
+ * Hardcoded fallback queries — only used when GPT-4o is unavailable.
+ * Uses natural English sentences, never the raw seed keyword as a noun phrase.
+ */
+function buildFallbackQueries(
+  serviceDesc: string,
+  city: string,
+  scope: "local" | "national" | "ecommerce",
+  count: number
+): string[] {
+  const s = serviceDesc;
+  const c = city;
+  let pool: string[];
+
+  if (scope === "local") {
+    pool = [
+      `Best ${s} companies in ${c}`,
+      `Who does ${s} in ${c}?`,
+      `Looking for a good ${s} contractor in ${c}`,
+      `Who are the most trusted ${s} companies in ${c}?`,
+      `I need ${s} done in ${c} — who do you recommend?`,
+      `Can you recommend a ${s} contractor in ${c} that does good work?`,
+      `Who are the top-rated ${s} companies near ${c}?`,
+      `Any recommendations for ${s} contractors in ${c}?`,
+      `Who should I hire for ${s} in ${c}?`,
+      `I'm getting quotes for ${s} in ${c} — who should I call?`,
+      `Who does ${s} near ${c} with good reviews?`,
+      `Find me a licensed ${s} contractor in ${c}`,
+      `Who is the most reputable ${s} company in ${c}?`,
+      `Best reviewed ${s} company near ${c}, Alabama`,
+      `Who are the top ${s} contractors in ${c}?`,
+    ];
+  } else if (scope === "national") {
+    pool = [
+      `Best ${s} companies in the US`,
+      `Who are the top ${s} agencies?`,
+      `Recommend a good ${s} company`,
+      `Who should I hire for ${s}?`,
+      `Top-rated ${s} companies with good reviews`,
+      `Who does ${s} for small businesses?`,
+      `Best ${s} for growing companies`,
+      `Who are the most trusted ${s} providers?`,
+      `Compare the best ${s} companies`,
+      `Any recommendations for a good ${s} agency?`,
+    ];
+  } else {
+    pool = [
+      `Best ${s} online`,
+      `Where can I buy ${s}?`,
+      `Top-rated ${s} brands`,
+      `Who sells the best ${s}?`,
+      `Recommend a good ${s} store`,
+      `Best ${s} with fast shipping`,
+      `Compare ${s} brands`,
+      `Who has the best ${s} deals?`,
+    ];
+  }
+
+  const result: string[] = [];
+  for (let i = 0; i < count; i++) result.push(pool[i % pool.length]);
+  return result;
 }
 
 // ─── Audit Runner ─────────────────────────────────────────────────────────────
@@ -325,7 +626,9 @@ export async function runProspectAudit(
   phone: string | null | undefined,
   agencyId: number | null | undefined,
   queries: ProspectQueryResult[],
-  onProgress?: (completed: number, total: number, latest: ProspectSnapshotResult) => void
+  onProgress?: (completed: number, total: number, latest: ProspectSnapshotResult) => void,
+  serviceType?: string,
+  campaignScope?: "local" | "national" | "ecommerce"
 ): Promise<{
   snapshots: ProspectSnapshotResult[];
   scores: ProspectAuditScores;
@@ -340,29 +643,32 @@ export async function runProspectAudit(
     .where(eq(prospectAudits.id, auditId));
 
   const snapshots: ProspectSnapshotResult[] = [];
+  const scope = campaignScope ?? "local";
+  const svcType = serviceType ?? "home services";
 
-  // Fetch AI search volume for all queries BEFORE running visibility checks.
-  // Group queries by location so each batch uses the correct state-level
-  // DataForSEO location code (e.g. "Cullman, AL" → Alabama code 21167).
-  // This gives local-market volume instead of US national.
-  const finalQueryStrings = queries.map(q => `${q.searchQuery} ${q.location}`);
-
-  // Build a combined volume map by running per-location batches
-  const aiVolumeMap = new Map<string, { estimatedVolume: number; usedFallback: boolean }>();
-  // Group query indices by location
+  // ── Topic-level volume lookup (per location) ─────────────────────────────
+  // We look up volume for SHORT SEED PHRASES (e.g. "fence installation Cullman")
+  // rather than per-query, because long conversational queries have no indexed
+  // volume. The aggregate seed volume is divided evenly across all queries for
+  // that location.
   const locationGroups = new Map<string, number[]>();
   for (let i = 0; i < queries.length; i++) {
     const loc = queries[i].location;
     if (!locationGroups.has(loc)) locationGroups.set(loc, []);
     locationGroups.get(loc)!.push(i);
   }
-  // Fetch volume for each location group with the correct city-level location code
+
+  // Map from query index → { estimatedVolume, usedFallback }
+  const queryVolumeMap = new Map<number, { estimatedVolume: number; usedFallback: boolean }>();
+
   for (const [loc, indices] of locationGroups) {
     const locCode = await getCityLocationCode(loc);
-    const groupQueryStrings = indices.map(i => finalQueryStrings[i]);
-    const groupVolMap = await fetchQueryAIVolumes(groupQueryStrings, locCode);
-    for (const [key, val] of groupVolMap) {
-      aiVolumeMap.set(key, val);
+    const topicVol = await fetchTopicVolume(svcType, loc, locCode, indices.length, scope);
+    for (const idx of indices) {
+      queryVolumeMap.set(idx, {
+        estimatedVolume: topicVol.estimatedVolumePerQuery,
+        usedFallback: topicVol.usedFallback,
+      });
     }
   }
 
@@ -424,9 +730,7 @@ export async function runProspectAudit(
     let volumeUsedFallback = false;
 
     for (let i = 0; i < queries.length; i++) {
-      // Look up by the final query+location string used for the volume call
-      const finalStr = finalQueryStrings[i].toLowerCase();
-      const volData = aiVolumeMap.get(finalStr) ?? { estimatedVolume: Math.round(100 * AI_VOLUME_FALLBACK_RATE), usedFallback: true };
+      const volData = queryVolumeMap.get(i) ?? { estimatedVolume: Math.round(100 * AI_VOLUME_FALLBACK_RATE), usedFallback: true };
 
       if (volData.usedFallback) volumeUsedFallback = true;
       totalAISearches += volData.estimatedVolume;

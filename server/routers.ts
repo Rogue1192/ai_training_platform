@@ -4547,11 +4547,12 @@ const prospectAuditRouter = router({
         location: z.string().min(1),
         industry: z.string().optional(),
         seedKeywords: z.string().optional(),
+        campaignScope: z.enum(["local", "national", "ecommerce"]).optional(),
       })
     )
     .mutation(async ({ input }) => {
       const { generateProspectQueries } = await import('./prospectAuditEngine');
-      const queries = await generateProspectQueries(input);
+      const queries = await generateProspectQueries({ ...input, campaignScope: input.campaignScope ?? "local" });
       return { queries };
     }),
 
@@ -4564,6 +4565,7 @@ const prospectAuditRouter = router({
         location: z.string().min(1),
         industry: z.string().optional(),
         seedKeywords: z.string().optional(),
+        campaignScope: z.enum(["local", "national", "ecommerce"]).optional(),
         queries: z.array(z.object({ searchQuery: z.string(), location: z.string() })),
       })
     )
@@ -4588,6 +4590,7 @@ const prospectAuditRouter = router({
         location: input.location,
         industry: input.industry ?? null,
         seedKeywords: input.seedKeywords ?? null,
+        campaignScope: input.campaignScope ?? 'local',
         queries: input.queries as any,
         status: 'pending',
       }).returning({ id: prospectAudits.id });
@@ -4620,7 +4623,10 @@ const prospectAuditRouter = router({
         audit.website,
         null,
         audit.agencyId,
-        queries
+        queries,
+        undefined,
+        audit.seedKeywords ?? undefined,
+        ((audit as any).campaignScope ?? 'local') as "local" | "national" | "ecommerce"
       );
 
       return { snapshots, scores };

@@ -1278,18 +1278,19 @@ export interface SerpQueryCandidate {
 }
 
 /**
- * Fetch PAA questions and related searches from a real Google SERP for a given
- * seed keyword + location. These are queries real people are already typing into
- * Google, so they:
- *   1. Sound completely natural (no template concatenation)
- *   2. Have real Google Ads search volume we can look up
- *   3. Are already location-specific when the seed includes the city
+ * Fetch queries from a real Google SERP for a given seed keyword + location.
+ * Pulls from three SERP item types:
+ *   1. related_searches — short, location-specific, commercial (highest priority)
+ *   2. people_also_search — similar to related searches, also short and local
+ *   3. people_also_ask — filtered strictly to hiring/transactional intent only
  *
- * Strategy:
- *   - Related searches are preferred (short, location-specific, commercial intent)
- *   - PAA questions are included but filtered to commercial/transactional intent
- *   - Branded results (e.g. "Parris fence company") are excluded
- *   - Results are deduplicated
+ * Brand filtering: any result containing a capitalized word that isn't a
+ * location word or a seed keyword word is treated as a branded result and dropped.
+ * e.g. "Parris fence company", "A-1 Fence company", "Huntsville Fence Company" all dropped.
+ *
+ * Informational queries are dropped: anything about cost/price/budget without
+ * a hiring signal is informational ("how much does a fence cost" = thinking stage,
+ * not hiring stage).
  */
 export async function getSerpQueriesForProspect(
   seedKeyword: string,
@@ -1321,38 +1322,112 @@ export async function getSerpQueriesForProspect(
   const candidates: SerpQueryCandidate[] = [];
   const seen = new Set<string>();
 
-  // ── Extract related searches (highest priority — short, local, commercial) ──
+  // Build a set of "allowed" capitalized words: location words + seed keyword words
+  // Everything else that's capitalized is likely a brand name
+  const locationWords = new Set(
+    locationName.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean)
+  );
+  const seedWords = new Set(seedKeyword.toLowerCase().split(/\s+/).filter(Boolean));
+  const allowedCapWords = new Set([...locationWords, ...seedWords]);
+
+  // Common non-brand capitalized words that should always be allowed
+  const genericWords = new Set([
+    "best", "top", "local", "near", "me", "reviews", "rated", "affordable",
+    "cheap", "free", "residential", "commercial", "wood", "vinyl", "chain",
+    "link", "metal", "steel", "iron", "aluminum", "privacy", "split", "rail",
+    "picket", "installation", "repair", "replacement", "contractor", "contractors",
+    "company", "companies", "service", "services", "provider", "providers",
+    "gate", "gates", "fencing", "fence", "fences",
+  ]);
+
+  function isBranded(text: string): boolean {
+    const words = text.split(/\s+/);
+    return words.some(w => {
+      // Must start with uppercase AND be longer than 1 char (not abbreviations like AL)
+      if (!/^[A-Z][a-z]/.test(w)) return false;
+      const wl = w.toLowerCase().replace(/[^a-z]/g, "");
+      if (!wl || wl.length < 3) return false;
+      if (allowedCapWords.has(wl)) return false;
+      if (genericWords.has(wl)) return false;
+      // It's a capitalized word not in our allowed set — likely a brand
+      return true;
+    });
+  }
+
+  // Patterns that indicate INFORMATIONAL intent (drop these)
+  // These are people in the "research" phase, not the "hire" phase
+  const INFORMATIONAL_PATTERNS = [
+    /^how much (does|do|should|will|would|is)/i,
+    /^what (does|do|is|are) .* cost/i,
+    /^what is the (average|typical|normal|standard) (cost|price|rate)/i,
+    /^how (expensive|cheap)/i,
+    /^(what|how) .* (budget|budgeting)/i,
+    /^what .* (best|good|better) (fence|material|type|option)/i,
+    /^(what|which) (type|kind|material|style) of fence/i,
+    /^how (long|tall|high|wide)/i,
+    /^(do i need|is it legal|can i|am i allowed)/i,
+    /^what are the (laws|rules|regulations|requirements)/i,
+    /^(what|how) .* (diy|do it yourself|myself)/i,
+  ];
+
+  // Patterns that confirm TRANSACTIONAL/HIRING intent (keep these)
+  const TRANSACTIONAL_PATTERNS = [
+    /near me/i,
+    /in (cullman|hartselle|huntsville|birmingham|montgomery|mobile|tuscaloosa|decatur|florence|gadsden|anniston|dothan|auburn|phenix|enterprise|madison|vestavia|hoover|homewood|alabaster|pelham|trussville|gardendale|center point|moody|oxford|talladega|selma|opelika|alexander city|albertville|athens|scottsboro|jasper|fort payne|boaz|oneonta|sylacauga|clanton|wetumpka|prattville|millbrook|calera|helena|chelsea|columbiana|childersburg|pell city|lincoln|ashville|springville|moody|trussville|irondale|mountain brook|fairfield|bessemer|midfield|tarrant|fultondale|warrior|hayden|blount|marshall|morgan|madison|limestone|lawrence|colbert|lauderdale|franklin|winston|walker|jefferson|shelby|st clair|calhoun|etowah|dekalb|cherokee|cleburne|randolph|talladega|coosa|elmore|autauga|dallas|perry|bibb|chilton|hale|greene|sumter|marengo|wilcox|monroe|conecuh|escambia|covington|coffee|dale|houston|henry|barbour|pike|bullock|macon|lee|chambers|tallapoosa|clay|cleburne|randolph|coosa|elmore|autauga|lowndes|butler|crenshaw|montgomery|macon)/i,
+    /\b(al|alabama)\b/i,
+    /\b(company|companies|contractor|contractors|service|services|installer|installers|professional|professionals)\b/i,
+    /\b(hire|hiring|find|finding|looking for|need|recommend|recommendation|quote|quotes|estimate|estimates)\b/i,
+    /\b(local|nearby|area|region)\b/i,
+    /\b(best|top|rated|reviewed|trusted|reliable|reputable|licensed|insured)\b/i,
+  ];
+
+  function isTransactional(text: string): boolean {
+    // First check: if it matches an informational pattern, it's out
+    if (INFORMATIONAL_PATTERNS.some(p => p.test(text))) return false;
+    // Second check: must match at least one transactional signal
+    return TRANSACTIONAL_PATTERNS.some(p => p.test(text));
+  }
+
+  // ── 1. Related searches (highest priority) ────────────────────────────────
   for (const item of serpItems) {
     if (item.type !== "related_searches") continue;
     const searches: string[] = item.items ?? [];
     for (const s of searches) {
       const q = s.trim().toLowerCase();
       if (!q || seen.has(q)) continue;
-      // Skip branded results (contain a proper noun that isn't the service type)
-      // Simple heuristic: skip if it contains a word that's capitalized in the original
-      // and doesn't match the seed keyword words
-      const seedWords = new Set(seedKeyword.toLowerCase().split(/\s+/));
-      const words = s.split(/\s+/);
-      const hasBrandWord = words.some(w => /^[A-Z]/.test(w) && !seedWords.has(w.toLowerCase()));
-      if (hasBrandWord) continue;
+      if (isBranded(s)) { console.log(`[SerpQueries] Dropped branded related: "${s}"`); continue; }
+      if (!isTransactional(s)) { console.log(`[SerpQueries] Dropped non-transactional related: "${s}"`); continue; }
       seen.add(q);
       candidates.push({ query: s.trim(), source: "related_search" });
     }
   }
 
-  // ── Extract PAA questions (filter to commercial/transactional intent) ──
-  const COMMERCIAL_PAA_PATTERNS = [
-    /how much (does|do|should|will|would)/i,
-    /who (does|should|can|will|would|is the best|are the best)/i,
-    /what (does|should|is the best|are the best|is a good)/i,
-    /where (can|should|do)/i,
-    /how (do|can|should) (i|you) (find|hire|choose|pick|get)/i,
-    /how to (find|hire|choose|pick|negotiate|get)/i,
-    /best .*(company|contractor|service|provider)/i,
-    /how long does/i,
-    /is it worth/i,
-    /should i (hire|get|use)/i,
-    /what to (look for|expect|ask)/i,
+  // ── 2. People also search (similar to related searches) ────────────────────
+  for (const item of serpItems) {
+    if (item.type !== "people_also_search") continue;
+    const searches: string[] = item.items ?? [];
+    for (const s of searches) {
+      const q = s.trim().toLowerCase();
+      if (!q || seen.has(q)) continue;
+      if (isBranded(s)) { console.log(`[SerpQueries] Dropped branded people_also_search: "${s}"`); continue; }
+      if (!isTransactional(s)) { console.log(`[SerpQueries] Dropped non-transactional people_also_search: "${s}"`); continue; }
+      seen.add(q);
+      candidates.push({ query: s.trim(), source: "related_search" });
+    }
+  }
+
+  // ── 3. PAA — strictly hiring/transactional intent only ──────────────────────
+  // PAA is the lowest priority and most likely to be informational.
+  // Only include PAA questions that explicitly ask about finding/hiring someone.
+  const HIRING_PAA_PATTERNS = [
+    /how (do|can|should) (i|you|we) (find|hire|choose|pick|select|get|locate)/i,
+    /how to (find|hire|choose|pick|select|get|locate)/i,
+    /who (should|can|do) (i|you|we) (hire|call|contact|use)/i,
+    /who (is|are) the best .*(company|contractor|service)/i,
+    /where (can|should|do) (i|you|we) (find|hire|get)/i,
+    /should i (hire|use|get|call)/i,
+    /what should i (look for|ask|expect) (when|in|from) (hiring|a)/i,
+    /how to (negotiate|get quotes|compare)/i,
   ];
 
   for (const item of serpItems) {
@@ -1363,15 +1438,17 @@ export async function getSerpQueriesForProspect(
       if (!title) continue;
       const q = title.trim().toLowerCase();
       if (seen.has(q)) continue;
-      // Only include if it matches a commercial/transactional pattern
-      const isCommercial = COMMERCIAL_PAA_PATTERNS.some(p => p.test(title));
-      if (!isCommercial) continue;
+      if (isBranded(title)) { console.log(`[SerpQueries] Dropped branded PAA: "${title}"`); continue; }
+      const isHiring = HIRING_PAA_PATTERNS.some(p => p.test(title));
+      if (!isHiring) { console.log(`[SerpQueries] Dropped non-hiring PAA: "${title}"`); continue; }
       seen.add(q);
       candidates.push({ query: title.trim(), source: "paa" });
     }
   }
 
-  console.log(`[SerpQueries] Found ${candidates.length} candidates for "${seedWithLocation}" (${candidates.filter(c => c.source === "related_search").length} related, ${candidates.filter(c => c.source === "paa").length} PAA)`);
+  const relCount = candidates.filter(c => c.source === "related_search").length;
+  const paaCount = candidates.filter(c => c.source === "paa").length;
+  console.log(`[SerpQueries] ${candidates.length} candidates for "${seedWithLocation}" (${relCount} related/also_search, ${paaCount} PAA)`);
 
   return candidates.slice(0, maxResults);
 }
