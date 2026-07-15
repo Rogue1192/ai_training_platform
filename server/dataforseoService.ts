@@ -1,6 +1,6 @@
 import axios from "axios";
 import { US_STATE_LOCATION_CODES, STATE_FIPS_TO_ABBR } from "../shared/locationCodes";
-import { COUNTY_POPULATION, STATE_POPULATION } from "../shared/countyPopulation";
+import { COUNTY_POPULATION, STATE_POPULATION, US_POPULATION } from "../shared/countyPopulation";
 
 // ============= DataForSEO API Client =============
 
@@ -1450,11 +1450,19 @@ export async function getCityCountyLocationCode(
 
   const { cityName, stateAbbr } = parseLocationString(location);
 
-  // Get the DataForSEO state-level code (most granular available)
-  const stateCode = stateAbbr ? (US_STATE_LOCATION_CODES[stateAbbr] ?? 2840) : 2840;
+  // IMPORTANT: We always query DataForSEO at NATIONAL level (2840) for local scope.
+  // DataForSEO's state-level codes return national-equivalent volumes for broad keywords
+  // (e.g., "fence installation" at Alabama state code returns ~3.82M instead of ~27K).
+  // Instead, we compute populationRatio = countyPop / US_POPULATION so the caller
+  // can multiply national volume × ratio to get a realistic county-level estimate.
+  const stateCode = 2840; // Always national — state codes are unreliable for volume
 
-  // Default ratio = 1 (use full state volume if we can't resolve county)
-  let populationRatio = 1;
+  // Default ratio: if we can't resolve county, use state share of US
+  const stateFipsForDefault = stateAbbr
+    ? Object.entries(STATE_FIPS_TO_ABBR).find(([, abbr]) => abbr === stateAbbr)?.[0]
+    : null;
+  const defaultStatePop = stateFipsForDefault ? (STATE_POPULATION[stateFipsForDefault] ?? 0) : 0;
+  let populationRatio = defaultStatePop > 0 ? defaultStatePop / US_POPULATION : 1;
   let resolvedAs = stateAbbr ? `state:${stateAbbr}` : 'national';
 
   // ── Step 1: Check if input is already a county ──────────────────────────────
@@ -1488,10 +1496,15 @@ export async function getCityCountyLocationCode(
         const countyPop = COUNTY_POPULATION[countyFips];
         const statePop = STATE_POPULATION[stateFips];
 
-        if (countyPop && statePop && statePop > 0) {
-          populationRatio = countyPop / statePop;
-          resolvedAs = `${county.NAME ?? countyFips} (${Math.round(populationRatio * 100 * 10) / 10}% of state)`;
-          console.log(`[PopRatio] "${location}" → ${county.NAME}: pop ${countyPop.toLocaleString()} / state ${statePop.toLocaleString()} = ${(populationRatio * 100).toFixed(1)}%`);
+        if (countyPop) {
+          // Use county / US_POPULATION ratio so we can query at national level (2840)
+          // and scale down to county size in one step. This avoids DataForSEO state-level
+          // codes returning national-equivalent volumes for broad keywords.
+          populationRatio = countyPop / US_POPULATION;
+          const pctOfUS = (populationRatio * 100).toFixed(4);
+          const pctOfState = statePop > 0 ? ((countyPop / statePop) * 100).toFixed(1) : '?';
+          resolvedAs = `${county.NAME ?? countyFips} (${pctOfState}% of state, ${pctOfUS}% of US)`;
+          console.log(`[PopRatio] "${location}" → ${county.NAME}: pop ${countyPop.toLocaleString()} / US ${US_POPULATION.toLocaleString()} = ${pctOfUS}% of US (${pctOfState}% of state)`);
         } else {
           console.warn(`[PopRatio] No population data for county FIPS ${countyFips}`);
         }
@@ -1504,6 +1517,7 @@ export async function getCityCountyLocationCode(
   }
 
   const result = { locationCode: stateCode, populationRatio, resolvedAs };
+  console.log(`[PopRatio] "${location}" final: locationCode=${stateCode} (national), ratio=${(populationRatio * 100).toFixed(4)}% of US, resolvedAs=${resolvedAs}`);
   _countyCodeCache.set(cacheKey, result);
   return result;
 }

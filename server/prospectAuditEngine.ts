@@ -143,9 +143,12 @@ async function fetchTopicVolume(
   campaignScope: "local" | "national" | "ecommerce"
 ): Promise<{ estimatedVolumePerQuery: number; totalTopicVolume: number; usedFallback: boolean }> {
   const seeds = buildVolumeSeeds(serviceType, location, campaignScope);
-  const locCode = campaignScope === "local" ? locationCode : 2840; // national = US
-  // For national/ecommerce, ratio is always 1
-  const ratio = campaignScope === "local" ? Math.min(1, Math.max(0.001, populationRatio)) : 1;
+  // For local scope, locationCode is always 2840 (national) — getCityCountyLocationCode
+  // now returns national code + county/US ratio to avoid DataForSEO state-level inflation.
+  // For national/ecommerce, also use 2840 and ratio=1.
+  const locCode = 2840;
+  // For national/ecommerce, ratio is always 1; for local, use county/US ratio
+  const ratio = campaignScope === "local" ? Math.min(1, Math.max(0.000001, populationRatio)) : 1;
 
   let totalVolume = 0;
   let usedFallback = false;
@@ -169,7 +172,7 @@ async function fetchTopicVolume(
         totalVolume += googleVolMap.get(seed.toLowerCase()) ?? 0;
       }
       if (totalVolume > 0) {
-        console.log(`[ProspectAudit] Google Ads fallback volume for "${serviceType}" in ${location}: ${totalVolume}/mo (state-level, ratio ${(ratio * 100).toFixed(1)}%)`);
+        console.log(`[ProspectAudit] Google Ads fallback volume for "${serviceType}" in ${location}: ${totalVolume}/mo (national, county ratio ${(ratio * 100).toFixed(4)}%)`);
         usedFallback = true;
       }
     } catch (err: any) {
@@ -194,7 +197,7 @@ async function fetchTopicVolume(
     : Math.round(scaledVolume * SUBURBAN_UPLIFT);
   const perQuery = Math.max(1, Math.round(totalAIVolume / queryCount));
 
-  console.log(`[ProspectAudit] Final volume for "${location}": state=${totalVolume} × ratio=${(ratio * 100).toFixed(1)}% = ${Math.round(scaledVolume)} → AI=${totalAIVolume}/mo`);
+  console.log(`[ProspectAudit] Final volume for "${location}": national=${totalVolume} × county_ratio=${(ratio * 100).toFixed(4)}% = ${Math.round(scaledVolume)} → AI=${totalAIVolume}/mo`);
   return { estimatedVolumePerQuery: perQuery, totalTopicVolume: totalAIVolume, usedFallback };
 }
 

@@ -3151,6 +3151,12 @@ export const COUNTY_POPULATION: Record<string, number> = {
 };
 
 /**
+ * Total US population (2023 Census estimate) — sum of all 50 states + DC.
+ * Used to compute county-to-national population ratios.
+ */
+export const US_POPULATION = 334_914_895;
+
+/**
  * US State population estimates (2023) keyed by 2-digit FIPS code.
  */
 export const STATE_POPULATION: Record<string, number> = {
