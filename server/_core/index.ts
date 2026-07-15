@@ -28,6 +28,7 @@ import {
   ensureAuditLeadColumns,
   ensureAgencyWebhookColumns,
   ensureAuditSourceColumn,
+  ensureAuditCampaignScopeColumn,
   ensureTrainingQueryTables,
 } from "../db";
 
@@ -244,6 +245,9 @@ ensureAgencyWebhookColumns().catch((err) =>
 );
 ensureAuditSourceColumn().catch((err) =>
   console.warn("[Startup] ensureAuditSourceColumn failed (non-fatal):", err.message)
+);
+ensureAuditCampaignScopeColumn().catch((err) =>
+  console.warn("[Startup] ensureAuditCampaignScopeColumn failed (non-fatal):", err.message)
 );
 ensureTrainingQueryTables().catch((err) =>
   console.warn("[Startup] ensureTrainingQueryTables failed (non-fatal):", err.message)

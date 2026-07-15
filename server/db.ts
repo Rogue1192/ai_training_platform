@@ -1647,6 +1647,27 @@ export async function ensureAuditSourceColumn(): Promise<void> {
 }
 
 /**
+ * ensureAuditCampaignScopeColumn
+ *
+ * Adds the campaignScope column to prospectAudits if it doesn't exist.
+ * Existing rows default to 'local'. Safe to call on every startup.
+ */
+export async function ensureAuditCampaignScopeColumn(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE "prospectAudits"
+      ADD COLUMN IF NOT EXISTS "campaignScope" varchar(20) NOT NULL DEFAULT 'local'
+    `;
+    console.log('[DB] prospectAudits.campaignScope column ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureAuditCampaignScopeColumn:', err.message);
+  }
+}
+
+/**
  * ensureTrainingQueryTables
  *
  * Creates the three new training tables if they don't exist:
