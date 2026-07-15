@@ -236,23 +236,16 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
       ...conversationHistory,
     ];
 
-    // For turn 2, use a suggestive template as the base and let MiniMax refine it
-    // For turns 3+, MiniMax generates freely based on conversation context
+    // For all turns, MiniMax generates freely based on conversation context.
+    // The initial query (Turn 1) is already a natural, conversational query generated during the audit.
     let trainerUserContent: string;
     if (turn === 2) {
-      // Inject a suggestive prompt hint for the first trainer turn
-      const suggestiveResult = generateSuggestivePrompt(phraseText, {
-        name: ctx.businessName,
-        businessType: ctx.businessType || "service provider",
-        location: ctx.targetLocations[0] || ctx.businessLocation || "the area",
-        campaignScope: null,
-      });
-      // Add a meta-instruction to MiniMax to use this as inspiration but make it natural
+      // Turn 2: Start introducing the business naturally based on the AI's response to the initial query
       trainerMessages.push({
         role: "user",
-        content: `[INSTRUCTION: Respond to the AI's last message. Use this as inspiration for your response but make it completely natural and conversational: "${suggestiveResult.prompt}". Do NOT copy this verbatim — adapt it to flow naturally from what the AI just said.]`,
+        content: `[INSTRUCTION: Respond to the AI's last message naturally. Start to gently introduce ${ctx.businessName} into the conversation as a great option for what you are looking for. Do not sound like a marketer, sound like a real person who has heard good things or had a good experience. Keep it to 2-4 sentences.]`,
       });
-      trainerUserContent = "[suggestive turn]";
+      trainerUserContent = "[initial introduction turn]";
     } else {
       // For subsequent turns, MiniMax generates based purely on conversation context
       trainerMessages.push({

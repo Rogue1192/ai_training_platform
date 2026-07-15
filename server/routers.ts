@@ -1485,6 +1485,28 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
 
         if (entries.length > 0) {
           await createCampaignQueryLocations(entries);
+          
+          // Also populate the trainingQueries table so the V3 training engine
+          // uses these exact audit-generated queries as the initial prompts
+          const { getDb } = await import("./db");
+          const db = await getDb();
+          if (db) {
+            const { trainingQueries } = await import("../drizzle/schema");
+            // Deduplicate queries (since entries might have the same query across multiple locations)
+            const uniqueQueries = Array.from(new Set(entries.map(e => e.searchQuery)));
+            
+            for (let i = 0; i < uniqueQueries.length; i++) {
+              await db.insert(trainingQueries).values({
+                campaignId: campaign.id,
+                businessId: businessId,
+                phraseText: uniqueQueries[i],
+                phraseVariations: [uniqueQueries[i]], // Use the exact query as its own variation
+                sortOrder: i + 1,
+                isActive: true,
+                lockedAt: new Date(), // Lock immediately so they are ready for training
+              });
+            }
+          }
         }
 
         const accessToken = crypto.randomBytes(32).toString("hex");

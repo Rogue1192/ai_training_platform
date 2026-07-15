@@ -337,10 +337,15 @@ async function fanOutQueriesForLocation(
     : `This is a ${campaignScope} business. Do NOT include any city or location in the queries.`;
 
   // Build the business context block from industry + all seed keywords
+  // Use the raw seed keywords directly — do NOT collapse them into one phrase.
+  // GPT-4o understands "fence company", "chain link fence installation" etc. as-is.
   const industryLine = industry ? `Industry / Trade: ${industry}` : "";
-  const servicesLine = allSeedKeywords && allSeedKeywords.length > 0
-    ? `Services offered: ${allSeedKeywords.join(", ")}`
-    : `Primary service: ${serviceType}`;
+  const servicesList = allSeedKeywords && allSeedKeywords.length > 0
+    ? allSeedKeywords
+    : [serviceType];
+  const servicesLine = servicesList.length === 1
+    ? `Service: ${servicesList[0]}`
+    : servicesList.map((s, i) => `Service ${i + 1}: ${s}`).join("\n");
   const contextBlock = [industryLine, servicesLine].filter(Boolean).join("\n");
 
   const systemPrompt = `You are an expert at writing the exact phrases real people type into ChatGPT, Gemini, and Perplexity when they want to HIRE someone for a service. You understand the difference between someone who is ready to hire vs. someone who is just researching.
@@ -374,7 +379,7 @@ CRITICAL RULES — violating any of these will make the query useless:
 2. NEVER use a business-category word as a noun modifier. "fence installation contractor" is ok. "fence company contractor" is NOT ok. "fence company provider" is NOT ok.
 3. NEVER include price, cost, budget, or how-to questions. Those are informational, not hiring intent.
 4. NEVER use corporate jargon: "provider", "meeting these requirements", "solutions", "services" as a standalone noun.
-5. Vary the phrasing AND the specific service — use the different services listed in the context, not just the primary one.
+5. SPREAD ACROSS ALL SERVICES — if multiple services are listed in the context, you MUST use each service in at least 2-3 queries. Do NOT use the same service in more than 4 queries total. This is mandatory.
 6. Each query must be a complete, grammatically correct phrase that stands alone.
 
 Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No explanations, no bucket labels, no extra text.`;
@@ -418,7 +423,7 @@ Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No
  * - Informational penalty: -3 each (cost, price, how much, how to, diy, what is, define)
  * - Unnatural phrase penalty: -2 each (provider, meeting these requirements, solutions provider, services provider)
  */
-function scoreAndRankCandidates(candidates: string[], needed: number): string[] {
+function scoreAndRankCandidates(candidates: string[], needed: number, allSeedKeywords: string[] = []): string[] {
   const HIRE_SIGNALS = [
     /\b(hire|hiring)\b/i,
     /\b(recommend|recommendation)\b/i,
@@ -469,7 +474,69 @@ function scoreAndRankCandidates(candidates: string[], needed: number): string[] 
   });
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, needed).map((s) => s.q);
+
+  // ── Enforce service diversity ─────────────────────────────────────────────
+  // After sorting by score, ensure queries are distributed across the provided seed keywords.
+  // We check which seed keyword the query most closely matches.
+  const diverse: typeof scored = [];
+  const overflow: typeof scored = [];
+
+  if (allSeedKeywords.length > 1) {
+    // If we have multiple seed keywords, cap each one to ensure spread
+    const maxPerSeed = Math.ceil(needed / allSeedKeywords.length) + 1; // e.g. 3 seeds, 5 needed -> max 3 per seed
+    const seedCount: Record<string, number> = {};
+    
+    // Normalize seeds for matching
+    const normalizedSeeds = allSeedKeywords.map(s => ({
+      original: s,
+      words: s.toLowerCase().replace(/[^a-z0-9 ]/g, "").split(/\s+/).filter(w => w.length > 2)
+    }));
+
+    for (const item of scored) {
+      const qLower = item.q.toLowerCase();
+      
+      // Find the best matching seed keyword
+      let bestSeed = "unknown";
+      let maxOverlap = 0;
+      
+      for (const seed of normalizedSeeds) {
+        // Exact substring match is strongest
+        if (qLower.includes(seed.original.toLowerCase())) {
+          bestSeed = seed.original;
+          break;
+        }
+        
+        // Otherwise count word overlap
+        let overlap = 0;
+        for (const w of seed.words) {
+          if (qLower.includes(w)) overlap++;
+        }
+        if (overlap > maxOverlap) {
+          maxOverlap = overlap;
+          bestSeed = seed.original;
+        }
+      }
+
+      if ((seedCount[bestSeed] ?? 0) < maxPerSeed) {
+        seedCount[bestSeed] = (seedCount[bestSeed] ?? 0) + 1;
+        diverse.push(item);
+      } else {
+        overflow.push(item);
+      }
+
+      if (diverse.length >= needed) break;
+    }
+  } else {
+    // If only 1 or 0 seed keywords, just take the top scores
+    diverse.push(...scored.slice(0, needed));
+  }
+
+  // If diversity filtering left us short, fill from overflow
+  const result = diverse.length >= needed
+    ? diverse.slice(0, needed)
+    : [...diverse, ...overflow].slice(0, needed);
+
+  return result.map((s) => s.q);
 }
 
 /**
@@ -560,7 +627,7 @@ export async function generateProspectQueries(
         allSeeds       // ← all seed keywords (up to 3)
       );
       if (candidates.length > 0) {
-        queriesForLoc = scoreAndRankCandidates(candidates, needed);
+        queriesForLoc = scoreAndRankCandidates(candidates, needed, allSeeds);
         console.log(`[ProspectAudit] Fan-out scored ${queriesForLoc.length} queries for "${serviceDesc}" in ${loc}`);
       }
     }
