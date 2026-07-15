@@ -1641,15 +1641,15 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         return runCampaignKeywordResearch(input.campaignId);
       }),
     // Regenerate queries for an existing campaign:
-    // merges new locations into business.location, optionally appends seed keywords,
+    // merges new locations into business.location, replaces seed keywords (specialties),
     // clears the old query-location matrix, and re-runs keyword research.
     rerunKeywordResearch: protectedProcedure
       .input(z.object({
         campaignId: z.number(),
         // New locations to ADD (merged with existing; duplicates are dropped)
         additionalLocations: z.array(z.string().min(1)).optional(),
-        // Comma-separated seed keywords to APPEND to business.specialties
-        additionalSeeds: z.string().optional(),
+        // Clean list of seed keywords — REPLACES business.specialties entirely
+        seedKeywords: z.array(z.string().min(1)).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { getCampaignById, updateCampaign, deleteQueryLocationsByCampaignId } = await import('./dbCampaigns');
@@ -1668,13 +1668,10 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           );
           await updateBusiness(business.id, { location: serializeLocations(merged) });
         }
-        // 2. Append seed keywords
-        if (input.additionalSeeds && input.additionalSeeds.trim()) {
-          const existing = business.specialties ? business.specialties.trim() : '';
-          const merged = existing
-            ? `${existing}, ${input.additionalSeeds.trim()}`
-            : input.additionalSeeds.trim();
-          await updateBusiness(business.id, { specialties: merged });
+        // 2. Replace seed keywords (specialties) with the clean list from the modal
+        if (input.seedKeywords && input.seedKeywords.length > 0) {
+          const clean = input.seedKeywords.map((k) => k.trim()).filter(Boolean).join(', ');
+          await updateBusiness(business.id, { specialties: clean });
         }
         // 3. Clear existing query-location matrix
         const deleted = await deleteQueryLocationsByCampaignId(input.campaignId);

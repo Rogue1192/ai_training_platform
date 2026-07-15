@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, X, Plus, RefreshCw, AlertTriangle, MapPin, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { parseLocations, serializeLocations } from "../../../shared/location";
+import { parseLocations } from "../../../shared/location";
 
 interface RegenerateQueriesModalProps {
   open: boolean;
@@ -21,7 +20,7 @@ interface RegenerateQueriesModalProps {
   campaignId: number;
   /** Current business.location string (semicolon-separated) */
   currentLocation: string | null | undefined;
-  /** Current business.specialties string */
+  /** Current business.specialties string (may be a long description — shown for reference only) */
   currentSpecialties: string | null | undefined;
   onSuccess?: () => void;
 }
@@ -36,42 +35,68 @@ export function RegenerateQueriesModal({
 }: RegenerateQueriesModalProps) {
   const utils = trpc.useUtils();
 
-  // ── Location state ──
-  const [existingLocations, setExistingLocations] = useState<string[]>([]);
-  const [newLocationInput, setNewLocationInput] = useState("");
+  // ── Location chips ──
+  const [locations, setLocations] = useState<string[]>([]);
+  const [locationInput, setLocationInput] = useState("");
 
-  // ── Seed keyword state ──
-  const [additionalSeeds, setAdditionalSeeds] = useState("");
+  // ── Seed keyword chips ──
+  const [seedKeywords, setSeedKeywords] = useState<string[]>([]);
+  const [keywordInput, setKeywordInput] = useState("");
 
   // Seed state when modal opens
   useEffect(() => {
     if (open) {
-      setExistingLocations(parseLocations(currentLocation));
-      setAdditionalSeeds("");
-      setNewLocationInput("");
+      setLocations(parseLocations(currentLocation));
+      setSeedKeywords([]);
+      setLocationInput("");
+      setKeywordInput("");
     }
   }, [open, currentLocation]);
 
+  // ── Location helpers ──
   const addLocation = () => {
-    const trimmed = newLocationInput.trim();
+    const trimmed = locationInput.trim();
     if (!trimmed) return;
-    // Avoid duplicates (case-insensitive)
-    if (existingLocations.some((l) => l.toLowerCase() === trimmed.toLowerCase())) {
+    if (locations.some((l) => l.toLowerCase() === trimmed.toLowerCase())) {
       toast.error("That location is already in the list.");
       return;
     }
-    setExistingLocations((prev) => [...prev, trimmed]);
-    setNewLocationInput("");
+    setLocations((prev) => [...prev, trimmed]);
+    setLocationInput("");
   };
 
   const removeLocation = (idx: number) => {
-    setExistingLocations((prev) => prev.filter((_, i) => i !== idx));
+    setLocations((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  // ── Keyword helpers ──
+  const addKeyword = () => {
+    const trimmed = keywordInput.trim();
+    if (!trimmed) return;
+    if (seedKeywords.some((k) => k.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error("That keyword is already in the list.");
+      return;
+    }
+    setSeedKeywords((prev) => [...prev, trimmed]);
+    setKeywordInput("");
+  };
+
+  const removeKeyword = (idx: number) => {
+    setSeedKeywords((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // ── Mutation ──
   const rerunMutation = trpc.campaign.rerunKeywordResearch.useMutation({
-    onSuccess: (result: { queryLocationsCreated: number; deletedQueryCount: number; success: boolean; keywordsFound: number; usedCache: boolean; error?: string }) => {
+    onSuccess: (result: {
+      queryLocationsCreated: number;
+      deletedQueryCount: number;
+      success: boolean;
+      keywordsFound: number;
+      usedCache: boolean;
+      error?: string;
+    }) => {
       toast.success(
-        `✅ Queries regenerated — ${result.queryLocationsCreated} new query-location pairs created (${result.deletedQueryCount} old ones removed).`,
+        `Queries regenerated — ${result.queryLocationsCreated} new query-location pairs created (${result.deletedQueryCount} old ones removed).`,
         { duration: 6000 }
       );
       utils.campaign.getQueryLocations.invalidate({ campaignId });
@@ -85,26 +110,24 @@ export function RegenerateQueriesModal({
   });
 
   const handleSubmit = () => {
-    if (existingLocations.length === 0) {
+    if (locations.length === 0) {
       toast.error("At least one location is required.");
       return;
     }
 
-    // Compute which locations are new (not in the original list)
     const originalSet = new Set(parseLocations(currentLocation).map((l) => l.toLowerCase()));
-    const additionalLocations = existingLocations.filter(
-      (l) => !originalSet.has(l.toLowerCase())
-    );
+    const additionalLocations = locations.filter((l) => !originalSet.has(l.toLowerCase()));
 
     rerunMutation.mutate({
       campaignId,
       additionalLocations: additionalLocations.length > 0 ? additionalLocations : undefined,
-      additionalSeeds: additionalSeeds.trim() || undefined,
+      // Pass the full clean keyword list so the backend can replace specialties
+      seedKeywords: seedKeywords.length > 0 ? seedKeywords : undefined,
     });
   };
 
   const originalLocations = parseLocations(currentLocation);
-  const newLocations = existingLocations.filter(
+  const newLocations = locations.filter(
     (l) => !originalLocations.some((o) => o.toLowerCase() === l.toLowerCase())
   );
 
@@ -132,14 +155,14 @@ export function RegenerateQueriesModal({
             </p>
           </div>
 
-          {/* Locations */}
+          {/* ── Target Locations ── */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-primary" />
               Target Locations
             </label>
             <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2 rounded-md border border-border bg-muted/30">
-              {existingLocations.map((loc, idx) => {
+              {locations.map((loc, idx) => {
                 const isNew = !originalLocations.some((o) => o.toLowerCase() === loc.toLowerCase());
                 return (
                   <Badge
@@ -162,15 +185,17 @@ export function RegenerateQueriesModal({
                   </Badge>
                 );
               })}
-              {existingLocations.length === 0 && (
-                <span className="text-xs text-muted-foreground self-center">No locations — add at least one below</span>
+              {locations.length === 0 && (
+                <span className="text-xs text-muted-foreground self-center">
+                  No locations — add at least one below
+                </span>
               )}
             </div>
             <div className="flex gap-2">
               <Input
                 placeholder="e.g. Riverside, CA"
-                value={newLocationInput}
-                onChange={(e) => setNewLocationInput(e.target.value)}
+                value={locationInput}
+                onChange={(e) => setLocationInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -185,7 +210,7 @@ export function RegenerateQueriesModal({
                 size="sm"
                 className="h-8 shrink-0 gap-1"
                 onClick={addLocation}
-                disabled={!newLocationInput.trim() || rerunMutation.isPending}
+                disabled={!locationInput.trim() || rerunMutation.isPending}
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add
@@ -193,33 +218,71 @@ export function RegenerateQueriesModal({
             </div>
             {newLocations.length > 0 && (
               <p className="text-xs text-green-400">
-                {newLocations.length} new location{newLocations.length !== 1 ? "s" : ""} will be added to the business profile.
+                {newLocations.length} new location{newLocations.length !== 1 ? "s" : ""} will be
+                added to the business profile.
               </p>
             )}
           </div>
 
-          {/* Seed Keywords */}
+          {/* ── Seed Keywords ── */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
               <Zap className="w-3.5 h-3.5 text-primary" />
-              Additional Seed Keywords
+              Seed Keywords
               <span className="text-xs text-muted-foreground font-normal">(optional)</span>
             </label>
-            {currentSpecialties && (
-              <p className="text-xs text-muted-foreground">
-                Current: <span className="text-foreground">{currentSpecialties}</span>
-              </p>
-            )}
-            <Textarea
-              placeholder="e.g. commercial HVAC, duct cleaning, mini-split installation"
-              value={additionalSeeds}
-              onChange={(e) => setAdditionalSeeds(e.target.value)}
-              className="text-sm min-h-[72px] resize-none"
-              disabled={rerunMutation.isPending}
-            />
             <p className="text-xs text-muted-foreground">
-              These will be appended to the existing specialties and used to guide keyword research.
+              Add specific services or terms to guide keyword research. These replace any existing
+              specialties on the business profile.
             </p>
+            <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2 rounded-md border border-border bg-muted/30">
+              {seedKeywords.map((kw, idx) => (
+                <Badge
+                  key={idx}
+                  variant="outline"
+                  className="gap-1 pr-1 text-xs bg-blue-500/10 text-blue-300 border-blue-500/30"
+                >
+                  {kw}
+                  <button
+                    onClick={() => removeKeyword(idx)}
+                    className="ml-0.5 rounded-full hover:bg-muted-foreground/20 p-0.5"
+                    disabled={rerunMutation.isPending}
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </Badge>
+              ))}
+              {seedKeywords.length === 0 && (
+                <span className="text-xs text-muted-foreground self-center">
+                  No seed keywords added yet
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="e.g. mini-split installation"
+                value={keywordInput}
+                onChange={(e) => setKeywordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addKeyword();
+                  }
+                }}
+                className="h-8 text-sm"
+                disabled={rerunMutation.isPending}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 shrink-0 gap-1"
+                onClick={addKeyword}
+                disabled={!keywordInput.trim() || rerunMutation.isPending}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add
+              </Button>
+            </div>
           </div>
 
           {/* Actions */}
@@ -236,7 +299,7 @@ export function RegenerateQueriesModal({
               size="sm"
               className="gap-1.5"
               onClick={handleSubmit}
-              disabled={rerunMutation.isPending || existingLocations.length === 0}
+              disabled={rerunMutation.isPending || locations.length === 0}
             >
               {rerunMutation.isPending ? (
                 <>
