@@ -1394,12 +1394,44 @@ export async function getCityCountyLocationCode(location: string): Promise<{ loc
   const cacheKey = `county:${location.trim().toLowerCase()}`;
   if (_countyCodeCache.has(cacheKey)) return { locationCode: _countyCodeCache.get(cacheKey)!, resolvedAs: 'cached' };
 
-  // Parse city and state from "City, ST" format
+  // Parse city/county name and state from "City, ST" or "Morgan County, AL" format
   const cityMatch = location.trim().match(/^([^,]+)/);
-  const cityName = cityMatch ? cityMatch[1].trim() : location.trim();
+  const rawName = cityMatch ? cityMatch[1].trim() : location.trim();
   const stateMatch = location.trim().match(/,?\s+([A-Z]{2})$/);
   const stateAbbr = stateMatch ? stateMatch[1].toUpperCase() : null;
 
+  // Detect if the input is already a county (ends with " County" or " Parish" or " Borough")
+  const countyInputMatch = rawName.match(/^(.+?)\s+(County|Parish|Borough)$/i);
+  if (countyInputMatch && stateAbbr) {
+    // Input is already a county — skip Census geocoder, go straight to DataForSEO lookup
+    const alreadyCountyName = countyInputMatch[1].trim();
+    console.log(`[CountyCode] Input "${location}" detected as county, looking up directly`);
+    try {
+      const auth = await getAuthHeader();
+      const resp = await axios.get(
+        `${DATAFORSEO_BASE}/keywords_data/google_ads/locations`,
+        { headers: { Authorization: auth }, params: { country_iso_code: 'US' }, timeout: 15_000 }
+      );
+      const locations: Array<{ location_code: number; location_name: string; location_type: string }> = resp.data?.locations ?? [];
+      const countyLower = alreadyCountyName.toLowerCase();
+      const stateLower = stateAbbr.toLowerCase();
+      const countyMatch = locations.find(
+        (l) =>
+          l.location_type === 'County' &&
+          l.location_name.toLowerCase().startsWith(countyLower) &&
+          l.location_name.toLowerCase().includes(stateLower)
+      );
+      if (countyMatch) {
+        console.log(`[CountyCode] Direct county match: ${countyMatch.location_code} (${countyMatch.location_name})`);
+        _countyCodeCache.set(cacheKey, countyMatch.location_code);
+        return { locationCode: countyMatch.location_code, resolvedAs: countyMatch.location_name };
+      }
+    } catch (err: any) {
+      console.warn(`[CountyCode] Direct county lookup failed: ${err.message}`);
+    }
+  }
+
+  const cityName = rawName;
   let countyName: string | null = null;
 
   // Step 1: Resolve city → county via US Census Geocoder (free, no key needed)
