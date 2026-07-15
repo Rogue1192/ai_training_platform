@@ -492,9 +492,9 @@ export const trainingQueryRouter = router({
           status: 'pending',
           webSearchStatus: 'pending',
         })
-        .$returningId();
+        .returning();
 
-      const dayRunId = (newRun as any).id;
+      const dayRunId = (newRun as any)?.id ?? (newRun as any)?.[0]?.id;
 
       // Fire and forget — run in background so the HTTP response returns immediately
       runTrainingDay(input.campaignId, dayRunId).catch((err: any) => {
