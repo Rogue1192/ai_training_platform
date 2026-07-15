@@ -135,11 +135,14 @@ async function fetchTopicVolume(
   serviceType: string,
   location: string,
   locationCode: number,
+  populationRatio: number,
   queryCount: number,
   campaignScope: "local" | "national" | "ecommerce"
 ): Promise<{ estimatedVolumePerQuery: number; totalTopicVolume: number; usedFallback: boolean }> {
   const seeds = buildVolumeSeeds(serviceType, location, campaignScope);
   const locCode = campaignScope === "local" ? locationCode : 2840; // national = US
+  // For national/ecommerce, ratio is always 1
+  const ratio = campaignScope === "local" ? Math.min(1, Math.max(0.001, populationRatio)) : 1;
 
   let totalVolume = 0;
   let usedFallback = false;
@@ -155,7 +158,7 @@ async function fetchTopicVolume(
     console.warn(`[ProspectAudit] AI volume endpoint failed for seeds: ${err.message}`);
   }
 
-  // ── Pass 2: Google Ads volume as fallback (still county-scoped) ──────────
+  // ── Pass 2: Google Ads volume as fallback (state-scoped, then ratio-proportioned) ──
   if (totalVolume === 0) {
     try {
       const googleVolMap = await getGoogleAdsSearchVolume(seeds, { locationCode: locCode });
@@ -163,7 +166,7 @@ async function fetchTopicVolume(
         totalVolume += googleVolMap.get(seed.toLowerCase()) ?? 0;
       }
       if (totalVolume > 0) {
-        console.log(`[ProspectAudit] Google Ads fallback volume for "${serviceType}" in ${location}: ${totalVolume}/mo`);
+        console.log(`[ProspectAudit] Google Ads fallback volume for "${serviceType}" in ${location}: ${totalVolume}/mo (state-level, ratio ${(ratio * 100).toFixed(1)}%)`);
         usedFallback = true;
       }
     } catch (err: any) {
@@ -179,14 +182,16 @@ async function fetchTopicVolume(
     console.log(`[ProspectAudit] Using volume floor for "${serviceType}" in ${location}`);
   }
 
-  // If AI volume was returned directly, it's already the AI volume — no 0.25 multiplier needed.
-  // If we fell back to Google Ads volume, apply the 0.25 AI adoption rate.
-  // usedFallback=true means we used Google Ads data (needs multiplier) or the floor.
+  // Apply population ratio to proportion state-level volume down to county/market size.
+  // AI volume from Pass 1 is already state-scoped — ratio brings it to local market.
+  // Google Ads fallback from Pass 2 also needs the 0.25 AI adoption rate multiplier.
+  const scaledVolume = totalVolume * ratio;
   const totalAIVolume = usedFallback
-    ? Math.round(totalVolume * AI_VOLUME_FALLBACK_RATE * SUBURBAN_UPLIFT)
-    : Math.round(totalVolume * SUBURBAN_UPLIFT);
+    ? Math.round(scaledVolume * AI_VOLUME_FALLBACK_RATE * SUBURBAN_UPLIFT)
+    : Math.round(scaledVolume * SUBURBAN_UPLIFT);
   const perQuery = Math.max(1, Math.round(totalAIVolume / queryCount));
 
+  console.log(`[ProspectAudit] Final volume for "${location}": state=${totalVolume} × ratio=${(ratio * 100).toFixed(1)}% = ${Math.round(scaledVolume)} → AI=${totalAIVolume}/mo`);
   return { estimatedVolumePerQuery: perQuery, totalTopicVolume: totalAIVolume, usedFallback };
 }
 
@@ -805,9 +810,9 @@ export async function runProspectAudit(
     // Use county-level location code for volume lookups — gives realistic market-size
     // data for both small towns (city limits too small) and large cities (residential
     // population lives in surrounding suburbs, not city limits).
-    const { locationCode: locCode, resolvedAs } = await getCityCountyLocationCode(loc);
-    console.log(`[ProspectAudit] Volume lookup for "${loc}" using location code ${locCode} (${resolvedAs})`);
-    const topicVol = await fetchTopicVolume(svcType, loc, locCode, indices.length, scope);
+    const { locationCode: locCode, populationRatio, resolvedAs } = await getCityCountyLocationCode(loc);
+    console.log(`[ProspectAudit] Volume lookup for "${loc}" using location code ${locCode} (${resolvedAs}, ratio ${(populationRatio * 100).toFixed(1)}%)`);
+    const topicVol = await fetchTopicVolume(svcType, loc, locCode, populationRatio, indices.length, scope);
     for (const idx of indices) {
       queryVolumeMap.set(idx, {
         estimatedVolume: topicVol.estimatedVolumePerQuery,

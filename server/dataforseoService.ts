@@ -1,4 +1,6 @@
 import axios from "axios";
+import { US_STATE_LOCATION_CODES, STATE_FIPS_TO_ABBR } from "../shared/locationCodes";
+import { COUNTY_POPULATION, STATE_POPULATION } from "../shared/countyPopulation";
 
 // ============= DataForSEO API Client =============
 
@@ -1370,33 +1372,28 @@ export async function getCityLocationCode(location: string): Promise<number> {
 }
 
 /**
- * getCityCountyLocationCode
+ * getCityLocationWithPopRatio
  *
- * Resolves a city/location string to its parent county's DataForSEO location code.
- * This gives more realistic search volume than city-limits data because:
- *  - Small towns (Hartselle, AL) have near-zero city-limits data but Morgan County
- *    has meaningful volume.
- *  - Large cities (Houston, TX) have most residential population in surrounding
- *    suburbs/counties, not the city limits.
+ * Resolves a city/location string to:
+ *  - The DataForSEO STATE-level location code (most granular available for Google Ads volume)
+ *  - A population ratio (county population / state population) to proportion state volume
+ *    down to the realistic local market size.
  *
  * Strategy:
- *  1. Use the US Census Geocoder to resolve city → county name.
- *  2. Search the DataForSEO locations list for a County match in that state.
- *  3. Fall back to city-level code, then state-level if county not found.
+ *  1. Parse city name + state abbreviation from any input format.
+ *  2. Use Census Geocoder (no key needed) to resolve city → county FIPS code.
+ *  3. Look up county population and state population from static 2023 Census table.
+ *  4. Return state DataForSEO code + ratio.
  *
  * Results are cached in-process.
  */
-const _countyCodeCache = new Map<string, number>();
+const _countyCodeCache = new Map<string, { locationCode: number; populationRatio: number; resolvedAs: string }>();
 
-export async function getCityCountyLocationCode(location: string): Promise<{ locationCode: number; resolvedAs: string }> {
-  if (!location) return { locationCode: 2840, resolvedAs: 'national' };
-
-  const cacheKey = `county:${location.trim().toLowerCase()}`;
-  if (_countyCodeCache.has(cacheKey)) return { locationCode: _countyCodeCache.get(cacheKey)!, resolvedAs: 'cached' };
-
-  // ── Robust location normalization ──────────────────────────────────────────
-  // Handles all user input formats:
-  //   "Houston, TX"  |  "Houston, Texas"  |  "Houston Texas"  |  "houston, tx"
+/**
+ * Parses a location string into { cityName, stateAbbr } handling all formats:
+ *   "Houston, TX" | "Houston, Texas" | "Houston Texas" | "houston, tx"
+ */
+function parseLocationString(location: string): { cityName: string; stateAbbr: string | null } {
   const STATE_NAMES: Record<string, string> = {
     alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR',
     california: 'CA', colorado: 'CO', connecticut: 'CT', delaware: 'DE',
@@ -1417,125 +1414,98 @@ export async function getCityCountyLocationCode(location: string): Promise<{ loc
   const normalized = location.trim();
   const lower = normalized.toLowerCase();
 
-  // Extract state abbreviation — try 2-letter abbr first (case-insensitive), then full name
   let stateAbbr: string | null = null;
   const abbrMatch = normalized.match(/,?\s+([A-Za-z]{2})$/);
   if (abbrMatch) {
     const candidate = abbrMatch[1].toUpperCase();
-    // Verify it's actually a US state abbreviation
-    if (STATE_NAMES[Object.keys(STATE_NAMES).find(k => STATE_NAMES[k] === candidate) ?? ''] || candidate in Object.values(STATE_NAMES)) {
-      stateAbbr = candidate;
-    }
+    if (Object.values(STATE_NAMES).includes(candidate)) stateAbbr = candidate;
   }
   if (!stateAbbr) {
-    // Try full state name — longest match first to handle "West Virginia" before "Virginia"
     const sortedNames = Object.keys(STATE_NAMES).sort((a, b) => b.length - a.length);
     for (const name of sortedNames) {
-      if (lower.includes(name)) {
-        stateAbbr = STATE_NAMES[name];
-        break;
-      }
+      if (lower.includes(name)) { stateAbbr = STATE_NAMES[name]; break; }
     }
   }
 
-  // Extract city/county name: everything before the comma (or before the state name if no comma)
-  let rawName: string;
+  let cityName: string;
   if (normalized.includes(',')) {
-    rawName = normalized.split(',')[0].trim();
+    cityName = normalized.split(',')[0].trim();
   } else if (stateAbbr) {
-    // No comma — strip the state part from the end
     const statePattern = new RegExp(`\\s+(${abbrMatch?.[1] ?? stateAbbr}|${Object.keys(STATE_NAMES).find(k => STATE_NAMES[k] === stateAbbr) ?? ''})\\s*$`, 'i');
-    rawName = normalized.replace(statePattern, '').trim();
+    cityName = normalized.replace(statePattern, '').trim();
   } else {
-    rawName = normalized;
+    cityName = normalized;
   }
 
-  // Detect if the input is already a county (ends with " County" or " Parish" or " Borough")
-  const countyInputMatch = rawName.match(/^(.+?)\s+(County|Parish|Borough)$/i);
+  return { cityName, stateAbbr };
+}
+
+export async function getCityCountyLocationCode(
+  location: string
+): Promise<{ locationCode: number; populationRatio: number; resolvedAs: string }> {
+  if (!location) return { locationCode: 2840, populationRatio: 1, resolvedAs: 'national' };
+
+  const cacheKey = `pop:${location.trim().toLowerCase()}`;
+  if (_countyCodeCache.has(cacheKey)) return _countyCodeCache.get(cacheKey)!;
+
+  const { cityName, stateAbbr } = parseLocationString(location);
+
+  // Get the DataForSEO state-level code (most granular available)
+  const stateCode = stateAbbr ? (US_STATE_LOCATION_CODES[stateAbbr] ?? 2840) : 2840;
+
+  // Default ratio = 1 (use full state volume if we can't resolve county)
+  let populationRatio = 1;
+  let resolvedAs = stateAbbr ? `state:${stateAbbr}` : 'national';
+
+  // ── Step 1: Check if input is already a county ──────────────────────────────
+  const countyInputMatch = cityName.match(/^(.+?)\s+(County|Parish|Borough)$/i);
   if (countyInputMatch && stateAbbr) {
-    // Input is already a county — skip Census geocoder, go straight to DataForSEO lookup
-    const alreadyCountyName = countyInputMatch[1].trim();
-    console.log(`[CountyCode] Input "${location}" detected as county, looking up directly`);
-    try {
-      const auth = await getAuthHeader();
-      const resp = await axios.get(
-        `${DATAFORSEO_BASE}/keywords_data/google_ads/locations`,
-        { headers: { Authorization: auth }, params: { country_iso_code: 'US' }, timeout: 15_000 }
-      );
-      const locations: Array<{ location_code: number; location_name: string; location_type: string }> = resp.data?.locations ?? [];
-      const countyLower = alreadyCountyName.toLowerCase();
-      const stateLower = stateAbbr.toLowerCase();
-      const countyMatch = locations.find(
-        (l) =>
-          l.location_type === 'County' &&
-          l.location_name.toLowerCase().startsWith(countyLower) &&
-          l.location_name.toLowerCase().includes(stateLower)
-      );
-      if (countyMatch) {
-        console.log(`[CountyCode] Direct county match: ${countyMatch.location_code} (${countyMatch.location_name})`);
-        _countyCodeCache.set(cacheKey, countyMatch.location_code);
-        return { locationCode: countyMatch.location_code, resolvedAs: countyMatch.location_name };
-      }
-    } catch (err: any) {
-      console.warn(`[CountyCode] Direct county lookup failed: ${err.message}`);
+    // Find county FIPS by name in our population table
+    const countyBaseName = countyInputMatch[1].trim().toLowerCase();
+    const stateFips = Object.entries(STATE_FIPS_TO_ABBR).find(([, abbr]) => abbr === stateAbbr)?.[0];
+    if (stateFips) {
+      const countyFips = Object.entries(COUNTY_POPULATION).find(([fips]) => {
+        // We don't have names in the table, so fall through to geocoder
+        return false;
+      })?.[0];
+      // Fall through to geocoder for county-name → FIPS resolution
     }
   }
 
-  const cityName = rawName;
-  let countyName: string | null = null;
-
-  // Step 1: Resolve city → county via US Census Geocoder (free, no key needed)
+  // ── Step 2: Census Geocoder → county FIPS ──────────────────────────────────
   try {
-    const geocodeUrl = `https://geocoding.geo.census.gov/geocoder/geographies/address?street=1+Main+St&city=${encodeURIComponent(cityName)}&state=${stateAbbr ?? ''}&benchmark=Public_AR_Current&vintage=Current_Current&layers=Counties&format=json`;
+    const geocodeUrl = `https://geocoding.geo.census.gov/geocoder/geographies/address` +
+      `?street=1+Main+St&city=${encodeURIComponent(cityName)}&state=${stateAbbr ?? ''}` +
+      `&benchmark=Public_AR_Current&vintage=Current_Current&layers=Counties&format=json`;
     const geoResp = await axios.get(geocodeUrl, { timeout: 8_000 });
     const matches = geoResp.data?.result?.addressMatches ?? [];
     if (matches.length > 0) {
       const county = matches[0]?.geographies?.Counties?.[0];
-      if (county?.NAME) {
-        // Census returns e.g. "Morgan County" — strip " County" suffix for DataForSEO matching
-        countyName = county.NAME.replace(/\s+County$/i, '').trim();
-        console.log(`[CountyCode] Census resolved "${cityName}" → county "${countyName}"`);
+      if (county?.GEOID && county?.STATE) {
+        // GEOID is the 5-digit county FIPS (e.g. "01103" = Morgan County, AL)
+        const countyFips = county.GEOID as string;
+        const stateFips = county.STATE as string;
+        const countyPop = COUNTY_POPULATION[countyFips];
+        const statePop = STATE_POPULATION[stateFips];
+
+        if (countyPop && statePop && statePop > 0) {
+          populationRatio = countyPop / statePop;
+          resolvedAs = `${county.NAME ?? countyFips} (${Math.round(populationRatio * 100 * 10) / 10}% of state)`;
+          console.log(`[PopRatio] "${location}" → ${county.NAME}: pop ${countyPop.toLocaleString()} / state ${statePop.toLocaleString()} = ${(populationRatio * 100).toFixed(1)}%`);
+        } else {
+          console.warn(`[PopRatio] No population data for county FIPS ${countyFips}`);
+        }
       }
+    } else {
+      console.warn(`[PopRatio] Census geocoder returned no matches for "${cityName}, ${stateAbbr}"`);
     }
   } catch (err: any) {
-    console.warn(`[CountyCode] Census geocoder failed for "${cityName}": ${err.message}`);
+    console.warn(`[PopRatio] Census geocoder failed for "${cityName}": ${err.message}`);
   }
 
-  // Step 2: Find county in DataForSEO locations list
-  if (countyName && stateAbbr) {
-    try {
-      const auth = await getAuthHeader();
-      const resp = await axios.get(
-        `${DATAFORSEO_BASE}/keywords_data/google_ads/locations`,
-        { headers: { Authorization: auth }, params: { country_iso_code: 'US' }, timeout: 15_000 }
-      );
-      const locations: Array<{ location_code: number; location_name: string; location_type: string }> = resp.data?.locations ?? [];
-      const countyLower = countyName.toLowerCase();
-      const stateLower = stateAbbr.toLowerCase();
-
-      // DataForSEO county names are like "Morgan County,Alabama" or "Morgan County, AL"
-      const countyMatch = locations.find(
-        (l) =>
-          l.location_type === 'County' &&
-          l.location_name.toLowerCase().startsWith(countyLower) &&
-          l.location_name.toLowerCase().includes(stateLower)
-      );
-
-      if (countyMatch) {
-        console.log(`[CountyCode] Resolved "${location}" → county code ${countyMatch.location_code} (${countyMatch.location_name})`);
-        _countyCodeCache.set(cacheKey, countyMatch.location_code);
-        return { locationCode: countyMatch.location_code, resolvedAs: countyMatch.location_name };
-      }
-    } catch (err: any) {
-      console.warn(`[CountyCode] DataForSEO county lookup failed: ${err.message}`);
-    }
-  }
-
-  // Step 3: Fall back to city-level code
-  console.log(`[CountyCode] County not found for "${location}", falling back to city-level code`);
-  const cityCode = await getCityLocationCode(location);
-  _countyCodeCache.set(cacheKey, cityCode);
-  return { locationCode: cityCode, resolvedAs: 'city-fallback' };
+  const result = { locationCode: stateCode, populationRatio, resolvedAs };
+  _countyCodeCache.set(cacheKey, result);
+  return result;
 }
 
 // ============= SERP-Based Query Generation for Prospect Audits =============
