@@ -101,12 +101,15 @@ function buildVolumeSeeds(
     || serviceType;
 
   if (campaignScope === "local") {
-    const city = location.replace(/,.*$/, "").trim(); // "Cullman, AL" → "Cullman"
+    // Do NOT include city name in seeds — we query at state level and apply a
+    // population ratio to get county-level volume. City-specific phrases like
+    // "fence installation Cullman" return near-zero at state level because
+    // nobody outside Cullman searches for that.
     return [
-      `${base} ${city}`,
+      base,
       `${base} near me`,
-      `best ${base} ${city}`,
-      `${base} contractor ${city}`,
+      `best ${base}`,
+      `${base} contractor`,
     ];
   } else if (campaignScope === "national") {
     return [
