@@ -17,6 +17,9 @@ import {
   Zap,
   Eye,
   Copy,
+  PauseCircle,
+  XCircle,
+  Play,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
@@ -34,7 +37,7 @@ const statusColors: Record<string, string> = {
   baseline_check: "bg-teal-500/10 text-teal-500 border-teal-500/20",
   training: "bg-primary/10 text-primary border-primary/20",
   monitoring: "bg-green-500/10 text-green-500 border-green-500/20",
-  paused: "bg-muted text-muted-foreground border-border",
+  paused: "bg-amber-500/10 text-amber-400 border-amber-500/30",
   error: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
@@ -62,8 +65,8 @@ const statusIcons: Record<string, any> = {
   baseline_check: Eye,
   training: Zap,
   monitoring: CheckCircle2,
-  paused: Clock,
-  error: AlertTriangle,
+  paused: PauseCircle,
+  error: XCircle,
 };
 
 export default function Campaigns() {
@@ -121,6 +124,51 @@ export default function Campaigns() {
           New Campaign
         </Button>
       </div>
+
+      {/* ── Attention Banner: paused + error campaigns ── */}
+      {(() => {
+        const pausedCount = stats?.paused ?? 0;
+        const errorCount = stats?.error ?? 0;
+        const total = pausedCount + errorCount;
+        if (total === 0) return null;
+        const parts: string[] = [];
+        if (pausedCount > 0) parts.push(`${pausedCount} paused`);
+        if (errorCount > 0) parts.push(`${errorCount} with errors`);
+        const isErrorFocused = errorCount > 0;
+        return (
+          <div
+            className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer ${
+              isErrorFocused
+                ? "bg-destructive/10 border-destructive/40 hover:border-destructive/60"
+                : "bg-amber-500/10 border-amber-500/40 hover:border-amber-500/60"
+            }`}
+            onClick={() => setStatusFilter(isErrorFocused ? "error" : "paused")}
+          >
+            <AlertTriangle className={`w-5 h-5 shrink-0 ${
+              isErrorFocused ? "text-destructive" : "text-amber-400"
+            }`} />
+            <div className="flex-1">
+              <p className={`text-sm font-semibold ${
+                isErrorFocused ? "text-destructive" : "text-amber-300"
+              }`}>
+                {total} campaign{total !== 1 ? "s" : ""} need{total === 1 ? "s" : ""} attention
+              </p>
+              <p className={`text-xs mt-0.5 ${
+                isErrorFocused ? "text-destructive/70" : "text-amber-400/70"
+              }`}>
+                {parts.join(" · ")} — click to filter
+              </p>
+            </div>
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+              isErrorFocused
+                ? "bg-destructive/20 text-destructive border-destructive/30"
+                : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+            }`}>
+              View
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Search and Filter Bar */}
       <div className="flex gap-3">
@@ -293,11 +341,23 @@ export default function Campaigns() {
                     </div>
                   )}
 
+                  {/* Paused callout */}
+                  {campaign.status === "paused" && !campaign.lastError && (
+                    <div className="mt-2 flex items-center gap-2 p-2 bg-amber-500/10 border border-amber-500/25 rounded text-xs text-amber-300">
+                      <PauseCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span className="flex-1">Campaign is paused — open to resume training</span>
+                      <Play className="w-3 h-3 shrink-0 opacity-60" />
+                    </div>
+                  )}
+
                   {/* Error display */}
                   {campaign.lastError && (
-                    <div className="mt-2 p-2 bg-destructive/5 border border-destructive/20 rounded text-xs text-destructive">
-                      <AlertTriangle className="w-3 h-3 inline mr-1" />
-                      {campaign.lastError}
+                    <div className="mt-2 flex items-start gap-2 p-2 bg-destructive/5 border border-destructive/20 rounded text-xs text-destructive">
+                      <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold block">Pipeline error — action required</span>
+                        <span className="text-destructive/80">{campaign.lastError}</span>
+                      </div>
                     </div>
                   )}
                 </CardContent>
