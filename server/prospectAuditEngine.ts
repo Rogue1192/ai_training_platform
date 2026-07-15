@@ -382,9 +382,9 @@ CRITICAL RULES — violating any of these will make the query useless:
 5. SPREAD ACROSS ALL SERVICES — if multiple services are listed in the context, you MUST use each service in at least 2-3 queries. Do NOT use the same service in more than 4 queries total. This is mandatory.
 6. Each query must be a complete, grammatically correct phrase that stands alone.
 
-Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No explanations, no bucket labels, no extra text.`;
+Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No explanations, no bucket labels, no extra text. NEVER wrap a query in quotation marks.`;
 
-  const userPrompt = `Generate ${FAN_OUT_CANDIDATES} hiring-intent queries for this business${locationClause}. Use the business context above. Follow all rules exactly.`;
+  const userPrompt = `Generate ${FAN_OUT_CANDIDATES} hiring-intent queries for this business${locationClause}. Use the business context above. Follow all rules exactly. Do NOT use quotation marks around any query.`;
 
   try {
     const response = await callAI(
@@ -401,7 +401,7 @@ Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No
     const lines = text.split("\n");
     const queries: string[] = [];
     for (const line of lines) {
-      const cleaned = line.replace(/^\d+[\.)\s]+/, "").replace(/\*\*/g, "").trim();
+      const cleaned = line.replace(/^\d+[\.)\s]+/, "").replace(/\*\*/g, "").replace(/^["']+|["']+$/g, "").trim();
       if (cleaned.length > 10 && cleaned.length < 200) {
         queries.push(cleaned);
       }
