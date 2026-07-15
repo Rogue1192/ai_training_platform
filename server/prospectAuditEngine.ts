@@ -361,6 +361,34 @@ async function fanOutQueriesForLocation(
     : servicesList.map((s, i) => `Service ${i + 1}: ${s}`).join("\n");
   const contextBlock = servicesLine;
 
+  // Only these service types get urgency/emergency framing in queries.
+  // Everything else (fence, painting, landscaping, cleaning, etc.) does NOT.
+  const EMERGENCY_SERVICES = [
+    'plumbing', 'plumber', 'electrical', 'electrician', 'hvac', 'heating', 'cooling',
+    'air conditioning', 'locksmith', 'tow', 'towing', 'roofing', 'roofer', 'tree service',
+    'tree removal', 'water damage', 'flood', 'fire damage', 'restoration'
+  ];
+  const serviceTypeLower = serviceType.toLowerCase();
+  const seedsLower = (allSeedKeywords ?? []).join(' ').toLowerCase();
+  const isEmergencyService = EMERGENCY_SERVICES.some(e =>
+    serviceTypeLower.includes(e) || seedsLower.includes(e)
+  );
+
+  const bucket1Label = isEmergencyService
+    ? 'TRANSACTIONAL/URGENT (7 queries): The person needs someone NOW. Urgency is implied.'
+    : 'TRANSACTIONAL/HIRING INTENT (7 queries): The person is ready to hire and actively looking for someone to do the job. They have made up their mind — they just need to find the right contractor.';
+
+  const bucket1Examples = isEmergencyService
+    ? `- "Who does emergency repair in ${location}?"
+- "I need someone to come out today in ${location} — who should I call?"
+- "Best contractors available now in ${location}"`
+    : `- "Looking for a fence company in Cullman to install a wood privacy fence"
+- "Who installs chain link fences in Hartselle, AL?"
+- "Need someone to put up a fence in Cullman this spring"`;
+
+  const noUrgencyRule = isEmergencyService ? '' : `
+7. NEVER use urgency, speed, or emergency framing. Do NOT use words like: emergency, urgent, ASAP, fastest, quickest, today, tonight, right now, immediately, hurry, rush, quick. This service is NOT emergency-based. Real people do not search for it with urgency.`;
+
   const systemPrompt = `You are an expert at writing the exact phrases real people type into ChatGPT, Gemini, and Perplexity when they want to HIRE someone for a service. You understand the difference between someone who is ready to hire vs. someone who is just researching.
 
 BUSINESS CONTEXT — use this to understand what the business does and generate queries that reflect their specific services:
@@ -372,10 +400,8 @@ ${locationInstruction}
 
 Generate queries across these 3 intent buckets:
 
-BUCKET 1 — TRANSACTIONAL/EMERGENCY (7 queries): The person needs someone NOW. Urgency is implied. Examples of good queries:
-- "Who does emergency fence repair in Cullman, AL?"
-- "I need a wood privacy fence installed in Cullman this week — who should I call?"
-- "Best fence contractors available now in Cullman, Alabama"
+BUCKET 1 — ${bucket1Label} Examples of good queries:
+${bucket1Examples}
 
 BUCKET 2 — COMMERCIAL/COMPARISON (7 queries): The person is vetting options, comparing companies, or looking for the best. Examples:
 - "Best fence companies in Cullman, AL with good reviews"
@@ -393,7 +419,7 @@ CRITICAL RULES — violating any of these will make the query useless:
 3. NEVER include price, cost, budget, or how-to questions. Those are informational, not hiring intent.
 4. NEVER use corporate jargon: "provider", "meeting these requirements", "solutions", "services" as a standalone noun.
 5. SPREAD ACROSS ALL SERVICES — if multiple services are listed in the context, you MUST use each service in at least 2-3 queries. Do NOT use the same service in more than 4 queries total. This is mandatory.
-6. Each query must be a complete, grammatically correct phrase that stands alone.
+6. Each query must be a complete, grammatically correct phrase that stands alone.${noUrgencyRule}
 
 Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No explanations, no bucket labels, no extra text. NEVER wrap a query in quotation marks.`;
 
@@ -412,12 +438,23 @@ Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No
 
     const text = response.content || "";
     const lines = text.split("\n");
+    const URGENCY_WORDS = /\b(emergency|emergencies|urgent|urgently|asap|fastest|quickest|quick|quickly|today|tonight|right now|immediately|hurry|rush|on the spot|same.?day)\b/i;
     const queries: string[] = [];
+    let filteredCount = 0;
     for (const line of lines) {
-      const cleaned = line.replace(/^\d+[\.)\s]+/, "").replace(/\*\*/g, "").replace(/^["']+|["']+$/g, "").trim();
+      const cleaned = line.replace(/^\d+[\.\)\s]+/, "").replace(/\*\*/g, "").replace(/^["']+|["']+$/g, "").trim();
       if (cleaned.length > 10 && cleaned.length < 200) {
+        // Strip urgency framing for non-emergency services
+        if (!isEmergencyService && URGENCY_WORDS.test(cleaned)) {
+          filteredCount++;
+          console.log(`[ProspectAudit] Filtered urgency query (non-emergency service): "${cleaned}"`);
+          continue;
+        }
         queries.push(cleaned);
       }
+    }
+    if (filteredCount > 0) {
+      console.log(`[ProspectAudit] Removed ${filteredCount} urgency queries for non-emergency service "${serviceType}"`);
     }
     console.log(`[ProspectAudit] GPT-4o fan-out generated ${queries.length} candidates for "${serviceType}"${locationClause}`);
     return queries.slice(0, FAN_OUT_CANDIDATES);
