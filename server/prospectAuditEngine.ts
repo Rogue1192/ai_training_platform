@@ -387,17 +387,17 @@ Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No
   const userPrompt = `Generate ${FAN_OUT_CANDIDATES} hiring-intent queries for this business${locationClause}. Use the business context above. Follow all rules exactly.`;
 
   try {
-    const response = await callAI({
-      provider: "openai",
-      model: "gpt-4o",
-      apiKey: openaiKey,
-      systemPrompt,
-      userPrompt,
-      maxTokens: 1200,
-      temperature: 0.7,
-    });
+    const response = await callAI(
+      "openai",
+      openaiKey,
+      "gpt-4o",
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ]
+    );
 
-    const text = response.text || "";
+    const text = response.content || "";
     const lines = text.split("\n");
     const queries: string[] = [];
     for (const line of lines) {
