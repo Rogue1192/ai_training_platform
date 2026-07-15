@@ -209,12 +209,21 @@ export interface ProspectSnapshotResult {
   chatgptMentioned: boolean;
   chatgptPosition: number | null;
   chatgptSnippet: string | null;
+  chatgptRecommendationRank: number | null;
+  chatgptCitedUrl: boolean;
+  chatgptSentiment: string | null;
   geminiMentioned: boolean;
   geminiPosition: number | null;
   geminiSnippet: string | null;
+  geminiRecommendationRank: number | null;
+  geminiCitedUrl: boolean;
+  geminiSentiment: string | null;
   aiOverviewMentioned: boolean;
   aiOverviewPosition: number | null;
   aiOverviewSnippet: string | null;
+  aiOverviewRecommendationRank: number | null;
+  aiOverviewCitedUrl: boolean;
+  aiOverviewSentiment: string | null;
 }
 
 export interface ProspectQueryVolume {
@@ -692,12 +701,21 @@ export async function runProspectAudit(
         chatgptMentioned: mention.llmResponses.chatgpt?.mentioned || false,
         chatgptPosition: mention.llmResponses.chatgpt?.position || null,
         chatgptSnippet: mention.llmResponses.chatgpt?.snippet || null,
+        chatgptRecommendationRank: mention.llmResponses.chatgpt?.recommendationRank ?? null,
+        chatgptCitedUrl: mention.llmResponses.chatgpt?.citedUrl ?? false,
+        chatgptSentiment: mention.llmResponses.chatgpt?.sentiment ?? null,
         geminiMentioned: mention.llmResponses.gemini?.mentioned || false,
         geminiPosition: mention.llmResponses.gemini?.position || null,
         geminiSnippet: mention.llmResponses.gemini?.snippet || null,
+        geminiRecommendationRank: mention.llmResponses.gemini?.recommendationRank ?? null,
+        geminiCitedUrl: mention.llmResponses.gemini?.citedUrl ?? false,
+        geminiSentiment: mention.llmResponses.gemini?.sentiment ?? null,
         aiOverviewMentioned: mention.llmResponses.aiOverview?.mentioned || false,
         aiOverviewPosition: mention.llmResponses.aiOverview?.position || null,
         aiOverviewSnippet: mention.llmResponses.aiOverview?.snippet || null,
+        aiOverviewRecommendationRank: mention.llmResponses.aiOverview?.recommendationRank ?? null,
+        aiOverviewCitedUrl: mention.llmResponses.aiOverview?.citedUrl ?? false,
+        aiOverviewSentiment: mention.llmResponses.aiOverview?.sentiment ?? null,
       };
 
       snapshots.push(snapshot);

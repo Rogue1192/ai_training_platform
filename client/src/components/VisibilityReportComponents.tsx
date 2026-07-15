@@ -583,6 +583,60 @@ export function VisibilityTrendChart({ trends }: { trends: any[] }) {
 
 // ─── Query Details Table ──────────────────────────────────────────────────────
 
+// ─── Rank / sentiment cell helper ────────────────────────────────────────────
+function PlatformCell({
+  mentioned,
+  rank,
+  citedUrl,
+  sentiment,
+  change,
+  accentColor,
+}: {
+  mentioned: boolean;
+  rank?: number | null;
+  citedUrl?: boolean;
+  sentiment?: string | null;
+  change?: string;
+  accentColor: string; // tailwind text-color class e.g. "text-green-400"
+}) {
+  const sentimentColor =
+    sentiment === "positive" ? "text-green-400 bg-green-400/10" :
+    sentiment === "negative" ? "text-red-400 bg-red-400/10" :
+    "text-yellow-400 bg-yellow-400/10";
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      {mentioned ? (
+        <>
+          {/* Rank badge — shows #N if in a list, or just the eye icon if mentioned but not ranked */}
+          {rank != null ? (
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${accentColor} bg-white/5`}>
+              #{rank}
+            </span>
+          ) : (
+            <Eye className={`w-4 h-4 ${accentColor}`} />
+          )}
+          {/* Sentiment chip */}
+          {sentiment && (
+            <span className={`text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${sentimentColor}`}>
+              {sentiment}
+            </span>
+          )}
+          {/* URL citation dot */}
+          {citedUrl && (
+            <span className="text-[9px] text-blue-400 font-medium" title="Website cited as source">
+              cited
+            </span>
+          )}
+        </>
+      ) : (
+        <EyeOff className="w-4 h-4 text-gray-700" />
+      )}
+      {getChangeBadge(change ?? "never")}
+    </div>
+  );
+}
+
 export function QueryDetailsTable({ queries }: { queries: any[] }) {
   const [sortBy, setSortBy] = useState<
     "query" | "chatgpt" | "gemini" | "aiOverview"
@@ -591,9 +645,13 @@ export function QueryDetailsTable({ queries }: { queries: any[] }) {
   const sorted = useMemo(() => {
     return [...queries].sort((a, b) => {
       if (sortBy === "query") return a.searchQuery.localeCompare(b.searchQuery);
-      const aScore = a[`${sortBy}Mentioned`] ? 1 : 0;
-      const bScore = b[`${sortBy}Mentioned`] ? 1 : 0;
-      return bScore - aScore;
+      // Sort: mentioned first, then by rank (lower = better), then unmentioned
+      const aM = a[`${sortBy}Mentioned`] ? 1 : 0;
+      const bM = b[`${sortBy}Mentioned`] ? 1 : 0;
+      if (aM !== bM) return bM - aM;
+      const aR = a[`${sortBy}RecommendationRank`] ?? 999;
+      const bR = b[`${sortBy}RecommendationRank`] ?? 999;
+      return aR - bR;
     });
   }, [queries, sortBy]);
 
@@ -652,34 +710,34 @@ export function QueryDetailsTable({ queries }: { queries: any[] }) {
                 </div>
               </td>
               <td className="text-center py-3 px-2">
-                <div className="flex flex-col items-center gap-1">
-                  {q.chatgptMentioned ? (
-                    <Eye className="w-4 h-4 text-green-400" />
-                  ) : (
-                    <EyeOff className="w-4 h-4 text-gray-700" />
-                  )}
-                  {getChangeBadge(q.chatgptChange ?? "never")}
-                </div>
+                <PlatformCell
+                  mentioned={q.chatgptMentioned}
+                  rank={q.chatgptRecommendationRank}
+                  citedUrl={q.chatgptCitedUrl}
+                  sentiment={q.chatgptSentiment}
+                  change={q.chatgptChange}
+                  accentColor="text-green-400"
+                />
               </td>
               <td className="text-center py-3 px-2">
-                <div className="flex flex-col items-center gap-1">
-                  {q.geminiMentioned ? (
-                    <Eye className="w-4 h-4 text-purple-400" />
-                  ) : (
-                    <EyeOff className="w-4 h-4 text-gray-700" />
-                  )}
-                  {getChangeBadge(q.geminiChange ?? "never")}
-                </div>
+                <PlatformCell
+                  mentioned={q.geminiMentioned}
+                  rank={q.geminiRecommendationRank}
+                  citedUrl={q.geminiCitedUrl}
+                  sentiment={q.geminiSentiment}
+                  change={q.geminiChange}
+                  accentColor="text-purple-400"
+                />
               </td>
               <td className="text-center py-3 px-2">
-                <div className="flex flex-col items-center gap-1">
-                  {q.aiOverviewMentioned ? (
-                    <Eye className="w-4 h-4 text-orange-400" />
-                  ) : (
-                    <EyeOff className="w-4 h-4 text-gray-700" />
-                  )}
-                  {getChangeBadge(q.aiOverviewChange ?? "never")}
-                </div>
+                <PlatformCell
+                  mentioned={q.aiOverviewMentioned}
+                  rank={q.aiOverviewRecommendationRank}
+                  citedUrl={q.aiOverviewCitedUrl}
+                  sentiment={q.aiOverviewSentiment}
+                  change={q.aiOverviewChange}
+                  accentColor="text-orange-400"
+                />
               </td>
             </motion.tr>
           ))}

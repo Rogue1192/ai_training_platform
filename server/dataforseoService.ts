@@ -891,12 +891,24 @@ export async function checkRankForQueries(
  * Mirrors the shape of LLMMentionResult.llmResponses so callers can use
  * the same snapshot-creation code regardless of which method was used.
  */
+export type MentionSentiment = "positive" | "neutral" | "negative";
+
+export interface LLMCheckResult {
+  mentioned: boolean;
+  position: number | null;           // legacy field (kept for compat)
+  snippet: string | null;
+  sourcesCited: string[];
+  recommendationRank: number | null; // position in a numbered/bulleted list (1-based)
+  citedUrl: boolean;                 // client's domain found in sourcesCited
+  sentiment: MentionSentiment | null; // only set when mentioned=true
+}
+
 export interface DirectVisibilityResult {
   keyword: string;
   llmResponses: {
-    chatgpt?: { mentioned: boolean; position: number | null; snippet: string | null; sourcesCited: string[] };
-    gemini?: { mentioned: boolean; position: number | null; snippet: string | null; sourcesCited: string[] };
-    aiOverview?: { mentioned: boolean; position: number | null; snippet: string | null; sourcesCited: string[] };
+    chatgpt?: LLMCheckResult;
+    gemini?: LLMCheckResult;
+    aiOverview?: LLMCheckResult;
   };
 }
 
@@ -1010,6 +1022,67 @@ export async function checkLLMVisibilityDirect(
     return false;
   }
 
+  // ── Helper: extract recommendation rank from numbered/bulleted list ──────────
+  // Scans the LLM response for a numbered or bulleted list and returns the
+  // 1-based position where the business name appears, or null if not in a list.
+  function extractRecommendationRank(responseText: string, name: string): number | null {
+    const lines = responseText.split(/\n/);
+    // Match lines like: "1. Business Name", "2) Business Name", "- Business Name", "• Business Name"
+    const listLineRe = /^\s*(?:(\d+)[.):]?|[-•*])\s+(.+)$/;
+    let rank = 0;
+    for (const line of lines) {
+      const m = line.match(listLineRe);
+      if (!m) continue;
+      rank++;
+      const lineText = m[2] ?? line;
+      if (detectMention(lineText, name)) return rank;
+    }
+    return null;
+  }
+
+  // ── Helper: check if the client's domain appears in cited sources ────────────
+  function extractCitedUrl(sourcesCited: string[], website: string | null | undefined): boolean {
+    if (!website || sourcesCited.length === 0) return false;
+    const stem = domainStem(website);
+    if (!stem || stem.length < 4) return false;
+    return sourcesCited.some(url => url.toLowerCase().includes(stem));
+  }
+
+  // ── Helper: classify sentiment of the mention via GPT-4o-mini ───────────────
+  async function classifySentiment(
+    snippet: string,
+    name: string,
+    apiKey: string | null
+  ): Promise<MentionSentiment | null> {
+    if (!apiKey || !snippet) return null;
+    try {
+      // Extract just the sentences that mention the business name
+      const nameLower = name.toLowerCase();
+      const relevantSentences = snippet
+        .split(/(?<=[.!?])\s+/)
+        .filter(s => s.toLowerCase().includes(nameLower))
+        .join(" ");
+      if (!relevantSentences) return "neutral";
+
+      const resp = await callAI("openai", apiKey, "gpt-4o-mini", [
+        {
+          role: "system",
+          content: `Classify the sentiment of the following text about a business as exactly one of: positive, neutral, or negative.
+- positive: recommended, praised, highly rated, described as excellent/best/top
+- neutral: listed as an option without praise or criticism
+- negative: criticized, warned against, described as problematic
+Reply with ONLY the single word: positive, neutral, or negative.`,
+        },
+        { role: "user", content: relevantSentences },
+      ]);
+      const word = resp.content.trim().toLowerCase();
+      if (word === "positive" || word === "negative") return word;
+      return "neutral";
+    } catch {
+      return null;
+    }
+  }
+
   const result: DirectVisibilityResult = { keyword: query, llmResponses: {} };
 
   // ── Resolve API keys first (both in parallel) ────────────────────────────────
@@ -1056,8 +1129,12 @@ export async function checkLLMVisibilityDirect(
         .map((a: any) => a.url as string)
         .filter(Boolean);
       const mentioned = detectMention(textContent, businessName);
-      result.llmResponses.chatgpt = { mentioned, position: null, snippet: textContent.substring(0, 500), sourcesCited };
-      console.log(`[DirectCheck] ChatGPT (web search) for "${query}": mentioned=${mentioned}, sources=${sourcesCited.length}`);
+      const snippet = textContent.substring(0, 500);
+      const recommendationRank = mentioned ? extractRecommendationRank(textContent, businessName) : null;
+      const citedUrl = extractCitedUrl(sourcesCited, businessWebsite);
+      const sentiment = mentioned ? await classifySentiment(snippet, businessName, openaiKey) : null;
+      result.llmResponses.chatgpt = { mentioned, position: null, snippet, sourcesCited, recommendationRank, citedUrl, sentiment };
+      console.log(`[DirectCheck] ChatGPT (web search) for "${query}": mentioned=${mentioned}, rank=${recommendationRank}, sentiment=${sentiment}, cited=${citedUrl}`);
     } catch (err: any) {
       console.warn(`[DirectCheck] ChatGPT Responses API failed for "${query}", falling back to Chat Completions: ${err.message}`);
       try {
@@ -1066,8 +1143,11 @@ export async function checkLLMVisibilityDirect(
           { role: "user", content: query },
         ]);
         const mentioned = detectMention(resp.content, businessName);
-        result.llmResponses.chatgpt = { mentioned, position: null, snippet: resp.content.substring(0, 500), sourcesCited: [] };
-        console.log(`[DirectCheck] ChatGPT (fallback) for "${query}": mentioned=${mentioned}`);
+        const snippet = resp.content.substring(0, 500);
+        const recommendationRank = mentioned ? extractRecommendationRank(resp.content, businessName) : null;
+        const sentiment = mentioned ? await classifySentiment(snippet, businessName, openaiKey) : null;
+        result.llmResponses.chatgpt = { mentioned, position: null, snippet, sourcesCited: [], recommendationRank, citedUrl: false, sentiment };
+        console.log(`[DirectCheck] ChatGPT (fallback) for "${query}": mentioned=${mentioned}, rank=${recommendationRank}, sentiment=${sentiment}`);
       } catch (fallbackErr: any) {
         console.error(`[DirectCheck] ChatGPT fallback also failed for "${query}":`, fallbackErr.message);
       }
@@ -1086,8 +1166,14 @@ export async function checkLLMVisibilityDirect(
         { role: "user", content: query },
       ], { webSearch: true });
       const mentioned = detectMention(resp.content, businessName);
-      result.llmResponses.gemini = { mentioned, position: null, snippet: resp.content.substring(0, 500), sourcesCited: [] };
-      console.log(`[DirectCheck] Gemini for "${query}": mentioned=${mentioned}`);
+      const snippet = resp.content.substring(0, 500);
+      const recommendationRank = mentioned ? extractRecommendationRank(resp.content, businessName) : null;
+      // Gemini grounding returns sources in resp.sources (array of {uri, title})
+      const geminiSources: string[] = ((resp as any).sources ?? []).map((s: any) => s.uri ?? s.url ?? "").filter(Boolean);
+      const citedUrl = extractCitedUrl(geminiSources, businessWebsite);
+      const sentiment = mentioned ? await classifySentiment(snippet, businessName, openaiKey) : null;
+      result.llmResponses.gemini = { mentioned, position: null, snippet, sourcesCited: geminiSources, recommendationRank, citedUrl, sentiment };
+      console.log(`[DirectCheck] Gemini for "${query}": mentioned=${mentioned}, rank=${recommendationRank}, sentiment=${sentiment}, cited=${citedUrl}`);
     } catch (err: any) {
       console.error(`[DirectCheck] Gemini check failed for "${query}":`, err.message);
     }
@@ -1126,6 +1212,9 @@ export async function checkLLMVisibilityDirect(
           position: null,
           snippet: "No AI Overview found for this query",
           sourcesCited: [],
+          recommendationRank: null,
+          citedUrl: false,
+          sentiment: null,
         };
         console.log(`[DirectCheck] AI Overview for "${query}": no overview present in SERP`);
         return;
@@ -1149,13 +1238,20 @@ export async function checkLLMVisibilityDirect(
         .filter(Boolean);
 
       const mentioned = detectMention(overviewText, businessName);
+      const snippet = overviewText.substring(0, 500);
+      const recommendationRank = mentioned ? extractRecommendationRank(overviewText, businessName) : null;
+      const citedUrl = extractCitedUrl(sourcesCited, businessWebsite);
+      const sentiment = mentioned ? await classifySentiment(snippet, businessName, openaiKey) : null;
       result.llmResponses.aiOverview = {
         mentioned,
         position: null,
-        snippet: overviewText.substring(0, 500),
+        snippet,
         sourcesCited,
+        recommendationRank,
+        citedUrl,
+        sentiment,
       };
-      console.log(`[DirectCheck] AI Overview (real SERP) for "${query}": mentioned=${mentioned}, sources=${sourcesCited.length}`);
+      console.log(`[DirectCheck] AI Overview (real SERP) for "${query}": mentioned=${mentioned}, rank=${recommendationRank}, sentiment=${sentiment}, cited=${citedUrl}`);
     } catch (err: any) {
       console.error(`[DirectCheck] AI Overview SERP check failed for "${query}":`, err.message);
       // On failure, record as not found rather than leaving it undefined
@@ -1164,6 +1260,9 @@ export async function checkLLMVisibilityDirect(
         position: null,
         snippet: "AI Overview check failed",
         sourcesCited: [],
+        recommendationRank: null,
+        citedUrl: false,
+        sentiment: null,
       };
     }
   }
