@@ -42,6 +42,9 @@ import {
   User,
   Phone,
   Mail,
+  Store,
+  ShoppingCart,
+  Globe2,
 } from "lucide-react";
 import {
   VisibilityGauge,
@@ -69,6 +72,14 @@ type Step = "form" | "queries" | "running" | "results";
 
 // ─── Step 1: Business Info Form ───────────────────────────────────────────────
 
+type CampaignScope = "local" | "national" | "ecommerce";
+
+const SCOPE_OPTIONS: { value: CampaignScope; label: string; sub: string; Icon: React.ElementType }[] = [
+  { value: "local", label: "Local Business", sub: "Service-area business with a physical location or service radius", Icon: Store },
+  { value: "national", label: "National Brand", sub: "Agency, franchise, SaaS, or nationwide service provider", Icon: Globe2 },
+  { value: "ecommerce", label: "E-Commerce", sub: "Online store with no physical service area", Icon: ShoppingCart },
+];
+
 function BusinessInfoForm({
   onGenerate,
 }: {
@@ -81,6 +92,7 @@ function BusinessInfoForm({
     keyword2: string;
     keyword3: string;
     avgJobValue: string;
+    campaignScope: CampaignScope;
   }) => void;
 }) {
   const [form, setForm] = useState({
@@ -92,6 +104,7 @@ function BusinessInfoForm({
     keyword2: "",
     keyword3: "",
     avgJobValue: "",
+    campaignScope: "local" as CampaignScope,
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const MAX_LOCATIONS = 3;
@@ -99,7 +112,7 @@ function BusinessInfoForm({
   const isValid =
     form.businessName.trim() &&
     form.website.trim() &&
-    validLocations.length > 0 &&
+    (form.campaignScope === "ecommerce" || validLocations.length > 0) &&
     form.industry.trim() &&
     form.keyword1.trim() &&
     form.avgJobValue &&
@@ -110,7 +123,10 @@ function BusinessInfoForm({
     if (!isValid) return;
     setIsGenerating(true);
     try {
-      await onGenerate({ ...form, locations: validLocations });
+      await onGenerate({
+        ...form,
+        locations: form.campaignScope === "ecommerce" ? ["United States"] : validLocations,
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -173,12 +189,41 @@ function BusinessInfoForm({
           onSubmit={handleSubmit}
           className="bg-white/[0.02] border border-white/5 rounded-2xl p-8 space-y-5"
         >
+          {/* Business Type Selector */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Business Type
+              <span className="text-red-400 ml-1">*</span>
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {SCOPE_OPTIONS.map(({ value, label, sub, Icon }) => {
+                const selected = form.campaignScope === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, campaignScope: value }))}
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition-all ${
+                      selected
+                        ? "border-blue-500/60 bg-blue-500/10 text-blue-300"
+                        : "border-white/10 bg-white/[0.03] text-gray-400 hover:border-white/20 hover:text-gray-300"
+                    }`}
+                  >
+                    <Icon className={`w-5 h-5 ${selected ? "text-blue-400" : "text-gray-500"}`} />
+                    <span className="text-xs font-semibold leading-tight">{label}</span>
+                    <span className="text-[10px] text-gray-600 leading-tight hidden sm:block">{sub}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {textField("businessName", "Business Name", "e.g. Titan Cleaning Company", Building2)}
           {textField("website", "Website", "https://titancleaningco.com", Globe)}
           {textField("industry", "Industry / Trade", "e.g. HVAC, Plumbing, Residential Cleaning", Tag)}
 
-          {/* Locations — max 3 */}
-          <div>
+          {/* Locations — max 3 — hidden for ecommerce */}
+          {form.campaignScope !== "ecommerce" && <div>
             <label className="block text-sm font-medium text-gray-300 mb-1.5">
               Target Location(s)
               <span className="text-red-400 ml-1">*</span>
@@ -236,7 +281,7 @@ function BusinessInfoForm({
             <p className="text-xs text-gray-600 mt-1.5">
               15 queries distributed across all locations
             </p>
-          </div>
+          </div>}
 
           {/* Keywords */}
           <div>
@@ -269,15 +314,15 @@ function BusinessInfoForm({
             </p>
           </div>
 
-          {/* Average Job Value */}
+          {/* Average Job / Order Value */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1.5">
-              Average Job Value
+              {form.campaignScope === "ecommerce" ? "Average Order Value" : "Average Job Value"}
               <span className="text-red-400 ml-1">*</span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">
-                $
+              $
               </span>
               <input
                 type="number"
@@ -1176,6 +1221,7 @@ export default function AuditWidget() {
     keyword2: string;
     keyword3: string;
     avgJobValue: string;
+    campaignScope: CampaignScope;
   } | null>(null);
   const [queries, setQueries] = useState<QueryItem[]>([]);
   const [progress, setProgress] = useState({ completed: 0, total: 0, latest: "" });
@@ -1213,10 +1259,11 @@ export default function AuditWidget() {
     try {
       const res = await generateMutation.mutateAsync({
         businessName: data.businessName,
-        location: data.locations[0],
+        location: data.locations[0] ?? "United States",
         locations: data.locations,
         industry: data.industry || undefined,
         seedKeywords: seedKeywords || undefined,
+        campaignScope: data.campaignScope ?? "local",
       });
       setQueries(res.queries as QueryItem[]);
       setStep("queries");
@@ -1241,11 +1288,12 @@ export default function AuditWidget() {
         agencyId: agencyId && !isNaN(agencyId) ? agencyId : undefined,
         businessName: formData.businessName,
         website: formData.website || undefined,
-        location: formData.locations[0],
+        location: formData.locations[0] ?? "United States",
         locations: formData.locations,
         industry: formData.industry || undefined,
         seedKeywords: seedKeywords || undefined,
         avgJobValue: formData.avgJobValue ? parseInt(formData.avgJobValue, 10) : undefined,
+        campaignScope: formData.campaignScope ?? "local",
         queries: confirmedQueries,
       });
 

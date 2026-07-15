@@ -57,6 +57,7 @@ export const prospectAuditRouter = router({
         locations: z.array(z.string().min(1)).optional(),
         industry: z.string().optional(),
         seedKeywords: z.string().optional(),
+        campaignScope: z.enum(["local", "national", "ecommerce"]).optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -76,6 +77,7 @@ export const prospectAuditRouter = router({
         industry: z.string().optional(),
         seedKeywords: z.string().optional(),
         avgJobValue: z.number().int().positive().optional(),
+        campaignScope: z.enum(["local", "national", "ecommerce"]).optional(),
         queries: z.array(z.object({ searchQuery: z.string(), location: z.string() })),
       })
     )
@@ -108,6 +110,7 @@ export const prospectAuditRouter = router({
         industry: input.industry ?? null,
         seedKeywords: input.seedKeywords ?? null,
         avgJobValue: input.avgJobValue ?? null,
+        campaignScope: input.campaignScope ?? "local",
         queries: input.queries as any,
         status: 'pending',
       }).returning({ id: prospectAudits.id });
@@ -656,6 +659,7 @@ export const prospectAuditRouter = router({
         locations: z.array(z.string().min(1)).optional(),
         industry: z.string().optional(),
         seedKeywords: z.string().optional(),
+        campaignScope: z.enum(["local", "national", "ecommerce"]).optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -679,6 +683,7 @@ export const prospectAuditRouter = router({
         industry: z.string().optional(),
         seedKeywords: z.string().optional(),
         avgJobValue: z.number().int().positive().optional(),
+        campaignScope: z.enum(["local", "national", "ecommerce"]).optional(),
         queries: z.array(z.object({ searchQuery: z.string(), location: z.string() })),
       })
     )
@@ -701,6 +706,7 @@ export const prospectAuditRouter = router({
         industry: input.industry ?? null,
         seedKeywords: input.seedKeywords ?? null,
         avgJobValue: input.avgJobValue ?? null,
+        campaignScope: input.campaignScope ?? "local",
         queries: input.queries as any,
         source: 'widget',
         status: 'pending',
