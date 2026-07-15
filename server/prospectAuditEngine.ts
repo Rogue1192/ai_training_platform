@@ -362,12 +362,26 @@ async function fanOutQueriesForLocation(
   const contextBlock = servicesLine;
 
   // Only these service types get urgency/emergency framing in queries.
-  // Everything else (fence, painting, landscaping, cleaning, etc.) does NOT.
+  // The bar is high: the service must be something people genuinely search for
+  // with urgency (burst pipe, no heat in winter, locked out, fallen tree, etc.).
+  // "Fastest" / "quickest" framing is NEVER appropriate even for these —
+  // only "emergency" and "urgent" are used.
+  // Everything else (fence, painting, landscaping, cleaning, remodeling, etc.) gets
+  // plain hiring-intent framing with zero urgency language.
   const EMERGENCY_SERVICES = [
-    'plumbing', 'plumber', 'electrical', 'electrician', 'hvac', 'heating', 'cooling',
-    'air conditioning', 'locksmith', 'tow', 'towing', 'roofing', 'roofer', 'tree service',
-    'tree removal', 'water damage', 'flood', 'fire damage', 'restoration'
+    'plumbing', 'plumber',
+    'electrical', 'electrician',
+    'hvac', 'heating', 'cooling', 'air conditioning', 'furnace', 'boiler',
+    'locksmith',
+    'tow truck', 'towing', 'roadside assistance',
+    'water damage', 'flood restoration', 'fire damage', 'fire restoration',
+    'emergency dental', 'emergency dentist',
+    'emergency vet', 'emergency veterinarian',
+    'gas leak', 'sewer',
   ];
+  // NOTE: roofing and tree service are intentionally excluded.
+  // People plan roofing projects — they do not search "emergency roofer fastest."
+  // Tree removal after a storm may be urgent but "fastest tree service" is not a real query.
   const serviceTypeLower = serviceType.toLowerCase();
   const seedsLower = (allSeedKeywords ?? []).join(' ').toLowerCase();
   const isEmergencyService = EMERGENCY_SERVICES.some(e =>

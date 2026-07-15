@@ -596,7 +596,7 @@ function ResultsStep({
   const visibilityPct = totalAISearches > 0 ? Math.round((visibleSearches / totalAISearches) * 100) : 0;
 
   // Interactive revenue calculator state
-  const [captureRate, setCaptureRate] = useState(10); // % of lost searches captured as leads
+  const [captureRate, setCaptureRate] = useState(20); // % of lost searches captured as leads (default 20% = 1 of 5 AI results)
   const [closeRateInput, setCloseRateInput] = useState(
     avgJobValue && avgJobValue > 0 ? "30" : ""
   ); // % of leads that become booked jobs
