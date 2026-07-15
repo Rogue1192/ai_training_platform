@@ -141,41 +141,50 @@ async function fetchTopicVolume(
   const seeds = buildVolumeSeeds(serviceType, location, campaignScope);
   const locCode = campaignScope === "local" ? locationCode : 2840; // national = US
 
-  let totalGoogleVolume = 0;
+  let totalVolume = 0;
   let usedFallback = false;
 
-  // ── Pass 1: Google Ads volume on seed phrases ─────────────────────────────
+  // ── Pass 1: AI search volume on seed phrases (primary) ───────────────────
   try {
-    const googleVolMap = await getGoogleAdsSearchVolume(seeds, { locationCode: locCode });
-    for (const seed of seeds) {
-      totalGoogleVolume += googleVolMap.get(seed.toLowerCase()) ?? 0;
+    const aiVolumes = await getAIKeywordSearchVolume(seeds, { locationCode: locCode });
+    for (const v of aiVolumes) {
+      totalVolume += v.aiSearchVolume || 0;
     }
-    console.log(`[ProspectAudit] Topic volume for "${serviceType}" in ${location}: ${totalGoogleVolume}/mo Google (seeds: ${seeds.join(", ")})`);
+    console.log(`[ProspectAudit] AI volume for "${serviceType}" in ${location}: ${totalVolume}/mo (seeds: ${seeds.join(", ")})`);
   } catch (err: any) {
-    console.warn(`[ProspectAudit] Google Ads volume failed for seeds: ${err.message}`);
+    console.warn(`[ProspectAudit] AI volume endpoint failed for seeds: ${err.message}`);
   }
 
-  // ── Pass 2: AI volume endpoint on seeds (may supplement) ─────────────────
-  if (totalGoogleVolume === 0) {
+  // ── Pass 2: Google Ads volume as fallback (still county-scoped) ──────────
+  if (totalVolume === 0) {
     try {
-      const aiVolumes = await getAIKeywordSearchVolume(seeds, { locationCode: locCode });
-      for (const v of aiVolumes) {
-        totalGoogleVolume += v.aiSearchVolume || 0;
+      const googleVolMap = await getGoogleAdsSearchVolume(seeds, { locationCode: locCode });
+      for (const seed of seeds) {
+        totalVolume += googleVolMap.get(seed.toLowerCase()) ?? 0;
       }
-      if (totalGoogleVolume > 0) usedFallback = false;
-    } catch { /* ignore */ }
+      if (totalVolume > 0) {
+        console.log(`[ProspectAudit] Google Ads fallback volume for "${serviceType}" in ${location}: ${totalVolume}/mo`);
+        usedFallback = true;
+      }
+    } catch (err: any) {
+      console.warn(`[ProspectAudit] Google Ads fallback volume failed for seeds: ${err.message}`);
+    }
   }
 
-  // ── Floor: if both return zero, use market-size-based estimate ───────────
-  if (totalGoogleVolume === 0) {
+  // ── Floor: if both return zero, use conservative local estimate ──────────
+  if (totalVolume === 0) {
     // Conservative floor: 200 searches/mo for a local service category
-    totalGoogleVolume = campaignScope === "local" ? 200 : 1000;
+    totalVolume = campaignScope === "local" ? 200 : 1000;
     usedFallback = true;
     console.log(`[ProspectAudit] Using volume floor for "${serviceType}" in ${location}`);
   }
 
-  // Apply AI adoption rate and suburban uplift, then divide across queries
-  const totalAIVolume = Math.round(totalGoogleVolume * AI_VOLUME_FALLBACK_RATE * SUBURBAN_UPLIFT);
+  // If AI volume was returned directly, it's already the AI volume — no 0.25 multiplier needed.
+  // If we fell back to Google Ads volume, apply the 0.25 AI adoption rate.
+  // usedFallback=true means we used Google Ads data (needs multiplier) or the floor.
+  const totalAIVolume = usedFallback
+    ? Math.round(totalVolume * AI_VOLUME_FALLBACK_RATE * SUBURBAN_UPLIFT)
+    : Math.round(totalVolume * SUBURBAN_UPLIFT);
   const perQuery = Math.max(1, Math.round(totalAIVolume / queryCount));
 
   return { estimatedVolumePerQuery: perQuery, totalTopicVolume: totalAIVolume, usedFallback };
