@@ -1394,11 +1394,61 @@ export async function getCityCountyLocationCode(location: string): Promise<{ loc
   const cacheKey = `county:${location.trim().toLowerCase()}`;
   if (_countyCodeCache.has(cacheKey)) return { locationCode: _countyCodeCache.get(cacheKey)!, resolvedAs: 'cached' };
 
-  // Parse city/county name and state from "City, ST" or "Morgan County, AL" format
-  const cityMatch = location.trim().match(/^([^,]+)/);
-  const rawName = cityMatch ? cityMatch[1].trim() : location.trim();
-  const stateMatch = location.trim().match(/,?\s+([A-Z]{2})$/);
-  const stateAbbr = stateMatch ? stateMatch[1].toUpperCase() : null;
+  // ── Robust location normalization ──────────────────────────────────────────
+  // Handles all user input formats:
+  //   "Houston, TX"  |  "Houston, Texas"  |  "Houston Texas"  |  "houston, tx"
+  const STATE_NAMES: Record<string, string> = {
+    alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR',
+    california: 'CA', colorado: 'CO', connecticut: 'CT', delaware: 'DE',
+    florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID',
+    illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS',
+    kentucky: 'KY', louisiana: 'LA', maine: 'ME', maryland: 'MD',
+    massachusetts: 'MA', michigan: 'MI', minnesota: 'MN', mississippi: 'MS',
+    missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV',
+    'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM',
+    'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND',
+    ohio: 'OH', oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA',
+    'rhode island': 'RI', 'south carolina': 'SC', 'south dakota': 'SD',
+    tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT',
+    virginia: 'VA', washington: 'WA', 'west virginia': 'WV',
+    wisconsin: 'WI', wyoming: 'WY', 'district of columbia': 'DC',
+  };
+
+  const normalized = location.trim();
+  const lower = normalized.toLowerCase();
+
+  // Extract state abbreviation — try 2-letter abbr first (case-insensitive), then full name
+  let stateAbbr: string | null = null;
+  const abbrMatch = normalized.match(/,?\s+([A-Za-z]{2})$/);
+  if (abbrMatch) {
+    const candidate = abbrMatch[1].toUpperCase();
+    // Verify it's actually a US state abbreviation
+    if (STATE_NAMES[Object.keys(STATE_NAMES).find(k => STATE_NAMES[k] === candidate) ?? ''] || candidate in Object.values(STATE_NAMES)) {
+      stateAbbr = candidate;
+    }
+  }
+  if (!stateAbbr) {
+    // Try full state name — longest match first to handle "West Virginia" before "Virginia"
+    const sortedNames = Object.keys(STATE_NAMES).sort((a, b) => b.length - a.length);
+    for (const name of sortedNames) {
+      if (lower.includes(name)) {
+        stateAbbr = STATE_NAMES[name];
+        break;
+      }
+    }
+  }
+
+  // Extract city/county name: everything before the comma (or before the state name if no comma)
+  let rawName: string;
+  if (normalized.includes(',')) {
+    rawName = normalized.split(',')[0].trim();
+  } else if (stateAbbr) {
+    // No comma — strip the state part from the end
+    const statePattern = new RegExp(`\\s+(${abbrMatch?.[1] ?? stateAbbr}|${Object.keys(STATE_NAMES).find(k => STATE_NAMES[k] === stateAbbr) ?? ''})\\s*$`, 'i');
+    rawName = normalized.replace(statePattern, '').trim();
+  } else {
+    rawName = normalized;
+  }
 
   // Detect if the input is already a county (ends with " County" or " Parish" or " Borough")
   const countyInputMatch = rawName.match(/^(.+?)\s+(County|Parish|Borough)$/i);
