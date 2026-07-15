@@ -430,10 +430,10 @@ BUCKET 2 — COMMERCIAL/COMPARISON (7 queries): The person is vetting options, c
 - "Who are the most trusted ${seed2}${isLocal ? ` in ${location}` : ''}?"
 - "Top rated ${seed1}${isLocal ? ` near ${location}` : ''}"
 
-BUCKET 3 — REPUTATION/TRUST (6 queries): The person wants to find a business with a strong reputation or verified reviews. Examples:
-- "Most reputable ${seed1}${isLocal ? ` in ${location}` : ''}"
-- "Best reviewed ${seed2}${isLocal ? ` near ${location}` : ''}"
-- "Highly rated ${seed1}${isLocal ? ` in ${location}` : ''} with good reviews"
+BUCKET 3 — SPECIFIC QUALIFYING QUESTION (6 queries): The person has a specific requirement, preference, or constraint that goes beyond just "who's best." They are asking about availability, specialties, scope, extras, or a particular situation. Examples:
+- "${isLocal ? `Who does ${seed1} in ${location}` : `Who does ${seed1}`} and also does repairs?"
+- "${isLocal ? `${seed2} in ${location}` : seed2} that offer free estimates"
+- "${isLocal ? `Best ${seed1} in ${location}` : `Best ${seed1}`} for a large property"
 
 CRITICAL RULES — violating any of these will make the query useless:
 1. Write EXACTLY how a real person types on their phone. Natural, conversational, sometimes incomplete sentences.
@@ -441,7 +441,8 @@ CRITICAL RULES — violating any of these will make the query useless:
 3. NEVER include price, cost, budget, or how-to questions. Those are informational, not service-seeking intent.
 4. NEVER use corporate jargon: "provider", "meeting these requirements", "solutions", "services" as a standalone noun.
 5. SPREAD ACROSS ALL SERVICES — if multiple services are listed in the context, you MUST use each service in at least 2-3 queries. Do NOT use the same service in more than 4 queries total. This is mandatory.
-6. Each query must be a complete, grammatically correct phrase that stands alone.${noUrgencyRule}
+6. Each query must be a complete, grammatically correct phrase that stands alone.
+7. BUCKET 3 queries MUST be genuinely different from Bucket 2. Bucket 2 = "who's best / most trusted." Bucket 3 = a specific requirement, constraint, or qualifier (availability, specialty, scope, extras, situation). Do NOT repeat Bucket 2 phrasing in Bucket 3.${noUrgencyRule}
 
 Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No explanations, no bucket labels, no extra text. NEVER wrap a query in quotation marks.`;
 

@@ -611,7 +611,7 @@ export default function PublicAuditReport() {
           <StatCard
             label="Your AI Visibility"
             value={`${visibilityPct}%`}
-            sub="Of those searches where you were found"
+            sub={`Found in ${scores.queriesMentioned} of ${scores.totalTracked} queries`}
             color="purple"
           />
           <StatCard
