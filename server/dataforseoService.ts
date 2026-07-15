@@ -701,7 +701,8 @@ export async function getGoogleAdsSearchVolume(
     batches.push(keywords.slice(i, i + 1000));
   }
 
-  console.log(`[DataForSEO] Fetching Google Ads search volume for ${keywords.length} keywords`);
+  console.log(`[DataForSEO] Fetching Google Ads search volume for ${keywords.length} keywords at location_code=${locationCode}`);
+  console.log(`[DataForSEO] Request keywords: ${JSON.stringify(keywords)}`);
 
   for (const batch of batches) {
     try {
@@ -713,10 +714,15 @@ export async function getGoogleAdsSearchVolume(
         },
       ]);
       const items: any[] = data?.tasks?.[0]?.result || [];
+      console.log(`[DataForSEO] Raw response items (${items.length}):`);
       for (const item of items) {
+        console.log(`[DataForSEO]   keyword="${item?.keyword}" search_volume=${item?.search_volume} location_code=${item?.location_code}`);
         if (item?.keyword && item?.search_volume != null) {
           volumeMap.set(item.keyword.toLowerCase(), item.search_volume || 0);
         }
+      }
+      if (items.length === 0) {
+        console.log(`[DataForSEO] WARNING: No result items returned. Full task: ${JSON.stringify(data?.tasks?.[0]?.status_code)} ${data?.tasks?.[0]?.status_message}`);
       }
     } catch (err: any) {
       console.warn(`[DataForSEO] Google Ads volume batch failed: ${err.message}`);
