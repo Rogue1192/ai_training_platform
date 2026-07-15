@@ -441,8 +441,6 @@ function scoreAndRankCandidates(candidates: string[], needed: number, allSeedKey
     /\bI want\b/i,
     /\bI'm (looking|getting|trying)\b/i,
     /\bcan you (recommend|suggest|find)\b/i,
-    /\bcontractor\b/i,
-    /\bcompan(y|ies)\b/i,
   ];
 
   const INFO_PENALTIES = [
@@ -612,24 +610,54 @@ export async function generateProspectQueries(
 
     let queriesForLoc: string[] = [];
 
-    // ── PRIMARY: GPT-4o fan-out ───────────────────────────────────────────────
+    // ── PRIMARY: GPT-4o fan-out — one call PER seed keyword ─────────────────
+    // We call fanOutQueriesForLocation once per seed so each seed gets its own
+    // pool of ~7 candidates. Without this, GPT-4o receives all seeds as context
+    // but gravitates toward whichever seed it finds most actionable, producing
+    // 20 variations of one service and 0 of the others.
     if (openaiKey) {
       const allSeeds = seedKeywords
         ? seedKeywords.split(",").map(s => s.trim()).filter(Boolean)
         : [];
-      const candidates = await fanOutQueriesForLocation(
-        serviceDesc,   // ← converted service description (primary)
-        loc,
-        needed,
-        campaignScope,
-        openaiKey,
-        industry,      // ← industry/trade context
-        allSeeds       // ← all seed keywords (up to 3)
-      );
-      if (candidates.length > 0) {
-        queriesForLoc = scoreAndRankCandidates(candidates, needed, allSeeds);
-        console.log(`[ProspectAudit] Fan-out scored ${queriesForLoc.length} queries for "${serviceDesc}" in ${loc}`);
+
+      const seedsToUse = allSeeds.length > 0 ? allSeeds : [serviceDesc];
+      const candidatesPerSeed = Math.ceil(FAN_OUT_CANDIDATES / seedsToUse.length);
+      const queriesNeededPerSeed = Math.ceil(needed / seedsToUse.length);
+
+      const allCandidates: string[] = [];
+      const perSeedResults: string[][] = [];
+
+      for (const seed of seedsToUse) {
+        // Convert this individual seed to a service description phrase
+        const seedDesc = await toServiceDescription(seed, openaiKey);
+        const seedCandidates = await fanOutQueriesForLocation(
+          seedDesc,
+          loc,
+          queriesNeededPerSeed,
+          campaignScope,
+          openaiKey,
+          industry,
+          [seed]  // pass only THIS seed so GPT-4o focuses on it
+        );
+        console.log(`[ProspectAudit] Fan-out got ${seedCandidates.length} candidates for seed "${seed}" → "${seedDesc}" in ${loc}`);
+        // Score and take the best N for this seed
+        const topForSeed = scoreAndRankCandidates(seedCandidates, queriesNeededPerSeed, [seed]);
+        perSeedResults.push(topForSeed);
+        allCandidates.push(...seedCandidates);
       }
+
+      // Interleave results from each seed so diversity is preserved in order
+      // e.g. seed1[0], seed2[0], seed3[0], seed1[1], seed2[1], seed3[1] ...
+      const maxLen = Math.max(...perSeedResults.map(r => r.length));
+      for (let i = 0; i < maxLen; i++) {
+        for (const seedResult of perSeedResults) {
+          if (i < seedResult.length) queriesForLoc.push(seedResult[i]);
+          if (queriesForLoc.length >= needed) break;
+        }
+        if (queriesForLoc.length >= needed) break;
+      }
+
+      console.log(`[ProspectAudit] Fan-out merged ${queriesForLoc.length} queries across ${seedsToUse.length} seeds for ${loc}`);
     }
 
     // ── FALLBACK: hardcoded natural sentences ────────────────────────────────
