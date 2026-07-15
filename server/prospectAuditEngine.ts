@@ -326,7 +326,9 @@ async function fanOutQueriesForLocation(
   location: string,
   needed: number,
   campaignScope: "local" | "national" | "ecommerce",
-  openaiKey: string
+  openaiKey: string,
+  industry?: string,
+  allSeedKeywords?: string[]
 ): Promise<string[]> {
   const isLocal = campaignScope === "local";
   const locationClause = isLocal ? ` in ${location}` : "";
@@ -334,9 +336,19 @@ async function fanOutQueriesForLocation(
     ? `The city is ${location}. Every query MUST naturally include the city name or a clear local reference. Do NOT append the city as a suffix after a question mark — weave it into the sentence naturally.`
     : `This is a ${campaignScope} business. Do NOT include any city or location in the queries.`;
 
+  // Build the business context block from industry + all seed keywords
+  const industryLine = industry ? `Industry / Trade: ${industry}` : "";
+  const servicesLine = allSeedKeywords && allSeedKeywords.length > 0
+    ? `Services offered: ${allSeedKeywords.join(", ")}`
+    : `Primary service: ${serviceType}`;
+  const contextBlock = [industryLine, servicesLine].filter(Boolean).join("\n");
+
   const systemPrompt = `You are an expert at writing the exact phrases real people type into ChatGPT, Gemini, and Perplexity when they want to HIRE someone for a service. You understand the difference between someone who is ready to hire vs. someone who is just researching.
 
-Your task: Generate exactly ${FAN_OUT_CANDIDATES} queries for someone looking to hire a "${serviceType}" business${locationClause}.
+BUSINESS CONTEXT — use this to understand what the business does and generate queries that reflect their specific services:
+${contextBlock}
+
+Your task: Generate exactly ${FAN_OUT_CANDIDATES} queries for someone looking to hire this business${locationClause}.
 
 ${locationInstruction}
 
@@ -344,30 +356,30 @@ Generate queries across these 3 intent buckets:
 
 BUCKET 1 — TRANSACTIONAL/EMERGENCY (7 queries): The person needs someone NOW. Urgency is implied. Examples of good queries:
 - "Who does emergency fence repair in Cullman, AL?"
-- "I need a fence installed in Cullman this week — who should I call?"
+- "I need a wood privacy fence installed in Cullman this week — who should I call?"
 - "Best fence contractors available now in Cullman, Alabama"
 
 BUCKET 2 — COMMERCIAL/COMPARISON (7 queries): The person is vetting options, comparing companies, or looking for the best. Examples:
 - "Best fence companies in Cullman, AL with good reviews"
-- "Compare fence installation companies in Cullman, Alabama"
+- "Who installs chain link fences in Cullman, Alabama?"
 - "Who are the most trusted fence contractors in Cullman?"
 
 BUCKET 3 — REPUTATION/TRUST (6 queries): The person wants to validate a specific company or find one with a strong reputation. Examples:
-- "Does [company name] in Cullman have good reviews?"
 - "Who is the most reputable fence company in Cullman, AL?"
-- "Best reviewed fence company near Cullman, Alabama"
+- "Best reviewed fence installer near Cullman, Alabama"
+- "Highly rated fence companies in Cullman with good reviews"
 
 CRITICAL RULES — violating any of these will make the query useless:
 1. Write EXACTLY how a real person types on their phone. Natural, conversational, sometimes incomplete sentences.
-2. NEVER use the service name as a noun modifier. "fence installation contractor" is ok. "fence company contractor" is NOT ok. "fence company provider" is NOT ok.
+2. NEVER use a business-category word as a noun modifier. "fence installation contractor" is ok. "fence company contractor" is NOT ok. "fence company provider" is NOT ok.
 3. NEVER include price, cost, budget, or how-to questions. Those are informational, not hiring intent.
 4. NEVER use corporate jargon: "provider", "meeting these requirements", "solutions", "services" as a standalone noun.
-5. Vary the phrasing — do not repeat the same structure more than twice.
+5. Vary the phrasing AND the specific service — use the different services listed in the context, not just the primary one.
 6. Each query must be a complete, grammatically correct phrase that stands alone.
 
 Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No explanations, no bucket labels, no extra text.`;
 
-  const userPrompt = `Generate ${FAN_OUT_CANDIDATES} hiring-intent queries for a "${serviceType}" business${locationClause}. Follow all rules exactly.`;
+  const userPrompt = `Generate ${FAN_OUT_CANDIDATES} hiring-intent queries for this business${locationClause}. Use the business context above. Follow all rules exactly.`;
 
   try {
     const response = await callAI({
@@ -535,12 +547,17 @@ export async function generateProspectQueries(
 
     // ── PRIMARY: GPT-4o fan-out ───────────────────────────────────────────────
     if (openaiKey) {
+      const allSeeds = seedKeywords
+        ? seedKeywords.split(",").map(s => s.trim()).filter(Boolean)
+        : [];
       const candidates = await fanOutQueriesForLocation(
-        serviceDesc,   // ← use converted service description, NOT raw seed keyword
+        serviceDesc,   // ← converted service description (primary)
         loc,
         needed,
         campaignScope,
-        openaiKey
+        openaiKey,
+        industry,      // ← industry/trade context
+        allSeeds       // ← all seed keywords (up to 3)
       );
       if (candidates.length > 0) {
         queriesForLoc = scoreAndRankCandidates(candidates, needed);
