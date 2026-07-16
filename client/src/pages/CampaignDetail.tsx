@@ -377,6 +377,42 @@ export default function CampaignDetail() {
         }}
       />
 
+      {/* ── Training Blocked Banner ── */}
+      {campaign.isBlocked &&
+        ["training", "monitoring", "publishing", "indexing"].includes(campaign.status ?? "") && (() => {
+          const blockers: string[] = [];
+          if ((campaign as any).llmTxtVerified === false) blockers.push("llm.txt not verified");
+          if ((campaign as any).schemaVerified === false) blockers.push("schema not verified");
+          const missingUrls = (campaign as any).missingUrlCount ?? 0;
+          if (missingUrls > 0) blockers.push(`${missingUrls} content URL${missingUrls === 1 ? "" : "s"} missing`);
+          return (
+            <Card className="border-destructive/50 bg-destructive/5">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-destructive text-sm">Training is not running</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      The scheduler is skipping this campaign every cycle because the following items need to be resolved:
+                    </p>
+                    <ul className="mt-2 space-y-1">
+                      {blockers.map((b, i) => (
+                        <li key={i} className="flex items-center gap-2 text-xs text-destructive/90">
+                          <span className="w-1.5 h-1.5 rounded-full bg-destructive shrink-0" />
+                          {b}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Go to the <strong>Content</strong> tab to add missing URLs, and verify llm.txt and schema from there.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
+
       {/* ── Query Review Banner ── */}
       {campaign.status === 'query_review' && (() => {
         const maxSlots: number = (campaign as any).maxQuerySlots || 15;

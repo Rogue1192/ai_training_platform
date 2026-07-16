@@ -129,43 +129,76 @@ export default function Campaigns() {
       {(() => {
         const pausedCount = stats?.paused ?? 0;
         const errorCount = stats?.error ?? 0;
-        const total = pausedCount + errorCount;
-        if (total === 0) return null;
-        const parts: string[] = [];
-        if (pausedCount > 0) parts.push(`${pausedCount} paused`);
-        if (errorCount > 0) parts.push(`${errorCount} with errors`);
-        const isErrorFocused = errorCount > 0;
+        // Count campaigns that are in training/monitoring but silently blocked by missing llm.txt/schema/URLs
+        const blockedCount = (campaigns ?? []).filter((c: any) =>
+          c.isBlocked &&
+          ["training", "monitoring", "publishing", "indexing"].includes(c.status)
+        ).length;
+        const totalAttention = pausedCount + errorCount + blockedCount;
+        if (totalAttention === 0) return null;
+
         return (
-          <div
-            className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer ${
-              isErrorFocused
-                ? "bg-destructive/10 border-destructive/40 hover:border-destructive/60"
-                : "bg-amber-500/10 border-amber-500/40 hover:border-amber-500/60"
-            }`}
-            onClick={() => setStatusFilter(isErrorFocused ? "error" : "paused")}
-          >
-            <AlertTriangle className={`w-5 h-5 shrink-0 ${
-              isErrorFocused ? "text-destructive" : "text-amber-400"
-            }`} />
-            <div className="flex-1">
-              <p className={`text-sm font-semibold ${
-                isErrorFocused ? "text-destructive" : "text-amber-300"
-              }`}>
-                {total} campaign{total !== 1 ? "s" : ""} need{total === 1 ? "s" : ""} attention
-              </p>
-              <p className={`text-xs mt-0.5 ${
-                isErrorFocused ? "text-destructive/70" : "text-amber-400/70"
-              }`}>
-                {parts.join(" · ")} — click to filter
-              </p>
-            </div>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
-              isErrorFocused
-                ? "bg-destructive/20 text-destructive border-destructive/30"
-                : "bg-amber-500/20 text-amber-300 border-amber-500/30"
-            }`}>
-              View
-            </span>
+          <div className="space-y-2">
+            {/* Blocked-but-active banner (highest priority) */}
+            {blockedCount > 0 && (
+              <div
+                className="flex items-center gap-3 rounded-lg border p-3 cursor-pointer bg-destructive/10 border-destructive/40 hover:border-destructive/60"
+                onClick={() => setStatusFilter(null)}
+              >
+                <AlertTriangle className="w-5 h-5 shrink-0 text-destructive" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-destructive">
+                    {blockedCount} campaign{blockedCount !== 1 ? "s" : ""} training is not running
+                  </p>
+                  <p className="text-xs mt-0.5 text-destructive/70">
+                    Missing llm.txt verification, schema, or content URLs — scheduler is skipping these every cycle
+                  </p>
+                </div>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full border bg-destructive/20 text-destructive border-destructive/30">
+                  Action Required
+                </span>
+              </div>
+            )}
+            {/* Paused / error banner */}
+            {(pausedCount + errorCount) > 0 && (() => {
+              const parts: string[] = [];
+              if (pausedCount > 0) parts.push(`${pausedCount} paused`);
+              if (errorCount > 0) parts.push(`${errorCount} with errors`);
+              const isErrorFocused = errorCount > 0;
+              return (
+                <div
+                  className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer ${
+                    isErrorFocused
+                      ? "bg-destructive/10 border-destructive/40 hover:border-destructive/60"
+                      : "bg-amber-500/10 border-amber-500/40 hover:border-amber-500/60"
+                  }`}
+                  onClick={() => setStatusFilter(isErrorFocused ? "error" : "paused")}
+                >
+                  <PauseCircle className={`w-5 h-5 shrink-0 ${
+                    isErrorFocused ? "text-destructive" : "text-amber-400"
+                  }`} />
+                  <div className="flex-1">
+                    <p className={`text-sm font-semibold ${
+                      isErrorFocused ? "text-destructive" : "text-amber-300"
+                    }`}>
+                      {pausedCount + errorCount} campaign{(pausedCount + errorCount) !== 1 ? "s" : ""} paused or errored
+                    </p>
+                    <p className={`text-xs mt-0.5 ${
+                      isErrorFocused ? "text-destructive/70" : "text-amber-400/70"
+                    }`}>
+                      {parts.join(" · ")} — click to filter
+                    </p>
+                  </div>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                    isErrorFocused
+                      ? "bg-destructive/20 text-destructive border-destructive/30"
+                      : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                  }`}>
+                    View
+                  </span>
+                </div>
+              );
+            })()}
           </div>
         );
       })()}
@@ -338,6 +371,24 @@ export default function Campaigns() {
                           title={statusLabels[step.key]}
                         />
                       ))}
+                    </div>
+                  )}
+
+                  {/* Training Blocked callout — active status but scheduler is silently skipping it */}
+                  {campaign.isBlocked &&
+                    ["training", "monitoring", "publishing", "indexing"].includes(campaign.status) && (
+                    <div className="mt-2 flex items-start gap-2 p-2 bg-destructive/8 border border-destructive/30 rounded text-xs text-destructive">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold block">Training is not running</span>
+                        <span className="text-destructive/80">
+                          {[campaign.llmTxtVerified === false && "llm.txt not verified",
+                            campaign.schemaVerified === false && "schema not verified",
+                            (campaign.missingUrlCount ?? 0) > 0 && `${campaign.missingUrlCount} content URL${campaign.missingUrlCount === 1 ? "" : "s"} missing`
+                          ].filter(Boolean).join(" · ")}
+                          {" "}— fix these to resume the scheduler
+                        </span>
+                      </div>
                     </div>
                   )}
 

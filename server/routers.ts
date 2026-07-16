@@ -1551,13 +1551,37 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
       .query(async ({ ctx, input }) => {
         const { getCampaignById, getQueryLocationsByCampaignId } = await import("./dbCampaigns");
         const { getBusinessById } = await import("./db");
+        const { getDb } = await import('./db');
+        const { contentPages } = await import('../drizzle/schema');
+        const { eq, and, isNull, sql, notInArray } = await import('drizzle-orm');
         const campaign = await getCampaignById(input.id);
         if (!campaign) {
           throw new Error("Campaign not found");
         }
         const business = await getBusinessById(campaign.businessId);
         const queryLocations = await getQueryLocationsByCampaignId(input.id);
-        return { ...campaign, business, businessName: business?.name, queryLocations };
+        // Compute isBlocked + missingUrlCount (same logic as campaign.list)
+        let missingUrlCount = 0;
+        const db = await getDb();
+        if (db) {
+          const NO_URL_TYPES = ['llm_txt','schema_package','schema_audit','schema_delivery'];
+          const rows = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(contentPages)
+            .where(
+              and(
+                eq(contentPages.campaignId, input.id),
+                notInArray(contentPages.pageType, NO_URL_TYPES),
+                isNull(contentPages.publishedUrl)
+              )
+            );
+          missingUrlCount = Number(rows[0]?.count ?? 0);
+        }
+        const isBlocked =
+          missingUrlCount > 0 ||
+          campaign.llmTxtVerified === false ||
+          campaign.schemaVerified === false;
+        return { ...campaign, business, businessName: business?.name, queryLocations, isBlocked, missingUrlCount };
       }),
     update: protectedProcedure
       .input(
