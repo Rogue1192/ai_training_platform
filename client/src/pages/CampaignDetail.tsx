@@ -2085,44 +2085,53 @@ function ContentTab({ campaignId }: { campaignId: number }) {
           );
         }
 
+        // Parse the schema package string into individual blocks
+        const rawSchema = schemaPackagePage!.pageContent;
+        // Extract all <script type="application/ld+json">...</script> blocks with their preceding comment labels
+        const schemaBlocks: Array<{ label: string; content: string }> = [];
+        const blockRegex = /(?:<!--([^>]*)-->\s*)?(<script type="application\/ld\+json">[\s\S]*?<\/script>)/g;
+        let bm: RegExpExecArray | null;
+        while ((bm = blockRegex.exec(rawSchema)) !== null) {
+          const comment = (bm[1] || "").trim();
+          const scriptTag = bm[2];
+          // Determine a friendly label from the comment
+          let label = "Site-Wide Schema (paste in <head>)";
+          if (comment.toLowerCase().includes("per-page")) {
+            const typeMatch = comment.match(/per-page schema:\s*(\S+)/i);
+            const pageType = typeMatch ? typeMatch[1] : comment.replace(/per-page schema:?/i, "").trim();
+            const labelMap: Record<string, string> = {
+              faq: "FAQ Page Schema",
+              faq_page: "FAQ Page Schema",
+              pricing: "Pricing Page Schema",
+              about: "About Page Schema",
+              credibility_profile: "Credibility Profile Schema",
+              certifications: "Certifications Page Schema",
+              awards: "Awards Page Schema",
+              team: "Team Page Schema",
+            };
+            label = labelMap[pageType] || `${pageType.replace(/_/g, " ")} Schema`;
+          }
+          schemaBlocks.push({ label, content: scriptTag });
+        }
+        // Fallback: if regex found nothing, show the whole blob
+        if (schemaBlocks.length === 0) {
+          schemaBlocks.push({ label: "Schema Package", content: rawSchema });
+        }
+
         return (
           <Card className="bg-card border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
-                <Code className="w-4 h-4 text-orange-400" />
-                Schema Markup Package
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                Copy the <strong>SITE-WIDE SCHEMA</strong> block and paste it into the <code className="text-orange-400">&lt;head&gt;</code> of every page on the client's site. Each per-page block goes on its corresponding page.
-              </p>
-              {schemaPackagePage!.placementInstructions && (
-                <p className="text-xs text-orange-300/80 bg-orange-500/10 rounded p-2">
-                  {schemaPackagePage!.placementInstructions}
-                </p>
-              )}
-              <div className="flex gap-2 justify-end">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+                  <Code className="w-4 h-4 text-orange-400" />
+                  Schema Markup Package
+                </CardTitle>
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-7 text-xs gap-1.5"
                   onClick={() => {
-                    const match = schemaPackagePage!.pageContent.match(/<script type="application\/ld\+json">[\s\S]*?<\/script>/);
-                    const siteWide = match ? match[0] : schemaPackagePage!.pageContent;
-                    navigator.clipboard.writeText(siteWide);
-                    toast.success("Site-wide schema copied!");
-                  }}
-                >
-                  <Copy className="w-3 h-3" />
-                  Copy Site-Wide Schema
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs gap-1.5"
-                  onClick={() => {
-                    navigator.clipboard.writeText(schemaPackagePage!.pageContent);
+                    navigator.clipboard.writeText(rawSchema);
                     toast.success("Full schema package copied!");
                   }}
                 >
@@ -2130,10 +2139,41 @@ function ContentTab({ campaignId }: { campaignId: number }) {
                   Copy All
                 </Button>
               </div>
-              <div className="rounded-md bg-muted/40 p-3 max-h-64 overflow-y-auto">
-                <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
-                  {schemaPackagePage!.pageContent}
-                </pre>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Paste the <strong>Site-Wide Schema</strong> into the <code className="text-orange-400">&lt;head&gt;</code> of every page. Each per-page block goes on its corresponding page only.
+              </p>
+              {schemaPackagePage!.placementInstructions && (
+                <p className="text-xs text-orange-300/80 bg-orange-500/10 rounded p-2">
+                  {schemaPackagePage!.placementInstructions}
+                </p>
+              )}
+              <div className="space-y-3">
+                {schemaBlocks.map((block, idx) => (
+                  <div key={idx} className="rounded-md border border-border bg-muted/20">
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                      <span className="text-xs font-medium text-orange-300">{block.label}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs gap-1 px-2"
+                        onClick={() => {
+                          navigator.clipboard.writeText(block.content);
+                          toast.success(`${block.label} copied!`);
+                        }}
+                      >
+                        <Copy className="w-3 h-3" />
+                        Copy
+                      </Button>
+                    </div>
+                    <div className="p-3 max-h-48 overflow-y-auto">
+                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono break-words">
+                        {block.content}
+                      </pre>
+                    </div>
+                  </div>
+                ))}
               </div>
               {schemaCheckbox}
             </CardContent>
