@@ -1523,6 +1523,8 @@ export async function ensureCampaignColumns(): Promise<void> {
     { name: "noCharge",           ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "noCharge" boolean NOT NULL DEFAULT false` },
     // Resume tracking — nullable timestamp, set by the admin resume action, cleared by the pipeline
     { name: "resumeRequestedAt",  ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "resumeRequestedAt" timestamp` },
+    // Sprint completion anchor — set when all 4 sprint days complete; drives 7-day rank tracking and 14-day bonus query scan cadence
+    { name: "sprintCompletedAt",  ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "sprintCompletedAt" timestamp` },
   ];
 
   for (const col of columns) {

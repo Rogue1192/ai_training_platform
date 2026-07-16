@@ -408,6 +408,7 @@ export const campaigns = pgTable("campaigns", {
   indexingVerifiedAt: timestamp("indexingVerifiedAt"),
   baselineCheckCompletedAt: timestamp("baselineCheckCompletedAt"),
   trainingStartedAt: timestamp("trainingStartedAt"),
+  sprintCompletedAt: timestamp("sprintCompletedAt"), // Set when all 4 sprint days complete — anchors 7-day rank tracking and 14-day bonus query scan
   // Configuration
   trainingAggressiveness: varchar("trainingAggressiveness", { length: 20 }).default("aggressive").notNull(), // 'aggressive' | 'moderate' | 'maintenance'
   rankCheckFrequency: varchar("rankCheckFrequency", { length: 20 }).default("weekly").notNull(), // 'daily' | 'weekly' | 'biweekly'

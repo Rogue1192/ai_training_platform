@@ -41,7 +41,7 @@ const STALE_CEILING_MS = 24 * 60 * 60 * 1000; // 24 hours
 // re-checked if its most recent snapshot is older than the min gap, so app
 // restarts / Railway redeploys don't trigger duplicate DataForSEO calls.
 const RANK_TRACK_TICK_MS = 6 * 60 * 60 * 1000;      // re-evaluate every 6 hours
-const RANK_TRACK_MIN_GAP_MS = 23 * 60 * 60 * 1000;  // but skip if checked within ~23h (≈ once/day)
+const RANK_TRACK_MIN_GAP_MS = 7 * 24 * 60 * 60 * 1000; // post-sprint: once per 7 days
 
 let schedulerTimer: NodeJS.Timeout | null = null;
 
@@ -1131,6 +1131,19 @@ async function checkScheduledRankTracking(): Promise<void> {
     for (const { campaignId } of targets) {
       if (campaignId == null) continue;
       try {
+        // Sprint-in-progress gate: skip rank tracking while the 4-day sprint is still running.
+        // Rank tracking is only meaningful AFTER the sprint completes (sprintCompletedAt is set).
+        // The post-sprint rank check is fired directly by checkV3SprintRuns when day 4 finishes.
+        const [campaignRow] = await db
+          .select({ sprintCompletedAt: campaignsTable.sprintCompletedAt, trainingStartedAt: campaignsTable.trainingStartedAt })
+          .from(campaignsTable)
+          .where(eqRank(campaignsTable.id, campaignId))
+          .limit(1);
+        if (campaignRow && !campaignRow.sprintCompletedAt && campaignRow.trainingStartedAt) {
+          // Sprint has started but not yet completed — skip until day 4 fires the direct check
+          continue;
+        }
+
         // Data-driven guard: skip if we already have a recent snapshot for this
         // campaign, so restarts / redeploys don't re-run the DataForSEO check.
         const [last] = await db
@@ -1163,7 +1176,7 @@ async function checkScheduledRankTracking(): Promise<void> {
 
 // ─── Bonus Query Scan Scheduler ─────────────────────────────────────────────
 
-const BONUS_SCAN_MIN_GAP_MS = 13 * 24 * 60 * 60 * 1000; // 13 days (bi-weekly with buffer)
+const BONUS_SCAN_MIN_GAP_MS = 14 * 24 * 60 * 60 * 1000; // 14 days anchored to sprintCompletedAt
 
 /**
  * Bi-weekly bonus query discovery scan.
@@ -1181,16 +1194,13 @@ async function checkBonusQueryScans(): Promise<void> {
     const { campaignQueryLocations: cqlTable, bonusQueryResults: bqrTable, campaigns: campaignsTable, businesses: businessesTable } = await import("../drizzle/schema");
     const { eq: eqBonus } = await import('drizzle-orm');
 
-    // Bonus scans only run AFTER the initial 4-day training phase is complete.
+    // Bonus scans only run AFTER the 4-day sprint is fully complete (sprintCompletedAt is set).
     // Rules:
-    //   1. Never run during the initial daily rank-check phase (first 4 days of training).
-    //   2. Only eligible if: campaign status is 'monitoring' OR status is 'training' and
-    //      trainingStartedAt is at least 4 days ago (initial 4-run cycle is done).
+    //   1. Never run while the sprint is still in progress.
+    //   2. Only eligible if sprintCompletedAt is set (sprint done) AND campaign is 'training' or 'monitoring'.
     //   3. Business must not be archived.
-    //   4. Per-campaign 14-day gap guard enforced below.
-    const FOUR_DAYS_MS = 4 * 24 * 60 * 60 * 1000;
-    const fourDaysAgo = new Date(Date.now() - FOUR_DAYS_MS);
-    const { or: orBonus, and: andBonus, lte: lteBonus, inArray: inArrayBonus } = await import('drizzle-orm');
+    //   4. Per-campaign 14-day gap guard anchored to sprintCompletedAt (not last scan date).
+    const { or: orBonus, and: andBonus, isNotNull: isNotNullBonus, inArray: inArrayBonus } = await import('drizzle-orm');
     const targets = await db
       .selectDistinct({ campaignId: cqlTable.campaignId })
       .from(cqlTable)
@@ -1199,13 +1209,11 @@ async function checkBonusQueryScans(): Promise<void> {
       .where(
         andBonus(
           eqBonus(businessesTable.isArchived, false),
-          // Only campaigns past the initial 4-day phase
+          // Sprint must be fully complete
+          isNotNullBonus(campaignsTable.sprintCompletedAt),
           orBonus(
             eqBonus(campaignsTable.status, 'monitoring'),
-            andBonus(
-              eqBonus(campaignsTable.status, 'training'),
-              lteBonus(campaignsTable.trainingStartedAt, fourDaysAgo)
-            )
+            eqBonus(campaignsTable.status, 'training')
           )
         )
       );
@@ -1218,15 +1226,24 @@ async function checkBonusQueryScans(): Promise<void> {
     for (const { campaignId } of targets) {
       if (campaignId == null) continue;
       try {
-        // Gap guard: skip if we already ran a bonus scan for this campaign recently.
-        const [last] = await db
+        // Gap guard: anchored to sprintCompletedAt.
+        // First scan is allowed 14 days after sprint completion.
+        // Subsequent scans are allowed 14 days after the last scan.
+        const [campaignRow] = await db
+          .select({ sprintCompletedAt: campaignsTable.sprintCompletedAt })
+          .from(campaignsTable)
+          .where(eqBonus(campaignsTable.id, campaignId))
+          .limit(1);
+        if (!campaignRow?.sprintCompletedAt) continue; // sprint not done yet
+        const sprintAnchor = new Date(campaignRow.sprintCompletedAt).getTime();
+        const [lastScan] = await db
           .select({ scanRunAt: bqrTable.scanRunAt })
           .from(bqrTable)
           .where(eq(bqrTable.campaignId, campaignId))
           .orderBy(desc(bqrTable.scanRunAt))
           .limit(1);
-
-        if (last && now - new Date(last.scanRunAt).getTime() < BONUS_SCAN_MIN_GAP_MS) {
+        const anchor = lastScan ? new Date(lastScan.scanRunAt).getTime() : sprintAnchor;
+        if (now - anchor < BONUS_SCAN_MIN_GAP_MS) {
           continue;
         }
 
@@ -1461,6 +1478,30 @@ export async function checkV3SprintRuns(): Promise<void> {
         console.log(`[SchedulerV3] Executing training day run ${run.id} (campaign ${run.campaignId}, day ${run.runDay})`);
         await runTrainingDay(run.campaignId, run.id);
         await runEndOfDayWebSearch(run.campaignId, run.id);
+
+        // After each sprint run completes, check if all 4 sprint days are now done.
+        // If so: stamp sprintCompletedAt (anchors 7-day rank tracking + 14-day bonus scan)
+        // and immediately fire the first post-sprint rank tracking check.
+        if (run.runType === 'sprint') {
+          const allSprintRuns = await db
+            .select()
+            .from(tdrTable)
+            .where(andV3(eqV3(tdrTable.campaignId, run.campaignId), eqV3(tdrTable.runType, 'sprint')));
+          const sprintComplete = allSprintRuns.length >= 4 && allSprintRuns.every(r => r.status === 'completed');
+          if (sprintComplete) {
+            const { updateCampaign } = await import('./dbCampaigns');
+            await updateCampaign(run.campaignId, { sprintCompletedAt: new Date() });
+            console.log(`[SchedulerV3] Sprint complete for campaign ${run.campaignId} — stamped sprintCompletedAt, firing post-sprint rank check`);
+            // Fire the post-sprint rank check immediately (this is the Day 4 snapshot)
+            try {
+              const { runScheduledRankCheck } = await import('./rankTrackingEngine');
+              const rankResult = await runScheduledRankCheck(run.campaignId);
+              console.log(`[SchedulerV3] Post-sprint rank check for campaign ${run.campaignId}: ${rankResult.snapshotsCreated} snapshots`);
+            } catch (rankErr: any) {
+              console.warn(`[SchedulerV3] Post-sprint rank check failed for campaign ${run.campaignId} (non-fatal):`, rankErr.message);
+            }
+          }
+        }
       } catch (err: any) {
         console.error(`[SchedulerV3] Training day run ${run.id} failed:`, err.message);
         await db
