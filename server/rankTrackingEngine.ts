@@ -653,7 +653,10 @@ export async function getVisibilityTrends(
     }
 
     const daySnapshots = Array.from(latestPerQL.values());
-    const score = calculateVisibilityScore(daySnapshots, totalQueries);
+    // Use snapshot-backed denominator: score each day against the number of queries
+    // that were actually checked that day, not the current total query-location count.
+    const dayTotalQueries = daySnapshots.length > 0 ? daySnapshots.length : totalQueries;
+    const score = calculateVisibilityScore(daySnapshots, dayTotalQueries);
 
     trends.push({
       date,
@@ -684,20 +687,22 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
   if (!business) throw new Error("Business not found");
 
   const queryLocations = await getQueryLocationsByCampaignId(campaignId);
-  const totalQueries = queryLocations.length;
 
   // Get latest snapshots
   const latestSnapshots = await getLatestSnapshots(campaignId);
   const baselineSnapshots = await getBaselineSnapshots(campaignId);
 
-  // Calculate current score
+  // Use snapshot-backed denominator: only count queries that have actually been checked.
+  // Queries added after the last check run must NOT dilute the score until they are checked.
   const currentSnaps = Array.from(latestSnapshots.values());
+  const totalQueries = currentSnaps.length > 0 ? currentSnaps.length : queryLocations.length;
   const currentScore = calculateVisibilityScore(currentSnaps, totalQueries);
 
-  // Calculate baseline score
+  // Baseline denominator: use the number of queries that were checked at baseline time.
   const baselineSnaps = Array.from(baselineSnapshots.values());
+  const baselineTotalQueries = baselineSnaps.length > 0 ? baselineSnaps.length : totalQueries;
   const baselineScore = baselineSnaps.length > 0
-    ? calculateVisibilityScore(baselineSnaps, totalQueries)
+    ? calculateVisibilityScore(baselineSnaps, baselineTotalQueries)
     : null;
 
   // Get trends
@@ -712,13 +717,16 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
       chatgpt: prevTrend.chatgpt,
       gemini: prevTrend.gemini,
       aiOverview: prevTrend.aiOverview,
-      totalQueries,
+      totalQueries: totalQueries,
       mentionedQueries: prevTrend.mentionedQueries,
     };
   }
 
-  // Build query details with change detection
-  const queryDetails: QueryRankDetail[] = queryLocations.map((ql) => {
+  // Build query details with change detection.
+  // Only include queries that have been checked (have at least a latest snapshot).
+  // Queries added after the last check run are excluded until they are actually checked.
+  const checkedQueryLocations = queryLocations.filter((ql) => latestSnapshots.has(ql.id));
+  const queryDetails: QueryRankDetail[] = checkedQueryLocations.map((ql) => {
     const latest = latestSnapshots.get(ql.id);
     const baseline = baselineSnapshots.get(ql.id);
 
@@ -887,7 +895,10 @@ export async function getCheckRunHistory(campaignId: number): Promise<CheckRunSu
       if (!existing || s.checkedAt > existing.checkedAt) latestPerQuery.set(s.queryLocationId, s);
     }
     const dedupedSnaps = Array.from(latestPerQuery.values());
-    const score = calculateVisibilityScore(dedupedSnaps, totalQueries || dedupedSnaps.length);
+    // Use snapshot-backed denominator: score this historical run against the number
+    // of queries that were actually checked in that run, not the current total.
+    const runTotalQueries = dedupedSnaps.length > 0 ? dedupedSnaps.length : (totalQueries || 1);
+    const score = calculateVisibilityScore(dedupedSnaps, runTotalQueries);
     const earliestCheckedAt = groupSnaps.reduce((min, s) => s.checkedAt < min ? s.checkedAt : min, groupSnaps[0].checkedAt);
     results.push({ date: dateStr, checkedAt: new Date(earliestCheckedAt).toISOString(), checkType: checkType || "scheduled", score, queriesChecked: dedupedSnaps.length });
   }
@@ -952,7 +963,9 @@ export async function getCheckRunDetail(campaignId: number, date: string, checkT
     if (!existing || s.checkedAt > existing.checkedAt) latestPerQuery.set(s.queryLocationId, s);
   }
   const dedupedSnaps = Array.from(latestPerQuery.values());
-  const totalQueries = qls.length || dedupedSnaps.length;
+  // Use snapshot-backed denominator: score this run against queries actually checked,
+  // not the current total query-location count (which may have grown since this run).
+  const totalQueries = dedupedSnaps.length > 0 ? dedupedSnaps.length : (qls.length || 1);
   const score = calculateVisibilityScore(dedupedSnaps, totalQueries);
   const earliestCheckedAt = snaps.reduce((min, s) => s.checkedAt < min ? s.checkedAt : min, snaps[0].checkedAt);
 
