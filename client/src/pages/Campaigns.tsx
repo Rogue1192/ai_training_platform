@@ -177,11 +177,8 @@ export default function Campaigns() {
       {(() => {
         const pausedCount = stats?.paused ?? 0;
         const errorCount = stats?.error ?? 0;
-        // Count campaigns that are in training/monitoring but silently blocked by missing llm.txt/schema/URLs
-        const blockedCount = (campaigns ?? []).filter((c: any) =>
-          c.isBlocked &&
-          ["training", "monitoring", "publishing", "indexing"].includes(c.status)
-        ).length;
+        // Count ALL campaigns that are blocked by missing llm.txt/schema/URLs (regardless of status)
+        const blockedCount = (campaigns ?? []).filter((c: any) => c.isBlocked).length;
         const totalAttention = pausedCount + errorCount + blockedCount;
         if (totalAttention === 0) return null;
 
@@ -381,9 +378,8 @@ export default function Campaigns() {
                     <PipelineProgressBar campaign={campaign} />
                   )}
 
-                  {/* Training Blocked callout — active status but scheduler is silently skipping it */}
-                  {campaign.isBlocked &&
-                    ["training", "monitoring", "publishing", "indexing"].includes(campaign.status) && (
+                  {/* Training Blocked callout — show for ALL blocked campaigns */}
+                  {campaign.isBlocked && (
                     <div className="mt-2 flex items-start gap-2 p-2 bg-destructive/8 border border-destructive/30 rounded text-xs text-destructive">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <div>

@@ -2,14 +2,19 @@
  * pipelineStages.ts
  * Shared utility that maps campaign DB fields to the 7-stage pipeline model.
  * Used by both the campaign list card and the campaign detail page header.
+ *
+ * IMPORTANT: The pipeline is strictly sequential. A stage can only show as
+ * "complete" (green) if ALL prior stages are also complete. This prevents
+ * orphaned timestamps from previous pipeline runs from lighting up stages
+ * out of order.
  */
 
 export type StageStatus =
-  | "complete"    // green — step is done
-  | "active"      // blue — step is currently running
-  | "action"      // amber — step needs user action to proceed
-  | "pending"     // grey — step hasn't started yet
-  | "sprint"      // yellow — training sprint in progress
+  | "complete"     // green — step is done AND all prior steps are done
+  | "active"       // blue — step is currently running
+  | "action"       // amber — step needs user action to proceed
+  | "pending"      // grey — step hasn't started yet (or prior steps not done)
+  | "sprint"       // yellow — training sprint in progress
   | "maintenance"; // teal — ongoing post-sprint maintenance
 
 export interface PipelineStage {
@@ -40,52 +45,61 @@ interface CampaignPipelineFields {
 }
 
 export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[] {
-  const done = (v: Date | string | null): boolean => v !== null && v !== undefined;
+  const done = (v: Date | string | null | undefined): boolean =>
+    v !== null && v !== undefined && v !== "";
 
-  // Stage 1: Keywords
-  const keywordsDone = done(c.keywordResearchCompletedAt);
-
-  // Stage 2: Baseline — needs user action after keywords
-  const baselineDone = done(c.baselineCheckCompletedAt);
-
-  // Stage 3: Credibility Content Generated
-  const credibilityDone = done(c.credibilityResearchCompletedAt) && done(c.contentGenerationCompletedAt);
-
-  // Stage 4: Content Published — all three conditions must be met
-  const contentPublished =
-    done(c.publishingCompletedAt) &&
+  // ── Raw completion checks (timestamp-only, no sequencing) ──
+  const s1_keywordsDone   = done(c.keywordResearchCompletedAt);
+  const s2_baselineDone   = done(c.baselineCheckCompletedAt);
+  const s3_credDone       = done(c.credibilityResearchCompletedAt) && done(c.contentGenerationCompletedAt);
+  // Content Published requires publishing timestamp AND llm.txt + schema + no missing URLs
+  const s4_contentPubRaw  = done(c.publishingCompletedAt);
+  const s4_contentPubFull =
+    s4_contentPubRaw &&
     c.llmTxtVerified === true &&
     c.schemaVerified === true &&
-    c.missingUrlCount === 0;
+    (c.missingUrlCount ?? 0) === 0;
+  const s5_indexingDone   = done(c.indexingVerifiedAt);
+  const s6_sprintStarted  = done(c.trainingStartedAt);
+  const s6_sprintDone     = done(c.sprintCompletedAt);
 
-  // Stage 5: Indexing Complete
-  const indexingDone = done(c.indexingVerifiedAt);
+  // ── Sequential gating: each stage only "counts" if all prior stages are done ──
+  // Stage 1 complete: keywords done
+  const stage1Complete = s1_keywordsDone;
+  // Stage 2 complete: baseline done AND stage 1 done
+  const stage2Complete = stage1Complete && s2_baselineDone;
+  // Stage 3 complete: credibility done AND stage 2 done
+  const stage3Complete = stage2Complete && s3_credDone;
+  // Stage 4 complete: content fully published AND stage 3 done
+  const stage4Complete = stage3Complete && s4_contentPubFull;
+  // Stage 5 complete: indexing done AND stage 4 done
+  const stage5Complete = stage4Complete && s5_indexingDone;
+  // Stage 6 complete: sprint done AND stage 5 done
+  const stage6Complete = stage5Complete && s6_sprintDone;
+  // Stage 7: maintenance (post-sprint)
+  const stage7Active = stage6Complete;
 
-  // Stage 6: Training Sprint
-  const sprintStarted = done(c.trainingStartedAt);
-  const sprintDone = done(c.sprintCompletedAt);
+  // ── Determine which stage is currently active ──
+  // currentStep = the first incomplete stage
+  let currentStep: number;
+  if (!stage1Complete)      currentStep = 1;
+  else if (!stage2Complete) currentStep = 2;
+  else if (!stage3Complete) currentStep = 3;
+  else if (!stage4Complete) currentStep = 4;
+  else if (!stage5Complete) currentStep = 5;
+  else if (!stage6Complete) currentStep = 6;
+  else                      currentStep = 7;
 
-  // Stage 7: Maintenance (post-sprint)
-  const inMaintenance = sprintDone;
-
-  // Determine current step
-  let currentStep = 1;
-  if (keywordsDone && !baselineDone) currentStep = 2;
-  else if (baselineDone && !credibilityDone) currentStep = 3;
-  else if (credibilityDone && !contentPublished) currentStep = 4;
-  else if (contentPublished && !indexingDone) currentStep = 5;
-  else if (indexingDone && !sprintDone) currentStep = 6;
-  else if (sprintDone) currentStep = 7;
-
+  // ── Helper: compute status for a given stage ──
   function stageStatus(
     stepNum: number,
-    isDone: boolean,
+    isComplete: boolean,
     isRunning: boolean,
     needsAction: boolean,
     isSprint = false,
     isMaintenance = false
   ): StageStatus {
-    if (isDone) return "complete";
+    if (isComplete) return "complete";
     if (stepNum !== currentStep) return "pending";
     if (isMaintenance) return "maintenance";
     if (isSprint) return "sprint";
@@ -94,12 +108,18 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     return "pending";
   }
 
+  // Stage 4 needs action when: stage 3 is done but content isn't fully published
+  // (either publishing not done, or llm.txt/schema/URLs missing)
+  const stage4NeedsAction = stage3Complete && !stage4Complete;
+  // Stage 2 needs action when: stage 1 is done but baseline hasn't run
+  const stage2NeedsAction = stage1Complete && !stage2Complete;
+
   return [
     {
       id: "keywords",
       label: "Keywords",
-      status: stageStatus(1, keywordsDone, !keywordsDone && currentStep === 1, false),
-      description: keywordsDone
+      status: stageStatus(1, stage1Complete, !stage1Complete && currentStep === 1, false),
+      description: stage1Complete
         ? "Query matrix generated"
         : "Generating keyword queries…",
       isCurrent: currentStep === 1,
@@ -107,8 +127,8 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     {
       id: "baseline",
       label: "Baseline",
-      status: stageStatus(2, baselineDone, false, !baselineDone && currentStep === 2),
-      description: baselineDone
+      status: stageStatus(2, stage2Complete, false, stage2NeedsAction),
+      description: stage2Complete
         ? "Baseline report complete"
         : "Run baseline check to record Day 0 visibility",
       isCurrent: currentStep === 2,
@@ -116,8 +136,8 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     {
       id: "credibility",
       label: "Credibility Content",
-      status: stageStatus(3, credibilityDone, !credibilityDone && currentStep === 3, false),
-      description: credibilityDone
+      status: stageStatus(3, stage3Complete, !stage3Complete && currentStep === 3, false),
+      description: stage3Complete
         ? "Credibility content generated"
         : "Generating credibility content…",
       isCurrent: currentStep === 3,
@@ -125,28 +145,36 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     {
       id: "content_published",
       label: "Content Published",
-      status: stageStatus(4, contentPublished, false, !contentPublished && currentStep === 4),
-      description: contentPublished
+      status: stageStatus(4, stage4Complete, false, stage4NeedsAction),
+      description: stage4Complete
         ? "Content live, llm.txt & schema verified"
-        : "Add content to site, verify llm.txt & schema",
+        : s4_contentPubRaw
+          ? "Content published — verify llm.txt, schema & content URLs"
+          : "Add content to site, verify llm.txt & schema",
       isCurrent: currentStep === 4,
     },
     {
       id: "indexing",
       label: "Indexing",
-      status: stageStatus(5, indexingDone, !indexingDone && currentStep === 5, false),
-      description: indexingDone
+      status: stageStatus(5, stage5Complete, !stage5Complete && currentStep === 5, false),
+      description: stage5Complete
         ? "Indexing verified"
         : "Submitting to indexing…",
       isCurrent: currentStep === 5,
     },
     {
       id: "training",
-      label: sprintDone ? "Sprint Complete" : sprintStarted ? "Training Sprint" : "Training Sprint",
-      status: stageStatus(6, sprintDone, sprintStarted && !sprintDone, false, sprintStarted && !sprintDone),
-      description: sprintDone
+      label: s6_sprintDone ? "Sprint Complete" : s6_sprintStarted ? "Training Sprint" : "Training Sprint",
+      status: stageStatus(
+        6,
+        stage6Complete,
+        s6_sprintStarted && !s6_sprintDone && stage5Complete,
+        false,
+        s6_sprintStarted && !s6_sprintDone && stage5Complete
+      ),
+      description: stage6Complete
         ? "4-day training sprint complete"
-        : sprintStarted
+        : s6_sprintStarted && stage5Complete
         ? "Training sprint in progress (Day 1–4)"
         : "Awaiting training sprint start",
       isCurrent: currentStep === 6,
@@ -154,8 +182,8 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     {
       id: "maintenance",
       label: "Maintenance",
-      status: inMaintenance ? "maintenance" : "pending",
-      description: inMaintenance
+      status: stage7Active ? "maintenance" : "pending",
+      description: stage7Active
         ? "Weekly rank tracking & bonus query scans active"
         : "Begins after sprint completes",
       isCurrent: currentStep === 7,
@@ -172,7 +200,7 @@ export function stageColor(status: StageStatus): string {
     case "sprint":       return "bg-yellow-400";
     case "maintenance":  return "bg-teal-500";
     case "pending":
-    default:             return "bg-gray-600";
+    default:             return "bg-muted";
   }
 }
 
@@ -184,7 +212,7 @@ export function stageBorderColor(status: StageStatus): string {
     case "sprint":       return "border-yellow-400";
     case "maintenance":  return "border-teal-500";
     case "pending":
-    default:             return "border-gray-600";
+    default:             return "border-border";
   }
 }
 
@@ -196,6 +224,6 @@ export function stageTextColor(status: StageStatus): string {
     case "sprint":       return "text-yellow-300";
     case "maintenance":  return "text-teal-400";
     case "pending":
-    default:             return "text-gray-500";
+    default:             return "text-muted-foreground/40";
   }
 }
