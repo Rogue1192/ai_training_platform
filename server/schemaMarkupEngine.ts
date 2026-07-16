@@ -465,22 +465,51 @@ export function buildFAQPageSchema(page: {
   businessWebsite?: string | null;
 }): SchemaBlock {
   const content = page.pageContent;
+  const pairs: Array<[string, string]> = [];
 
-  // Try h3/p pattern first
-  const h3Pairs = [...content.matchAll(/<h3[^>]*>(.*?)<\/h3>\s*<p[^>]*>(.*?)<\/p>/gis)];
-  // Try dt/dd pattern
-  const dtPairs = [...content.matchAll(/<dt[^>]*>(.*?)<\/dt>\s*<dd[^>]*>(.*?)<\/dd>/gis)];
-  // Try strong/p pattern (common in some page builders)
-  const strongPairs = [...content.matchAll(/<strong[^>]*>(.*?\?)<\/strong>\s*<p[^>]*>(.*?)<\/p>/gis)];
+  // ── HTML patterns ─────────────────────────────────────────────────────────
+  // h3/p pattern
+  for (const m of content.matchAll(/<h3[^>]*>(.*?)<\/h3>\s*<p[^>]*>(.*?)<\/p>/gis)) {
+    pairs.push([m[1], m[2]]);
+  }
+  // dt/dd pattern
+  for (const m of content.matchAll(/<dt[^>]*>(.*?)<\/dt>\s*<dd[^>]*>(.*?)<\/dd>/gis)) {
+    pairs.push([m[1], m[2]]);
+  }
+  // strong?/p pattern (some page builders)
+  for (const m of content.matchAll(/<strong[^>]*>(.*?\?)<\/strong>\s*<p[^>]*>(.*?)<\/p>/gis)) {
+    pairs.push([m[1], m[2]]);
+  }
 
-  const allPairs = [...h3Pairs, ...dtPairs, ...strongPairs];
+  // ── Markdown patterns (content generated as Markdown, not HTML) ───────────
+  if (pairs.length === 0) {
+    // Pattern 1: **Question?** followed by answer paragraph(s)
+    // Matches: **Is Eagle Air licensed?**\nYes, Eagle Air...
+    for (const m of content.matchAll(/^\*\*([^*]+\?)\*\*\s*\n([^\n#*][^\n]*(?:\n(?![#*])[^\n]+)*)/gm)) {
+      pairs.push([m[1], m[2].trim()]);
+    }
+    // Pattern 2: ### or ## heading that ends with ? followed by paragraph
+    for (const m of content.matchAll(/^#{2,3}\s+([^\n]+\?)\s*\n+([^#\n][^\n]*(?:\n(?![#])[^\n]+)*)/gm)) {
+      pairs.push([m[1].trim(), m[2].trim()]);
+    }
+    // Pattern 3: FAQ section — find the FAQ heading then parse Q/A blocks below it
+    // Looks for a heading containing "FAQ" or "Frequently Asked" then grabs all
+    // bold-question + answer pairs below it
+    const faqSectionMatch = content.match(/#{1,3}[^\n]*(?:FAQ|Frequently Asked)[^\n]*\n([\s\S]+?)(?=\n#{1,2}\s|$)/i);
+    if (faqSectionMatch) {
+      const faqSection = faqSectionMatch[1];
+      for (const m of faqSection.matchAll(/\*\*([^*]+\?)\*\*\s*\n([^\n*#][^\n]*(?:\n(?![#*])[^\n]+)*)/gm)) {
+        pairs.push([m[1], m[2].trim()]);
+      }
+    }
+  }
 
-  const mainEntity = allPairs.slice(0, 15).map(([, q, a]) => ({
+  const mainEntity = pairs.slice(0, 15).map(([q, a]) => ({
     "@type": "Question",
     name: q.replace(/<[^>]*>/g, "").trim(),
     acceptedAnswer: {
       "@type": "Answer",
-      text: a.replace(/<[^>]*>/g, "").trim(),
+      text: a.replace(/<[^>]*>/g, "").replace(/\*\*/g, "").trim(),
     },
   })).filter((item) => item.name.length > 5 && item.acceptedAnswer.text.length > 10);
 
@@ -772,6 +801,12 @@ export function buildPageSchema(
     case "warranties":
     case "about":
       return buildWebPageSchema(base);
+
+    case "credibility_profile":
+      return buildCertificationsPageSchema(
+        base,
+        facts // all facts — no filtering for the credibility page
+      );
 
     default:
       return buildArticleSchema(base);
