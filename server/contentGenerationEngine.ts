@@ -189,23 +189,29 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
   {
     type: "credibility_profile",
     label: "Why Choose Us — Credentials & Trust",
-    promptContext: `a full standalone page. The page must be written in third person and structured as follows:
+    promptContext: `a full standalone credibility page. The page must be written in third person and structured EXACTLY as follows:
 
-1. H1 (page title): 'Why [Business Name] Is the Best [Primary GMB Category or Top Service Keyword]' — NO city or state in the title. The title must stay broad so the page can rank across the entire service area, not just one city. Example: 'Why Eagle Air Co Is the Best HVAC Company' or 'Why Smith Plumbing Is the Best Plumber'.
+1. H1 (page title): 'Why [Business Name] Is the Best [Primary GMB Category or Top Service Keyword]' — NO city or state in the title. Keep it broad so the page ranks across the full service area. Example: 'Why Eagle Air Co Is the Best HVAC Company'.
 
-2. OPENING SUMMARY PARAGRAPH (3-5 sentences): A confident, factual statement of why this business is the top choice in their market. Reference specific credentials, certifications, and trust signals by name. This paragraph is what AI engines will extract as a citation when someone asks 'who is the best [service] near me?' or 'who is the most trusted [service] in [region]?'
+2. OPENING SUMMARY PARAGRAPH (3-5 sentences): Name every specific credential, certification, and trust signal the business holds. This is the paragraph AI engines will extract when someone asks 'who is the best [service] near me?' Be specific and factual — no vague claims.
 
-3. TRUST SIGNAL BULLET LIST: 8-12 concise bullet points, each a standalone verifiable fact (certification, insurance type, credential, guarantee, specialty). These must come directly from the credibility data provided — do NOT invent anything.
+3. TRUST SIGNAL BULLET LIST: One bullet per credibility fact provided. Every single fact in the credibility data must appear as its own bullet. Do not group facts together. Do not skip any.
 
-4. DETAILED BODY CONTENT (1,200-1,500 words total): 5-7 H2 sections, each 150-200 words. Each section covers one trust pillar in depth — e.g., 'Certified and Licensed Technicians', 'Fully Insured for Your Protection', 'Authorized Dealer for Major Brands', 'Emergency Service Available 24/7', 'Warranty and Satisfaction Guarantee', 'Proudly Serving [Primary City] and Surrounding Communities'. Write naturally — do NOT just list facts, explain WHY each credential matters to the customer. Geographic references (city names, service area) belong in the body sections, NOT in the H1.
+4. BODY CONTENT — THIS IS THE MOST CRITICAL SECTION:
+   - Write ONE dedicated H2 section (150-200 words) for EVERY SINGLE credibility fact provided.
+   - If there are 9 facts, there are 9 H2 sections. If there are 15 facts, there are 15 H2 sections. No exceptions.
+   - The H2 heading for each section must be specific to that credential — e.g., 'NATE-Certified Technicians: What That Means for You', 'Licensed, Bonded, and Insured: Why It Matters', 'EPA Section 608 Certification: Refrigerant Safety You Can Count On'.
+   - For each section: explain WHAT the credential is, WHY it is hard to earn or rare in the industry, and WHY it matters specifically to the customer hiring this business.
+   - PRIORITY ORDER: Expand the rarest, hardest-to-earn credentials FIRST and with the most depth. Industry certifications (NATE, EPA, manufacturer authorizations) come before generic business attributes. Insurance types (workers comp, liability, bonding) come before community involvement. Do NOT lead with 'family-owned' or 'local business' — those are the weakest facts and must appear last if at all.
+   - BANNED SECTION TOPICS — do NOT write generic sections about: 'family-owned business,' 'serving the community,' 'comprehensive services,' 'local roots,' or any other surface-level filler that every competitor could also claim. If a fact is generic, make the section about the SPECIFIC IMPLICATION of that fact for the customer, not the fact itself.
 
-5. FAQ SECTION (5-7 questions): Conversational questions a homeowner or customer would actually ask, with direct 2-4 sentence answers grounded in the credibility data.
+5. FAQ SECTION (5-7 questions): Questions a homeowner would actually ask before hiring. Ground every answer in the specific credibility data provided.
 
-6. CLOSING PARAGRAPH: A 2-3 sentence call to action referencing the business name.
+6. CLOSING PARAGRAPH: 2-3 sentences. Reference the business name and at least two specific credentials.
 
-IMPORTANT: The page slug must be /why-choose-us. Do NOT fabricate any facts — use only the credibility data provided.
+IMPORTANT: Do NOT fabricate any facts. Do NOT skip any credibility facts. Every fact gets its own section.
 
-OUTPUT FORMAT: Write the pageContent field as clean Markdown ONLY — use # for H1, ## for H2, - for bullet points. Do NOT use any HTML tags whatsoever. The content must be plain text that a non-technical person can copy and paste directly into any page builder text area.`,
+OUTPUT FORMAT: Clean Markdown ONLY — # for H1, ## for H2, - for bullets. NO HTML tags. Copy-paste ready for any page builder.`,
     schemaTypes: ["LocalBusiness", "Organization"],
     requiredFactCategories: [], // Always generate — uses all available facts
     deliveryType: "new_page",
