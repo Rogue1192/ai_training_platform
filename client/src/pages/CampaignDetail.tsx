@@ -67,6 +67,7 @@ import { TrainingDashboard } from "@/components/TrainingDashboard";
 import { useRoute, useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
+import { computePipelineStages, stageColor, stageTextColor } from "@/lib/pipelineStages";
 
 // Pipeline step configuration
 const PIPELINE_STEPS = [
@@ -591,67 +592,96 @@ export default function CampaignDetail() {
         );
       })()}
 
-      {/* Pipeline Progress Bar */}
-      <Card className="bg-card border-border">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-foreground">Pipeline Progress</span>
-            <span className="text-sm text-muted-foreground">
-              {pipelineProgress.completed}/{pipelineProgress.total} steps completed
-            </span>
-          </div>
-          <Progress value={pipelineProgress.percent} className="h-2" />
-          
-          {/* Step indicators */}
-          <div className="grid grid-cols-8 gap-2 mt-4">
-            {PIPELINE_STEPS.map((step) => {
-              const status = getStepStatus(step.key);
-              const Icon = step.icon;
-              const isRunning = runningStep === step.key;
-              return (
-                <Tooltip key={step.key}>
-                  <TooltipTrigger asChild>
-                    <button
-                      className={`flex flex-col items-center gap-1.5 p-2 rounded-lg transition-all cursor-pointer
-                        ${status === "completed" ? "bg-green-500/10 border border-green-500/30" : ""}
-                        ${status === "active" ? `${step.bg} border ${step.border} animate-pulse` : ""}
-                        ${status === "error" ? "bg-destructive/10 border border-destructive/30" : ""}
-                        ${status === "pending" ? "bg-muted/30 border border-transparent hover:border-border" : ""}
-                      `}
+      {/* ── 7-Stage Pipeline Progress Bar ── */}
+      {(() => {
+        const stages = computePipelineStages({
+          keywordResearchCompletedAt: (campaign as any).keywordResearchCompletedAt ?? null,
+          baselineCheckCompletedAt: (campaign as any).baselineCheckCompletedAt ?? null,
+          credibilityResearchCompletedAt: (campaign as any).credibilityResearchCompletedAt ?? null,
+          contentGenerationCompletedAt: (campaign as any).contentGenerationCompletedAt ?? null,
+          publishingCompletedAt: (campaign as any).publishingCompletedAt ?? null,
+          indexingSubmittedAt: (campaign as any).indexingSubmittedAt ?? null,
+          indexingVerifiedAt: (campaign as any).indexingVerifiedAt ?? null,
+          trainingStartedAt: (campaign as any).trainingStartedAt ?? null,
+          sprintCompletedAt: (campaign as any).sprintCompletedAt ?? null,
+          llmTxtVerified: (campaign as any).llmTxtVerified ?? null,
+          schemaVerified: (campaign as any).schemaVerified ?? null,
+          isBlocked: (campaign as any).isBlocked ?? false,
+          missingUrlCount: (campaign as any).missingUrlCount ?? 0,
+          status: campaign.status ?? null,
+        });
+        const baselineStage = stages.find((s) => s.id === "baseline");
+        const needsBaselinePrompt = baselineStage?.status === "action";
+        return (
+          <>
+            <Card className="bg-card border-border">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium text-foreground">Pipeline Progress</span>
+                  <span className="text-xs text-muted-foreground">
+                    {stages.filter((s) => s.status === "complete").length} of {stages.length} stages complete
+                  </span>
+                </div>
+                <div className="flex gap-1">
+                  {stages.map((stage) => (
+                    <Tooltip key={stage.id}>
+                      <TooltipTrigger asChild>
+                        <div className="flex-1 cursor-default">
+                          {/* Colored bar segment */}
+                          <div className={`h-2 rounded-full transition-all ${
+                            stage.status === "pending" ? "bg-muted" : stageColor(stage.status)
+                          } ${stage.isCurrent ? "ring-2 ring-offset-1 ring-offset-card " + stageColor(stage.status) : ""}`} />
+                          {/* Label below bar */}
+                          <div className={`mt-1.5 text-[9px] leading-tight text-center ${
+                            stage.status === "pending" ? "text-muted-foreground/40" : stageTextColor(stage.status)
+                          } ${stage.isCurrent ? "font-semibold" : ""}`}>
+                            {stage.label}
+                          </div>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        <p className="text-xs">{stage.description}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Baseline Prompt Banner ── */}
+            {needsBaselinePrompt && (
+              <Card className="border-amber-500/50 bg-amber-500/5">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <Eye className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-medium text-amber-300 text-sm">Keywords are ready — run your baseline check to continue</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          The baseline records Day 0 AI visibility before training begins. This step is required before the sprint can start.
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="shrink-0 bg-amber-500 hover:bg-amber-400 text-black"
+                      disabled={isRunningBaseline || runBaselineMutation.isPending}
                       onClick={() => {
-                        if (status !== "completed" && !isRunning) {
-                          handleRunStep(step.key);
-                        }
+                        setIsRunningBaseline(true);
+                        runBaselineMutation.mutate({ campaignId });
                       }}
-                      disabled={isRunning || runStepMutation.isPending}
                     >
-                      {isRunning ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      ) : status === "completed" ? (
-                        <CheckCircle2 className="w-4 h-4 text-green-400" />
-                      ) : status === "error" ? (
-                        <AlertTriangle className="w-4 h-4 text-destructive" />
-                      ) : (
-                        <Icon className={`w-4 h-4 ${status === "active" ? step.color : "text-muted-foreground"}`} />
-                      )}
-                      <span className={`text-[10px] font-medium leading-tight text-center ${
-                        status === "completed" ? "text-green-400" :
-                        status === "active" ? step.color :
-                        "text-muted-foreground"
-                      }`}>
-                        {step.label}
-                      </span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{step.label} — {status === "completed" ? "Done" : status === "active" ? "In Progress" : status === "error" ? "Error" : "Click to run"}</p>
-                  </TooltipContent>
-                </Tooltip>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                      {isRunningBaseline || runBaselineMutation.isPending
+                        ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Running…</>
+                        : <><Eye className="w-3.5 h-3.5 mr-1.5" />Run Baseline</>}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </>
+        );
+      })()}
 
       {/* Error Banner */}
       {campaign.lastError && (

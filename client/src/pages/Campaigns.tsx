@@ -26,6 +26,54 @@ import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
+import { computePipelineStages, stageColor, stageTextColor, type StageStatus } from "@/lib/pipelineStages";
+
+// Inline pipeline progress bar component used on each campaign card
+function PipelineProgressBar({ campaign }: { campaign: {
+  keywordResearchCompletedAt: Date | string | null;
+  baselineCheckCompletedAt: Date | string | null;
+  credibilityResearchCompletedAt: Date | string | null;
+  contentGenerationCompletedAt: Date | string | null;
+  publishingCompletedAt: Date | string | null;
+  indexingSubmittedAt: Date | string | null;
+  indexingVerifiedAt: Date | string | null;
+  trainingStartedAt: Date | string | null;
+  sprintCompletedAt?: Date | string | null;
+  llmTxtVerified: boolean | null;
+  schemaVerified: boolean | null;
+  isBlocked: boolean;
+  missingUrlCount: number;
+  status: string | null;
+}}) {
+  const stages = computePipelineStages({
+    ...campaign,
+    sprintCompletedAt: campaign.sprintCompletedAt ?? null,
+  });
+  return (
+    <div className="mt-3">
+      <div className="flex gap-0.5">
+        {stages.map((stage) => (
+          <div
+            key={stage.id}
+            className="group relative flex-1"
+            title={stage.description}
+          >
+            {/* Colored bar segment */}
+            <div className={`h-1.5 rounded-full transition-all ${
+              stage.status === 'pending' ? 'bg-muted' : stageColor(stage.status)
+            } ${stage.isCurrent ? 'ring-1 ring-offset-1 ring-offset-card ' + stageColor(stage.status) : ''}`} />
+            {/* Label below bar */}
+            <div className={`mt-1 text-[9px] leading-tight truncate text-center ${
+              stage.status === 'pending' ? 'text-muted-foreground/40' : stageTextColor(stage.status)
+            } ${stage.isCurrent ? 'font-semibold' : ''}`}>
+              {stage.label}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
@@ -328,50 +376,9 @@ export default function Campaigns() {
                     </div>
                   </div>
 
-                  {/* Pipeline Progress */}
+                  {/* Pipeline Progress — 7-stage labeled pills */}
                   {campaign.status !== "pending" && (
-                    <div className="mt-3 flex gap-1">
-                      {[
-                        {
-                          key: "keyword_research",
-                          done: !!campaign.keywordResearchCompletedAt,
-                        },
-                        {
-                          key: "baseline_check",
-                          done: !!campaign.baselineCheckCompletedAt,
-                        },
-                        {
-                          key: "credibility_research",
-                          done: !!campaign.credibilityResearchCompletedAt,
-                        },
-                        {
-                          key: "content_generation",
-                          done: !!campaign.contentGenerationCompletedAt,
-                        },
-                        {
-                          key: "publishing",
-                          done: !!campaign.publishingCompletedAt,
-                        },
-                        {
-                          key: "indexing",
-                          done: !!campaign.indexingVerifiedAt,
-                        },
-                        {
-                          key: "training",
-                          done: !!campaign.trainingStartedAt,
-                        },
-                      ].map((step) => (
-                        <div
-                          key={step.key}
-                          className={`h-1.5 flex-1 rounded-full ${
-                            step.done
-                              ? "bg-primary"
-                              : "bg-muted"
-                          }`}
-                          title={statusLabels[step.key]}
-                        />
-                      ))}
-                    </div>
+                    <PipelineProgressBar campaign={campaign} />
                   )}
 
                   {/* Training Blocked callout — active status but scheduler is silently skipping it */}

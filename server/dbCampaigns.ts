@@ -535,6 +535,7 @@ export async function getAllCampaignsWithBusinessInfo(): Promise<
       indexingVerifiedAt: campaigns.indexingVerifiedAt,
       baselineCheckCompletedAt: campaigns.baselineCheckCompletedAt,
       trainingStartedAt: campaigns.trainingStartedAt,
+      sprintCompletedAt: campaigns.sprintCompletedAt,
       trainingAggressiveness: campaigns.trainingAggressiveness,
       rankCheckFrequency: campaigns.rankCheckFrequency,
       lastError: campaigns.lastError,

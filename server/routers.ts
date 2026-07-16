@@ -1700,7 +1700,11 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         // 3. Clear existing query-location matrix
         const deleted = await deleteQueryLocationsByCampaignId(input.campaignId);
         console.log(`[rerunKeywordResearch] Deleted ${deleted} query-location rows for campaign ${input.campaignId}`);
-        // 4. Reset keyword research timestamps so the pipeline treats this as fresh
+        // 4. Save current status so we can restore it after keyword research.
+        // runCampaignKeywordResearch unconditionally sets status to 'keyword_research' at start
+        // which would clobber a campaign already in 'training' or 'monitoring'.
+        const statusBeforeRegen = campaign.status;
+        // Reset keyword research timestamp so the pipeline treats this as fresh
         await updateCampaign(input.campaignId, {
           keywordResearchCompletedAt: null,
           baselineCheckCompletedAt: null,
@@ -1708,6 +1712,11 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         // 5. Re-run keyword research
         const { runCampaignKeywordResearch } = await import('./keywordResearchPipeline');
         const result = await runCampaignKeywordResearch(input.campaignId);
+        // 6. Restore the original campaign status so the UI doesn't show 'Keyword Research'
+        //    for a campaign that was already in training/monitoring.
+        if (statusBeforeRegen && statusBeforeRegen !== 'keyword_research') {
+          await updateCampaign(input.campaignId, { status: statusBeforeRegen });
+        }
         return {
           ...result,
           deletedQueryCount: deleted,
