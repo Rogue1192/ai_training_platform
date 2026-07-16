@@ -88,27 +88,35 @@ function buildVolumeSeeds(
   location: string,
   campaignScope: "local" | "national" | "ecommerce"
 ): string[] {
-  // By the time this is called, serviceType is already a clean service description
-  // (e.g. "fence installation", "home services", "roof installation") produced by
-  // toServiceDescription(). Do NOT strip "services" here — that turns "home services"
-  // into "home", which is a useless generic seed that returns massive unrelated volumes.
-  // Only strip "company/companies" which toServiceDescription may not always catch.
-  const base = serviceType
-    .replace(/\bcompan(y|ies)\b/gi, "")
-    .trim()
-    || serviceType;
+  // Use the raw seed exactly as entered — do NOT strip or convert anything.
+  // "fence company" stays "fence company", "roofing company" stays "roofing company".
+  // The volume lookup uses these as-is to generate variants.
+  const base = serviceType.trim() || serviceType;
 
   if (campaignScope === "local") {
-    // Do NOT include city name in seeds — we query at state level and apply a
-    // population ratio to get county-level volume. City-specific phrases like
-    // "fence installation Cullman" return near-zero at state level because
-    // nobody outside Cullman searches for that.
-    return [
+    // Do NOT include city name in seeds — we query nationally and apply a
+    // county/US population ratio. Generate variants from the raw seed.
+    const core = base.split(/\s+/)[0]; // first word, e.g. "fence", "roof"
+    const seeds = new Set<string>([
       base,
       `${base} near me`,
       `best ${base}`,
+      `${base} company`,
+      `${base} company near me`,
       `${base} contractor`,
-    ];
+      `${base} contractor near me`,
+      `${base} service`,
+      `${base} service near me`,
+    ]);
+    // Add core-noun variants when core differs meaningfully from base
+    if (core && core !== base && core.length > 2) {
+      seeds.add(`${core} company`);
+      seeds.add(`${core} company near me`);
+      seeds.add(`${core} contractor`);
+      seeds.add(`${core} contractor near me`);
+      seeds.add(`${core} service near me`);
+    }
+    return [...seeds];
   } else if (campaignScope === "national") {
     return [
       base,
@@ -138,38 +146,42 @@ async function fetchTopicVolume(
   locationCode: number,
   populationRatio: number,
   queryCount: number,
-  campaignScope: "local" | "national" | "ecommerce"
+  campaignScope: "local" | "national" | "ecommerce",
+  countyPop: number = 0
 ): Promise<{ estimatedVolumePerQuery: number; totalTopicVolume: number; usedFallback: boolean }> {
   const seeds = buildVolumeSeeds(serviceType, location, campaignScope);
-  // Use the locationCode passed in (from getCityCountyLocationCode) for local scope.
   // For national/ecommerce, always use 2840.
-  const locCode = campaignScope === "local" ? locationCode : 2840;
+  // For local, also use 2840 — the AI volume endpoint is national-only and Google Ads
+  // national data is more reliable than state-level (state returns zero for many terms).
+  const locCode = 2840;
   // For national/ecommerce, ratio is always 1; for local, use county/US ratio
   const ratio = campaignScope === "local" ? Math.min(1, Math.max(0.000001, populationRatio)) : 1;
 
   let totalVolume = 0;
   let usedFallback = false;
 
-  // ── Pass 1: AI search volume on seed phrases (primary) ───────────────────
+  // ── Pass 1: AI search volume on seed phrases (primary) ───────────────
+  // NOTE: AI volume endpoint is national-only — no location_code parameter.
   try {
     const aiVolumes = await getAIKeywordSearchVolume(seeds, { locationCode: locCode });
     for (const v of aiVolumes) {
       totalVolume += v.aiSearchVolume || 0;
     }
-    console.log(`[ProspectAudit] AI volume for "${serviceType}" in ${location}: ${totalVolume}/mo (seeds: ${seeds.join(", ")})`);
+    console.log(`[ProspectAudit] AI volume for "${serviceType}" in ${location}: ${totalVolume}/mo national (seeds: ${seeds.join(", ")})`);
   } catch (err: any) {
     console.warn(`[ProspectAudit] AI volume endpoint failed for seeds: ${err.message}`);
   }
 
-  // ── Pass 2: Google Ads volume as fallback (state-scoped, then ratio-proportioned) ──
+  // ── Pass 2: Google Ads volume as fallback (NATIONAL scope, then ratio-proportioned) ──
+  // Always query at national level (2840) — state-level Google Ads data is sparse.
   if (totalVolume === 0) {
     try {
-      const googleVolMap = await getGoogleAdsSearchVolume(seeds, { locationCode: locCode });
+      const googleVolMap = await getGoogleAdsSearchVolume(seeds, { locationCode: 2840 });
       for (const seed of seeds) {
         totalVolume += googleVolMap.get(seed.toLowerCase()) ?? 0;
       }
       if (totalVolume > 0) {
-        console.log(`[ProspectAudit] Google Ads fallback volume for "${serviceType}" in ${location}: ${totalVolume}/mo (national, county ratio ${(ratio * 100).toFixed(4)}%)`);
+        console.log(`[ProspectAudit] Google Ads national fallback volume for "${serviceType}" in ${location}: ${totalVolume}/mo national → county ratio ${(ratio * 100).toFixed(4)}%`);
         usedFallback = true;
       }
     } catch (err: any) {
@@ -177,17 +189,20 @@ async function fetchTopicVolume(
     }
   }
 
-  // ── Floor: if both return zero, use conservative local estimate ──────────
+  // ── Floor: if both return zero, use population-based estimate ────────
+  // ~3 AI searches per 1,000 residents/month for a home service category.
   if (totalVolume === 0) {
-    // Conservative floor: 200 searches/mo for a local service category
-    totalVolume = campaignScope === "local" ? 200 : 1000;
+    if (campaignScope === "local") {
+      const pop = countyPop > 0 ? countyPop : Math.round(ratio * 334_914_895);
+      totalVolume = Math.max(500, Math.round(pop * 0.003));
+    } else {
+      totalVolume = 10_000;
+    }
     usedFallback = true;
-    console.log(`[ProspectAudit] Using volume floor for "${serviceType}" in ${location}`);
+    console.log(`[ProspectAudit] Using population-based volume floor for "${serviceType}" in ${location}: ${totalVolume}/mo`);
   }
 
-  // Apply population ratio to proportion state-level volume down to county/market size.
-  // AI volume from Pass 1 is already state-scoped — ratio brings it to local market.
-  // Google Ads fallback from Pass 2 also needs the 0.25 AI adoption rate multiplier.
+  // Apply population ratio to proportion national volume down to county/market size.
   const scaledVolume = totalVolume * ratio;
   const totalAIVolume = usedFallback
     ? Math.round(scaledVolume * AI_VOLUME_FALLBACK_RATE)
@@ -265,63 +280,6 @@ export interface ProspectAuditScores {
 }
 
 // ─── Query Generation ─────────────────────────────────────────────────────────
-
-/**
- * Convert a raw seed keyword (e.g. "fence company") into a proper service
- * description phrase that works as a noun in sentences (e.g. "fence installation",
- * "fencing services", "fence contractors").
- *
- * This prevents the fallback from producing broken English like:
- *   "Who does fence company in Cullman?" → "Who does fence installation in Cullman?"
- *   "Best fence company companies" → "Best fence contractors"
- *
- * Uses GPT-4o-mini for the conversion; returns a simple heuristic if unavailable.
- */
-async function toServiceDescription(seedKeyword: string, openaiKey: string | null): Promise<string> {
-  // Simple heuristic first: if the seed ends in "company" or "companies", strip it
-  // and add "installation" or "contractors" based on context
-  const lower = seedKeyword.toLowerCase().trim();
-
-  // If it already sounds like a service description (ends in -ing, -tion, -ers, -ors)
-  // just return it as-is
-  if (/(?:ing|tion|ors|ers|ment|work|repair|service|services|installation|replacement|cleaning|painting|roofing|plumbing|electrical|landscaping|remodeling|renovation|construction|inspection|maintenance)$/i.test(lower)) {
-    return seedKeyword;
-  }
-
-  if (!openaiKey) {
-    // Heuristic: strip "company" / "companies" / "contractor" and add "services"
-    return lower
-      .replace(/\b(company|companies|contractor|contractors|provider|providers|service|services)\b/gi, "")
-      .trim()
-      .replace(/\s+/g, " ") + " services";
-  }
-
-  try {
-    const resp = await callAI("openai", openaiKey, "gpt-4o-mini", [
-      {
-        role: "system",
-        content: `Convert a business category keyword into a natural service description phrase that works as a noun in English sentences.
-Examples:
-  "fence company" → "fence installation"
-  "roofing company" → "roof installation"
-  "plumber" → "plumbing services"
-  "HVAC" → "HVAC services"
-  "tree service" → "tree removal"
-  "cleaning company" → "cleaning services"
-  "painting contractor" → "painting services"
-Return ONLY the phrase, no explanation, no punctuation.`,
-      },
-      { role: "user", content: seedKeyword },
-    ]);
-    const phrase = resp.content.trim().replace(/["'.]/g, "").toLowerCase();
-    return phrase || seedKeyword;
-  } catch {
-    return lower
-      .replace(/\b(company|companies|contractor|contractors|provider|providers)\b/gi, "")
-      .trim()
-      .replace(/\s+/g, " ") + " services";
-  }
-}
 
 /**
  * Fallback queries when SERP data is unavailable — written as real English
@@ -662,19 +620,10 @@ export async function generateProspectQueries(
     if (keyRecord) openaiKey = decrypt(keyRecord.encryptedKey);
   } catch { /* will use heuristic fallback */ }
 
-  // ── Convert raw seed keyword to a proper service description phrase ─────────
-  // e.g. "fence contractor" → "fence installation", "roofing company" → "roof installation"
-  // This prevents GPT-4o from treating the keyword as a noun modifier in sentences.
-  const serviceDesc = openaiKey
-    ? await toServiceDescription(serviceType, openaiKey)
-    : serviceType
-        .replace(/\bcompan(y|ies)\b/gi, "")
-        .replace(/\bcontractor(s)?\b/gi, "")
-        .replace(/\bprovider(s)?\b/gi, "")
-        .trim()
-        .replace(/\s+/g, " ") + " services";
-
-  console.log(`[ProspectAudit] Service description: "${serviceType}" → "${serviceDesc}"`);
+  // Use the first seed keyword as the primary service type for fallback queries.
+  // No conversion needed — fanOutQueriesForLocation receives the raw seed and the
+  // GPT-4o prompt handles natural phrasing internally.
+  const serviceDesc = seedList[0];
 
   const normalized: ProspectQueryResult[] = [];
 
@@ -684,39 +633,31 @@ export async function generateProspectQueries(
 
     let queriesForLoc: string[] = [];
 
-    // ── PRIMARY: GPT-4o fan-out — one call PER seed keyword ─────────────────
+    // ── PRIMARY: GPT-4o fan-out — one call PER seed keyword ───────────────
     // We call fanOutQueriesForLocation once per seed so each seed gets its own
-    // pool of ~7 candidates. Without this, GPT-4o receives all seeds as context
-    // but gravitates toward whichever seed it finds most actionable, producing
-    // 20 variations of one service and 0 of the others.
+    // pool of candidates. Without this, GPT-4o gravitates toward the most
+    // actionable seed and ignores the others.
     if (openaiKey) {
-      const allSeeds = seedKeywords
-        ? seedKeywords.split(",").map(s => s.trim()).filter(Boolean)
-        : [];
-
-      const seedsToUse = allSeeds.length > 0 ? allSeeds : [serviceDesc];
-      const candidatesPerSeed = Math.ceil(FAN_OUT_CANDIDATES / seedsToUse.length);
+      const seedsToUse = seedList;
       const queriesNeededPerSeed = Math.ceil(needed / seedsToUse.length);
 
-      const allCandidates: string[] = [];
       const perSeedResults: string[][] = [];
 
       for (const seed of seedsToUse) {
-        // Convert this individual seed to a service description phrase
-        const seedDesc = await toServiceDescription(seed, openaiKey);
+        // Pass the raw seed directly — no toServiceDescription conversion.
+        // The GPT-4o system prompt in fanOutQueriesForLocation handles natural phrasing.
         const seedCandidates = await fanOutQueriesForLocation(
-          seedDesc,
+          seed,
           loc,
           queriesNeededPerSeed,
           campaignScope,
           openaiKey,
           [seed]  // pass only THIS seed so GPT-4o focuses on it
         );
-        console.log(`[ProspectAudit] Fan-out got ${seedCandidates.length} candidates for seed "${seed}" → "${seedDesc}" in ${loc}`);
+        console.log(`[ProspectAudit] Fan-out got ${seedCandidates.length} candidates for seed "${seed}" in ${loc}`);
         // Score and take the best N for this seed
         const topForSeed = scoreAndRankCandidates(seedCandidates, queriesNeededPerSeed, [seed]);
         perSeedResults.push(topForSeed);
-        allCandidates.push(...seedCandidates);
       }
 
       // Interleave results from each seed so diversity is preserved in order
@@ -733,7 +674,7 @@ export async function generateProspectQueries(
       console.log(`[ProspectAudit] Fan-out merged ${queriesForLoc.length} queries across ${seedsToUse.length} seeds for ${loc}`);
     }
 
-    // ── FALLBACK: hardcoded natural sentences ────────────────────────────────
+    // ── FALLBACK: hardcoded natural sentences ────────────────────────
     if (queriesForLoc.length < needed) {
       const stillNeeded = needed - queriesForLoc.length;
       const fallback = buildFallbackQueries(serviceDesc, loc, campaignScope, stillNeeded);
@@ -873,9 +814,10 @@ export async function runProspectAudit(
     // Use county-level location code for volume lookups — gives realistic market-size
     // data for both small towns (city limits too small) and large cities (residential
     // population lives in surrounding suburbs, not city limits).
-    const { locationCode: locCode, populationRatio, resolvedAs } = await getCityCountyLocationCode(loc);
-    console.log(`[ProspectAudit] Volume lookup for "${loc}" using location code ${locCode} (${resolvedAs}, ratio ${(populationRatio * 100).toFixed(1)}%)`);
-    const topicVol = await fetchTopicVolume(svcType, loc, locCode, populationRatio, indices.length, scope);
+    const { locationCode: locCode, populationRatio, resolvedAs, countyPop } = await getCityCountyLocationCode(loc);
+    const cpop = (countyPop as number | undefined) ?? 0;
+    console.log(`[ProspectAudit] Volume lookup for "${loc}" using location code ${locCode} (${resolvedAs}, ratio ${(populationRatio * 100).toFixed(1)}%, countyPop=${cpop.toLocaleString()})`);
+    const topicVol = await fetchTopicVolume(svcType, loc, locCode, populationRatio, indices.length, scope, cpop);
     for (const idx of indices) {
       queryVolumeMap.set(idx, {
         estimatedVolume: topicVol.estimatedVolumePerQuery,

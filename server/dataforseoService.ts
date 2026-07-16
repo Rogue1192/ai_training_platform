@@ -198,10 +198,12 @@ export async function getAIKeywordSearchVolume(
   const allResults: AIKeywordVolumeResult[] = [];
 
   for (const batch of batches) {
+    // NOTE: The AI keyword search volume endpoint does NOT support location_code.
+    // Sending it causes a 40501 "Invalid Field" error and returns zero results.
+    // This endpoint is national-only — apply population ratio after the call.
     const data = await dfsFetch("/ai_optimization/ai_keyword_data/keywords_search_volume/live", [
       {
         keywords: batch,
-        location_code: locationCode,
         language_code: languageCode,
       },
     ]);
@@ -1393,7 +1395,7 @@ export async function getCityLocationCode(location: string): Promise<number> {
  *
  * Results are cached in-process.
  */
-const _countyCodeCache = new Map<string, { locationCode: number; populationRatio: number; resolvedAs: string }>();
+const _countyCodeCache = new Map<string, { locationCode: number; populationRatio: number; resolvedAs: string; countyPop: number }>();
 
 /**
  * Parses a location string into { cityName, stateAbbr } handling all formats:
@@ -1448,8 +1450,8 @@ function parseLocationString(location: string): { cityName: string; stateAbbr: s
 
 export async function getCityCountyLocationCode(
   location: string
-): Promise<{ locationCode: number; populationRatio: number; resolvedAs: string }> {
-  if (!location) return { locationCode: 2840, populationRatio: 1, resolvedAs: 'national' };
+): Promise<{ locationCode: number; populationRatio: number; resolvedAs: string; countyPop: number }> {
+  if (!location) return { locationCode: 2840, populationRatio: 1, resolvedAs: 'national', countyPop: 0 };
 
   const cacheKey = `pop:${location.trim().toLowerCase()}`;
   if (_countyCodeCache.has(cacheKey)) return _countyCodeCache.get(cacheKey)!;
@@ -1459,9 +1461,13 @@ export async function getCityCountyLocationCode(
   // DataForSEO state-level code — most granular available for Google Ads volume
   const stateCode = stateAbbr ? (US_STATE_LOCATION_CODES[stateAbbr] ?? 2840) : 2840;
 
-  // Safe fallback: median US county is ~0.1% of its state.
+  // populationRatio = countyPop / US_POPULATION — used to scale NATIONAL volume down to county.
+  // countyToStateRatio = countyPop / statePop — kept for reference / state-level scaling.
+  // Safe fallback: median US county is ~0.03% of the US population.
   // This is only used if ALL resolution attempts fail.
-  let populationRatio = 0.001;
+  let populationRatio = 0.0003;  // county/US fallback (~0.03%)
+  let countyToStateRatio = 0.001; // county/state fallback
+  let countyPop = 0; // 0 = unknown; floor logic will use a safe default
   let resolvedAs = stateAbbr ? `state:${stateAbbr} (fallback)` : 'national';
 
   const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_API_KEY ?? '';
@@ -1496,12 +1502,14 @@ export async function getCityCountyLocationCode(
           const countyFips = COUNTY_NAME_TO_FIPS[lookupKey];
           if (countyFips) {
             const stateFips = countyFips.slice(0, 2);
-            const countyPop = COUNTY_POPULATION[countyFips];
+            const resolvedCountyPop = COUNTY_POPULATION[countyFips];
             const statePop = STATE_POPULATION[stateFips];
-            if (countyPop && statePop && statePop > 0) {
-              populationRatio = countyPop / statePop;
-              resolvedAs = `${countyName}, ${resolvedState} (${(populationRatio * 100).toFixed(2)}% of state)`;
-              console.log(`[PopRatio] "${location}" → Google Maps → ${countyName}: pop ${countyPop.toLocaleString()} / state ${statePop.toLocaleString()} = ${(populationRatio * 100).toFixed(2)}%`);
+            if (resolvedCountyPop && statePop && statePop > 0) {
+              countyToStateRatio = resolvedCountyPop / statePop;
+              populationRatio = resolvedCountyPop / US_POPULATION; // county/US — for scaling national volume
+              countyPop = resolvedCountyPop; // expose to outer scope for floor calculation
+              resolvedAs = `${countyName}, ${resolvedState} (${(countyToStateRatio * 100).toFixed(2)}% of state, ${(populationRatio * 100).toFixed(3)}% of US)`;
+              console.log(`[PopRatio] "${location}" → Google Maps → ${countyName}: pop ${resolvedCountyPop.toLocaleString()} / US ${US_POPULATION.toLocaleString()} = ${(populationRatio * 100).toFixed(3)}% of US`);
             } else {
               console.warn(`[PopRatio] No population data for county FIPS ${countyFips} (${countyName})`);
             }
@@ -1517,11 +1525,51 @@ export async function getCityCountyLocationCode(
     } catch (err: any) {
       console.warn(`[PopRatio] Google Maps geocoder failed for "${cityName}": ${err.message}`);
     }
-  } else if (!GOOGLE_MAPS_KEY) {
-    console.warn('[PopRatio] GOOGLE_MAPS_API_KEY not set — using fallback ratio');
+  } else if (!GOOGLE_MAPS_KEY && stateAbbr) {
+    // ── Step 2: Nominatim (OpenStreetMap) — free, no API key required ────────
+    // Returns county name from OSM data. We then look up the FIPS from our table.
+    console.warn('[PopRatio] GOOGLE_MAPS_API_KEY not set — trying Nominatim fallback');
+    try {
+      const nominatimUrl = `https://nominatim.openstreetmap.org/search` +
+        `?city=${encodeURIComponent(cityName)}&state=${encodeURIComponent(stateAbbr)}` +
+        `&country=US&format=json&addressdetails=1&limit=1`;
+      const nomResp = await axios.get(nominatimUrl, {
+        timeout: 10_000,
+        headers: { 'User-Agent': 'AIAnswerForge/1.0 (contact@aianswerforge.com)' },
+      });
+      const hit = nomResp.data?.[0];
+      if (hit) {
+        // Nominatim returns county in address.county (e.g. "Polk County")
+        const rawCounty: string = hit.address?.county ?? '';
+        let countyBase = rawCounty;
+        for (const suffix of [' County', ' Parish', ' Borough', ' Census Area', ' Municipality']) {
+          if (countyBase.endsWith(suffix)) { countyBase = countyBase.slice(0, -suffix.length).trim(); break; }
+        }
+        const lookupKey = `${stateAbbr}:${countyBase.toLowerCase()}`;
+        const countyFips = COUNTY_NAME_TO_FIPS[lookupKey];
+        if (countyFips) {
+          const stateFips = countyFips.slice(0, 2);
+          const resolvedCountyPop = COUNTY_POPULATION[countyFips];
+          const statePop = STATE_POPULATION[stateFips];
+          if (resolvedCountyPop && statePop && statePop > 0) {
+            countyToStateRatio = resolvedCountyPop / statePop;
+            populationRatio = resolvedCountyPop / US_POPULATION; // county/US — for scaling national volume
+            countyPop = resolvedCountyPop;
+            resolvedAs = `${rawCounty}, ${stateAbbr} (${(countyToStateRatio * 100).toFixed(2)}% of state, ${(populationRatio * 100).toFixed(3)}% of US) [Nominatim]`;
+            console.log(`[PopRatio] "${location}" → Nominatim → ${rawCounty} (FIPS ${countyFips}): pop ${resolvedCountyPop.toLocaleString()} / US ${US_POPULATION.toLocaleString()} = ${(populationRatio * 100).toFixed(3)}% of US`);
+          }
+        } else {
+          console.warn(`[PopRatio] Nominatim: COUNTY_NAME_TO_FIPS has no entry for "${lookupKey}" (raw: "${rawCounty}")`);
+        }
+      } else {
+        console.warn(`[PopRatio] Nominatim: no results for "${cityName}, ${stateAbbr}"`);
+      }
+    } catch (err: any) {
+      console.warn(`[PopRatio] Nominatim geocoder failed for "${cityName}": ${err.message}`);
+    }
   }
 
-  const result = { locationCode: stateCode, populationRatio, resolvedAs };
+  const result = { locationCode: stateCode, populationRatio, resolvedAs, countyPop };
   console.log(`[PopRatio] "${location}" final: locationCode=${stateCode}, ratio=${(populationRatio * 100).toFixed(2)}% of state, resolvedAs=${resolvedAs}`);
   _countyCodeCache.set(cacheKey, result);
   return result;

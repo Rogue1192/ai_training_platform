@@ -40,7 +40,6 @@ import {
   PlatformBreakdown,
   ScoreComparisonCard,
   BaselineScoreCards,
-  QueryDetailsTable,
   ReportHeader,
   ReportFooter,
 } from "@/components/VisibilityReportComponents";
@@ -613,19 +612,14 @@ function ResultsStep({
   const liveRevenueAnnual = liveRevenueMonthly !== null ? liveRevenueMonthly * 12 : null;
   const liveRevenueGap = revenueView === "monthly" ? liveRevenueMonthly : liveRevenueAnnual;
 
-  // Shape snapshots into the format QueryDetailsTable expects
-  const queryDetails = snapshots.map((s) => ({
-    queryLocationId: s.searchQuery,
-    searchQuery: s.searchQuery,
-    location: s.location,
-    chatgptMentioned: s.chatgptMentioned,
-    geminiMentioned: s.geminiMentioned,
-    aiOverviewMentioned: s.aiOverviewMentioned,
-    // On a baseline run there is no previous check, so all changes are "never"
-    chatgptChange: s.chatgptMentioned ? "new" : "never",
-    geminiChange: s.geminiMentioned ? "new" : "never",
-    aiOverviewChange: s.aiOverviewMentioned ? "new" : "never",
-  }));
+  // Build platform-grouped visibility sets for the new card UI
+  // A phrase is "visible" if the business was mentioned on that platform
+  const visibleChatGPT = snapshots.filter(s => s.chatgptMentioned).map(s => s.searchQuery);
+  const visibleGemini = snapshots.filter(s => s.geminiMentioned).map(s => s.searchQuery);
+  const visibleAIOverview = snapshots.filter(s => s.aiOverviewMentioned).map(s => s.searchQuery);
+  const notVisibleChatGPT = snapshots.filter(s => !s.chatgptMentioned).map(s => s.searchQuery);
+  const notVisibleGemini = snapshots.filter(s => !s.geminiMentioned).map(s => s.searchQuery);
+  const notVisibleAIOverview = snapshots.filter(s => !s.aiOverviewMentioned).map(s => s.searchQuery);
 
   const baselineScore = {
     overall: scores.overall,
@@ -670,10 +664,10 @@ function ResultsStep({
                   Your AI Visibility
                 </p>
                 <p className="text-4xl font-heading font-bold text-white">
-                  {visibilityPct}%
+                  {scores.overall}
                 </p>
                 <p className="text-xs text-gray-400 mt-2">
-                  Found in {scores.queriesMentioned} of {scores.totalQueries} queries
+                  Score out of 100 &mdash; found in {scores.queriesMentioned} of {scores.totalQueries} queries
                 </p>
               </div>
 
@@ -918,18 +912,140 @@ function ResultsStep({
           </div>
         </motion.section>
 
-        {/* Query-by-Query Breakdown */}
+        {/* Visibility Card Sections */}
         <motion.section
-          className="rounded-2xl border border-white/5 bg-gradient-to-br from-white/[0.02] to-transparent p-6"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.4 }}
+          className="space-y-8"
         >
-          <h2 className="text-lg font-heading font-bold text-white mb-6 flex items-center gap-2">
-            <Target className="w-5 h-5 text-blue-400" />
-            Query-by-Query Breakdown
-          </h2>
-          <QueryDetailsTable queries={queryDetails} />
+          {/* Currently Visible For */}
+          {(visibleChatGPT.length > 0 || visibleGemini.length > 0 || visibleAIOverview.length > 0) && (
+            <div className="rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/5 to-transparent p-6">
+              <h2 className="text-lg font-heading font-bold text-white mb-1 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-400" />
+                Search Phrases You're Currently Visible For
+              </h2>
+              <p className="text-xs text-gray-400 mb-6">Your business appeared in AI responses for these queries</p>
+              <div className="space-y-5">
+                {/* ChatGPT row */}
+                {visibleChatGPT.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[11px] font-bold uppercase tracking-widest">
+                        <Bot className="w-3 h-3" /> ChatGPT
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {visibleChatGPT.map((q, i) => (
+                        <span key={i} className="inline-block px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/25 text-green-200 text-xs font-medium">
+                          {q}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Gemini row */}
+                {visibleGemini.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[11px] font-bold uppercase tracking-widest">
+                        <Sparkles className="w-3 h-3" /> Gemini
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {visibleGemini.map((q, i) => (
+                        <span key={i} className="inline-block px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/25 text-green-200 text-xs font-medium">
+                          {q}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* AI Overview row */}
+                {visibleAIOverview.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-300 text-[11px] font-bold uppercase tracking-widest">
+                        <Eye className="w-3 h-3" /> AI Overview
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {visibleAIOverview.map((q, i) => (
+                        <span key={i} className="inline-block px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/25 text-green-200 text-xs font-medium">
+                          {q}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Not Currently Visible For */}
+          {(notVisibleChatGPT.length > 0 || notVisibleGemini.length > 0 || notVisibleAIOverview.length > 0) && (
+            <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-transparent p-6">
+              <h2 className="text-lg font-heading font-bold text-white mb-1 flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-400" />
+                Search Phrases You're Not Currently Visible For
+              </h2>
+              <p className="text-xs text-gray-400 mb-6">Your business did not appear in AI responses for these queries — these are your growth opportunities</p>
+              <div className="space-y-5">
+                {/* ChatGPT row */}
+                {notVisibleChatGPT.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[11px] font-bold uppercase tracking-widest">
+                        <Bot className="w-3 h-3" /> ChatGPT
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {notVisibleChatGPT.map((q, i) => (
+                        <span key={i} className="inline-block px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs font-medium">
+                          {q}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Gemini row */}
+                {notVisibleGemini.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[11px] font-bold uppercase tracking-widest">
+                        <Sparkles className="w-3 h-3" /> Gemini
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {notVisibleGemini.map((q, i) => (
+                        <span key={i} className="inline-block px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs font-medium">
+                          {q}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* AI Overview row */}
+                {notVisibleAIOverview.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-300 text-[11px] font-bold uppercase tracking-widest">
+                        <Eye className="w-3 h-3" /> AI Overview
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {notVisibleAIOverview.map((q, i) => (
+                        <span key={i} className="inline-block px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs font-medium">
+                          {q}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </motion.section>
 
         <ReportFooter />
