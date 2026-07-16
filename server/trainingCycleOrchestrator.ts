@@ -274,32 +274,10 @@ async function processWin(
     })
     .where(eq(campaignQueryLocations.id, ql.id));
 
-  // Build human-readable platform label for the win email
-  const platformLabel =
-    platform === "chatgpt" ? "ChatGPT" :
-    platform === "gemini" ? "Gemini" :
-    "Google AI Overview";
-
-  // Send win email
-  try {
-    const { sendCampaignWinEmails } = await import("./emailService");
-    await sendCampaignWinEmails(
-      campaignId,
-      [
-        {
-          platform: platform === "ai_overview" ? "gemini" : platform, // email service uses gemini for AI Overview
-          query: ql.searchQuery,
-          location: ql.location,
-          message: `Now appearing in ${platformLabel} results for "${ql.searchQuery}" in ${ql.location}.`,
-          significance: "breakthrough" as const,
-        },
-      ],
-      100, // currentScore placeholder — will be recalculated by sendCampaignWinEmails
-      null, // previousScore
-    );
-  } catch (e: any) {
-    console.warn(`[CycleOrchestrator] Win email failed for ql#${ql.id}: ${e.message}`);
-  }
+  // Win detected — logged internally. No per-query email is sent during training.
+  // The consolidated visibility report email fires at the end of the 4-day sprint
+  // (Day 4 rank check) and then weekly thereafter.
+  console.log(`[CycleOrchestrator] Win recorded for ql#${ql.id} on ${platform} (no email — report fires at sprint end).`);
 }
 
 // ─── Main: advance all due polls for a campaign ───────────────────────────────

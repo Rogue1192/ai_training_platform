@@ -1163,6 +1163,29 @@ async function checkScheduledRankTracking(): Promise<void> {
           `[Scheduler] Rank check campaign ${campaignId}: ${result.snapshotsCreated} snapshot(s), ` +
           `${result.winsDetected.length} win(s), score ${result.currentScore.overall}/100`
         );
+        // Send ONE consolidated weekly visibility report email to the client
+        try {
+          const { sendCampaignVisibilityReport } = await import('./emailService');
+          const topWins = result.winsDetected.slice(0, 10).map((w: any) => ({
+            query: w.searchQuery || '',
+            platform: w.platform || '',
+            position: null,
+          }));
+          await sendCampaignVisibilityReport(campaignId, {
+            currentScore: result.currentScore.overall,
+            baselineScore: null,
+            previousScore: null,
+            chatgptScore: result.currentScore.chatgpt ?? 0,
+            geminiScore: result.currentScore.gemini ?? 0,
+            aiOverviewScore: result.currentScore.aiOverview ?? 0,
+            mentionedQueries: result.winsDetected.length,
+            totalQueries: result.snapshotsCreated,
+            topWins,
+          });
+          console.log(`[Scheduler] Weekly visibility report email sent for campaign ${campaignId}`);
+        } catch (emailErr: any) {
+          console.warn(`[Scheduler] Weekly report email failed for campaign ${campaignId} (non-fatal):`, emailErr.message);
+        }
       } catch (err: any) {
         console.error(`[Scheduler] Rank check failed for campaign ${campaignId}:`, err.message);
       }
@@ -1496,7 +1519,30 @@ export async function checkV3SprintRuns(): Promise<void> {
             try {
               const { runScheduledRankCheck } = await import('./rankTrackingEngine');
               const rankResult = await runScheduledRankCheck(run.campaignId);
-              console.log(`[SchedulerV3] Post-sprint rank check for campaign ${run.campaignId}: ${rankResult.snapshotsCreated} snapshots`);
+              console.log(`[SchedulerV3] Post-sprint rank check for campaign ${run.campaignId}: ${rankResult.snapshotsCreated} snapshots, ${rankResult.winsDetected.length} wins`);
+              // Send ONE consolidated visibility report email to the client (not per-win emails)
+              try {
+                const { sendCampaignVisibilityReport } = await import('./emailService');
+                const topWins = rankResult.winsDetected.slice(0, 10).map((w: any) => ({
+                  query: w.searchQuery || '',
+                  platform: w.platform || '',
+                  position: null,
+                }));
+                await sendCampaignVisibilityReport(run.campaignId, {
+                  currentScore: rankResult.currentScore.overall,
+                  baselineScore: null,
+                  previousScore: null,
+                  chatgptScore: rankResult.currentScore.chatgpt ?? 0,
+                  geminiScore: rankResult.currentScore.gemini ?? 0,
+                  aiOverviewScore: rankResult.currentScore.aiOverview ?? 0,
+                  mentionedQueries: rankResult.winsDetected.length,
+                  totalQueries: rankResult.snapshotsCreated,
+                  topWins,
+                });
+                console.log(`[SchedulerV3] Day 4 consolidated visibility report email sent for campaign ${run.campaignId}`);
+              } catch (emailErr: any) {
+                console.warn(`[SchedulerV3] Day 4 report email failed for campaign ${run.campaignId} (non-fatal):`, emailErr.message);
+              }
             } catch (rankErr: any) {
               console.warn(`[SchedulerV3] Post-sprint rank check failed for campaign ${run.campaignId} (non-fatal):`, rankErr.message);
             }

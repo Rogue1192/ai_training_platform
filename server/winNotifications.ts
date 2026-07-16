@@ -298,24 +298,8 @@ export async function checkAllCampaignsForWins(): Promise<{
       // Trial upgrades happen automatically at day 14 via the scheduler.
       // Win detection does NOT trigger early conversion — GHL handles billing.
 
-      // Build win email entries and send
-      try {
-        const { sendCampaignWinEmails } = await import("./emailService");
-
-        const winEntries = report.wins.map((win) => ({
-          platform: win.platform,
-          query: win.query,
-          location: win.location,
-          message: win.description,
-          significance: win.significance,
-        }));
-
-        // Calculate a simple score (% of queries where business is mentioned)
-        const currentScore = report.totalWins > 0 ? Math.min(100, report.totalWins * 10) : 0;
-        await sendCampaignWinEmails(campaign.id, winEntries, currentScore, null);
-      } catch (emailErr) {
-        console.error("[Win Notifications] Failed to send win email:", emailErr);
-      }
+      // Win emails are NOT sent here per-query.
+      // The consolidated visibility report fires at Day 4 sprint end and weekly thereafter.
     }
   }
   
