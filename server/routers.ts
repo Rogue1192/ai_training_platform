@@ -2564,6 +2564,50 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           .limit(200);
       }),
 
+    getCheckRunHistory: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ input }) => {
+        const { getCheckRunHistory } = await import("./rankTrackingEngine");
+        return getCheckRunHistory(input.campaignId);
+      }),
+
+    getCheckRunDetail: protectedProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        date: z.string(),
+        checkType: z.string(),
+      }))
+      .query(async ({ input }) => {
+        const { getCheckRunDetail } = await import("./rankTrackingEngine");
+        return getCheckRunDetail(input.campaignId, input.date, input.checkType);
+      }),
+
+    sendReportEmail: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ input }) => {
+        const { generateCampaignRankReport } = await import("./rankTrackingEngine");
+        const { sendCampaignVisibilityReport } = await import("./emailService");
+        const report = await generateCampaignRankReport(input.campaignId);
+        const topWins = report.recentWins.slice(0, 5).map((w) => ({
+          query: w.searchQuery,
+          platform: w.platform,
+          position: null,
+        }));
+        const result = await sendCampaignVisibilityReport(input.campaignId, {
+          currentScore: report.currentScore.overall,
+          baselineScore: report.baselineScore?.overall ?? null,
+          previousScore: report.previousScore?.overall ?? null,
+          chatgptScore: report.currentScore.chatgpt,
+          geminiScore: report.currentScore.gemini,
+          aiOverviewScore: report.currentScore.aiOverview,
+          mentionedQueries: report.currentScore.mentionedQueries,
+          totalQueries: report.currentScore.totalQueries,
+          topWins,
+        });
+        if (!result.success) throw new Error(result.error || "Failed to send email");
+        return { success: true, messageId: result.messageId };
+      }),
+
     // Bonus query discovery results for a campaign
     getBonusResults: protectedProcedure
       .input(z.object({ campaignId: z.number() }))

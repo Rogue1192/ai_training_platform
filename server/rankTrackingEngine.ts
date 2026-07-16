@@ -835,3 +835,148 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
     isBaselineOnly: !(campaign as any).sprintCompletedAt,
   };
 }
+
+// ============= Report History =============
+
+export interface CheckRunSummary {
+  date: string;
+  checkedAt: string;
+  checkType: string;
+  score: VisibilityScore;
+  queriesChecked: number;
+}
+
+export async function getCheckRunHistory(campaignId: number): Promise<CheckRunSummary[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const snaps = await db
+    .select()
+    .from(rankSnapshots)
+    .where(and(
+      eq(rankSnapshots.campaignId, campaignId),
+      eq(rankSnapshots.isTracked, true)
+    ))
+    .orderBy(asc(rankSnapshots.checkedAt));
+
+  if (snaps.length === 0) return [];
+
+  const qls = await db
+    .select({ id: campaignQueryLocations.id })
+    .from(campaignQueryLocations)
+    .where(and(
+      eq(campaignQueryLocations.campaignId, campaignId),
+      eq(campaignQueryLocations.isTargetLocation, true)
+    ));
+  const totalQueries = qls.length;
+
+  const groups = new Map<string, typeof snaps>();
+  for (const snap of snaps) {
+    const dateKey = new Date(snap.checkedAt).toISOString().slice(0, 10);
+    const groupKey = `${dateKey}__${snap.checkType}`;
+    if (!groups.has(groupKey)) groups.set(groupKey, []);
+    groups.get(groupKey)!.push(snap);
+  }
+
+  const results: CheckRunSummary[] = [];
+  for (const [groupKey, groupSnaps] of groups) {
+    const [dateStr, checkType] = groupKey.split("__");
+    const latestPerQuery = new Map<number, typeof snaps[0]>();
+    for (const s of groupSnaps) {
+      const existing = latestPerQuery.get(s.queryLocationId);
+      if (!existing || s.checkedAt > existing.checkedAt) latestPerQuery.set(s.queryLocationId, s);
+    }
+    const dedupedSnaps = Array.from(latestPerQuery.values());
+    const score = calculateVisibilityScore(dedupedSnaps, totalQueries || dedupedSnaps.length);
+    const earliestCheckedAt = groupSnaps.reduce((min, s) => s.checkedAt < min ? s.checkedAt : min, groupSnaps[0].checkedAt);
+    results.push({ date: dateStr, checkedAt: new Date(earliestCheckedAt).toISOString(), checkType: checkType || "scheduled", score, queriesChecked: dedupedSnaps.length });
+  }
+
+  return results.sort((a, b) => b.checkedAt.localeCompare(a.checkedAt));
+}
+
+export interface CheckRunDetail {
+  date: string;
+  checkedAt: string;
+  checkType: string;
+  score: VisibilityScore;
+  queries: Array<{
+    queryLocationId: number;
+    searchQuery: string;
+    location: string;
+    chatgptMentioned: boolean | null;
+    chatgptPosition: number | null;
+    chatgptResponseSnippet: string | null;
+    geminiMentioned: boolean | null;
+    geminiPosition: number | null;
+    geminiResponseSnippet: string | null;
+    aiOverviewMentioned: boolean | null;
+    aiOverviewPosition: number | null;
+    aiOverviewResponseSnippet: string | null;
+  }>;
+}
+
+export async function getCheckRunDetail(campaignId: number, date: string, checkType: string): Promise<CheckRunDetail | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const startOfDay = new Date(date + "T00:00:00.000Z");
+  const endOfDay = new Date(date + "T23:59:59.999Z");
+
+  const snaps = await db
+    .select()
+    .from(rankSnapshots)
+    .where(and(
+      eq(rankSnapshots.campaignId, campaignId),
+      eq(rankSnapshots.isTracked, true),
+      eq(rankSnapshots.checkType, checkType as any),
+      gte(rankSnapshots.checkedAt, startOfDay),
+      lte(rankSnapshots.checkedAt, endOfDay)
+    ))
+    .orderBy(asc(rankSnapshots.checkedAt));
+
+  if (snaps.length === 0) return null;
+
+  const qls = await db
+    .select()
+    .from(campaignQueryLocations)
+    .where(and(
+      eq(campaignQueryLocations.campaignId, campaignId),
+      eq(campaignQueryLocations.isTargetLocation, true)
+    ));
+  const qlMap = new Map(qls.map((q) => [q.id, q]));
+
+  const latestPerQuery = new Map<number, typeof snaps[0]>();
+  for (const s of snaps) {
+    const existing = latestPerQuery.get(s.queryLocationId);
+    if (!existing || s.checkedAt > existing.checkedAt) latestPerQuery.set(s.queryLocationId, s);
+  }
+  const dedupedSnaps = Array.from(latestPerQuery.values());
+  const totalQueries = qls.length || dedupedSnaps.length;
+  const score = calculateVisibilityScore(dedupedSnaps, totalQueries);
+  const earliestCheckedAt = snaps.reduce((min, s) => s.checkedAt < min ? s.checkedAt : min, snaps[0].checkedAt);
+
+  return {
+    date,
+    checkedAt: new Date(earliestCheckedAt).toISOString(),
+    checkType,
+    score,
+    queries: dedupedSnaps.map((s) => {
+      const ql = qlMap.get(s.queryLocationId);
+      return {
+        queryLocationId: s.queryLocationId,
+        searchQuery: ql?.searchQuery ?? "(unknown query)",
+        location: ql?.location ?? "",
+        chatgptMentioned: s.chatgptMentioned ?? null,
+        chatgptPosition: s.chatgptPosition ?? null,
+        chatgptResponseSnippet: s.chatgptResponseSnippet ?? null,
+        geminiMentioned: s.geminiMentioned ?? null,
+        geminiPosition: s.geminiPosition ?? null,
+        geminiResponseSnippet: s.geminiResponseSnippet ?? null,
+        aiOverviewMentioned: s.aiOverviewMentioned ?? null,
+        aiOverviewPosition: s.aiOverviewPosition ?? null,
+        aiOverviewResponseSnippet: s.aiOverviewResponseSnippet ?? null,
+      };
+    }),
+  };
+}

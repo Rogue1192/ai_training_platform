@@ -58,6 +58,9 @@ import {
   Info,
   Save,
   RefreshCw,
+  Mail,
+  CalendarDays,
+  ListChecks,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
@@ -250,6 +253,29 @@ export default function CampaignDetail() {
     onError: (error) => {
       toast.error(`Rank check failed: ${error.message}`);
       setIsRunningRankCheck(false);
+    },
+  });
+
+  const { data: checkRunHistory, refetch: refetchCheckRunHistory } = trpc.rankTracking.getCheckRunHistory.useQuery(
+    { campaignId },
+    { enabled: !!campaignId }
+  );
+
+  const [selectedCheckRun, setSelectedCheckRun] = useState<{ date: string; checkType: string } | null>(null);
+  const { data: checkRunDetail } = trpc.rankTracking.getCheckRunDetail.useQuery(
+    { campaignId, date: selectedCheckRun?.date ?? "", checkType: selectedCheckRun?.checkType ?? "" },
+    { enabled: !!selectedCheckRun }
+  );
+
+  const [isSendingReportEmail, setIsSendingReportEmail] = useState(false);
+  const sendReportEmailMutation = trpc.rankTracking.sendReportEmail.useMutation({
+    onSuccess: () => {
+      toast.success("Report email sent to client!");
+      setIsSendingReportEmail(false);
+    },
+    onError: (error) => {
+      toast.error(`Email failed: ${error.message}`);
+      setIsSendingReportEmail(false);
     },
   });
 
@@ -1122,31 +1148,52 @@ export default function CampaignDetail() {
 
         {/* ─── RANKINGS TAB ─── */}
         <TabsContent value="rankings" className="space-y-4">
-          {/* Manual rank poll row */}
-          <div className="flex items-center justify-between">
+
+          {/* ── Action bar ── */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-sm text-muted-foreground">
               {rankReport?.lastCheckAt
                 ? `Last checked ${new Date(rankReport.lastCheckAt).toLocaleString()}`
-                : "No rank data yet — run a check to get started"}
+                : "No rank data yet — run a baseline check to get started"}
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setIsRunningRankCheck(true);
-                rankCheckMutation.mutate({ campaignId });
-              }}
-              disabled={isRunningRankCheck || rankCheckMutation.isPending}
-            >
-              {isRunningRankCheck ? (
-                <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Running Check...</>
-              ) : (
-                <><RotateCcw className="w-3.5 h-3.5 mr-1.5" />Run Rank Check</>
-              )}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsSendingReportEmail(true);
+                  sendReportEmailMutation.mutate({ campaignId });
+                }}
+                disabled={isSendingReportEmail || !rankReport?.baselineCheckAt}
+                title={!rankReport?.baselineCheckAt ? "Run baseline first" : "Send report email to client"}
+              >
+                {isSendingReportEmail ? (
+                  <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Sending...</>
+                ) : (
+                  <><Mail className="w-3.5 h-3.5 mr-1.5" />Send Report Email</>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsRunningRankCheck(true);
+                  rankCheckMutation.mutate({ campaignId });
+                }}
+                disabled={isRunningRankCheck || rankCheckMutation.isPending}
+              >
+                {isRunningRankCheck ? (
+                  <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Running Check...</>
+                ) : (
+                  <><RotateCcw className="w-3.5 h-3.5 mr-1.5" />Run Rank Check</>
+                )}
+              </Button>
+            </div>
           </div>
+
           {rankReport ? (
             <>
+              {/* ── Score summary cards ── */}
               <div className="grid gap-4 md:grid-cols-3">
                 <Card className="bg-card border-border">
                   <CardContent className="p-4 text-center">
@@ -1156,8 +1203,13 @@ export default function CampaignDetail() {
                 </Card>
                 <Card className="bg-card border-border">
                   <CardContent className="p-4 text-center">
-                    <p className="text-3xl font-bold text-muted-foreground">{rankReport.baselineScore?.overall ?? "—"}</p>
-                    <p className="text-xs text-muted-foreground">Baseline Score</p>
+                    <p className="text-3xl font-bold text-amber-400">{rankReport.baselineScore?.overall ?? "—"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Day 0 Baseline
+                      {rankReport.baselineCheckAt && (
+                        <span className="block text-muted-foreground/60">{new Date(rankReport.baselineCheckAt).toLocaleDateString()}</span>
+                      )}
+                    </p>
                   </CardContent>
                 </Card>
                 <Card className="bg-card border-border">
@@ -1176,16 +1228,121 @@ export default function CampaignDetail() {
                         </p>
                       );
                     })()}
-                    <p className="text-xs text-muted-foreground">Score Change</p>
+                    <p className="text-xs text-muted-foreground">Score Change vs Baseline</p>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Query Details with Mention History */}
+              {/* ── Report History ── */}
+              {checkRunHistory && checkRunHistory.length > 0 && (
+                <Card className="bg-card border-border">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+                      <CalendarDays className="w-4 h-4 text-primary" />
+                      Report History
+                      <span className="text-xs font-normal text-muted-foreground ml-1">({checkRunHistory.length} check{checkRunHistory.length !== 1 ? "s" : ""})</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="divide-y divide-border/50">
+                      {checkRunHistory.map((run: any) => {
+                        const isSelected = selectedCheckRun?.date === run.date && selectedCheckRun?.checkType === run.checkType;
+                        return (
+                          <div key={`${run.date}-${run.checkType}`}>
+                            <button
+                              className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/30 transition-colors ${
+                                isSelected ? "bg-muted/40" : ""
+                              }`}
+                              onClick={() => setSelectedCheckRun(isSelected ? null : { date: run.date, checkType: run.checkType })}
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                  run.checkType === "baseline" ? "bg-amber-500/15 text-amber-400" :
+                                  run.checkType === "scheduled" ? "bg-blue-500/15 text-blue-400" :
+                                  "bg-slate-500/15 text-slate-400"
+                                }`}>
+                                  {run.checkType === "baseline" ? "Day 0 Baseline" :
+                                   run.checkType === "scheduled" ? "Weekly Check" :
+                                   run.checkType}
+                                </span>
+                                <span className="text-sm text-foreground">
+                                  {new Date(run.checkedAt).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
+                                <span>Score: <span className="text-foreground font-medium">{run.score.overall}</span></span>
+                                <span className="text-blue-400">GPT: {run.score.chatgpt}</span>
+                                <span className="text-purple-400">Gem: {run.score.gemini}</span>
+                                <span className="text-green-400">AIO: {run.score.aiOverview}</span>
+                                <span>{run.queriesChecked} queries</span>
+                                {isSelected ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              </div>
+                            </button>
+
+                            {/* Expanded detail panel */}
+                            {isSelected && (
+                              <div className="border-t border-border/30 bg-muted/10 px-4 py-3">
+                                {!checkRunDetail ? (
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                                    <Loader2 className="w-3 h-3 animate-spin" /> Loading report…
+                                  </div>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                      <thead>
+                                        <tr className="text-muted-foreground border-b border-border/30">
+                                          <th className="text-left py-1.5 pr-4 font-medium">Query</th>
+                                          <th className="text-left py-1.5 pr-4 font-medium">Location</th>
+                                          <th className="text-center py-1.5 pr-4 font-medium">ChatGPT</th>
+                                          <th className="text-center py-1.5 pr-4 font-medium">Gemini</th>
+                                          <th className="text-center py-1.5 font-medium">AI Overview</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {checkRunDetail.queries.map((q: any, qi: number) => (
+                                          <tr key={qi} className="border-b border-border/20 last:border-0">
+                                            <td className="py-1.5 pr-4 text-foreground">{q.searchQuery}</td>
+                                            <td className="py-1.5 pr-4 text-muted-foreground">{q.location}</td>
+                                            <td className="py-1.5 pr-4 text-center">
+                                              {q.chatgptMentioned
+                                                ? <span className="text-green-400 font-medium">✓{q.chatgptPosition != null ? ` #${q.chatgptPosition}` : ""}</span>
+                                                : <span className="text-muted-foreground">—</span>}
+                                            </td>
+                                            <td className="py-1.5 pr-4 text-center">
+                                              {q.geminiMentioned
+                                                ? <span className="text-green-400 font-medium">✓{q.geminiPosition != null ? ` #${q.geminiPosition}` : ""}</span>
+                                                : <span className="text-muted-foreground">—</span>}
+                                            </td>
+                                            <td className="py-1.5 text-center">
+                                              {q.aiOverviewMentioned
+                                                ? <span className="text-green-400 font-medium">✓{q.aiOverviewPosition != null ? ` #${q.aiOverviewPosition}` : ""}</span>
+                                                : <span className="text-muted-foreground">—</span>}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ── Current Query Rankings (live) ── */}
               {rankReport.queryDetails && rankReport.queryDetails.length > 0 && (
                 <Card className="bg-card border-border">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-card-foreground">Query Rankings</CardTitle>
+                    <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+                      <ListChecks className="w-4 h-4 text-primary" />
+                      Current Query Rankings
+                      <span className="text-xs font-normal text-muted-foreground ml-1">(latest check — click a row for history)</span>
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
@@ -1203,7 +1360,7 @@ export default function CampaignDetail() {
                 <BarChart3 className="w-10 h-10 text-muted-foreground mb-3" />
                 <h3 className="text-lg font-semibold text-foreground mb-1">No rank data yet</h3>
                 <p className="text-sm text-muted-foreground">
-                  Run a baseline check or rank tracking to see visibility scores.
+                  Run a baseline check to record Day 0 visibility scores for all queries.
                 </p>
                 <Button
                   variant="outline"
