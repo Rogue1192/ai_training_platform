@@ -945,20 +945,10 @@ export async function checkLLMVisibilityDirect(
 ): Promise<DirectVisibilityResult> {
   const { callAI } = await import("./aiProviders");
   const { getApiKeyByProvider } = await import("./db");
-  const { getAgencyById } = await import("./dbAgencies");
   const { decrypt } = await import("./encryption");
 
-  // ── Helper: resolve API key for a provider ──────────────────────────────────
+  // ── Helper: resolve API key for a provider — always uses platform key ───────
   async function resolveKey(provider: "openai" | "google"): Promise<string | null> {
-    if (agencyId) {
-      try {
-        const agency = await getAgencyById(agencyId);
-        if (agency) {
-          const encryptedKey = provider === "openai" ? agency.agencyOpenAiKey : agency.agencyGeminiKey;
-          if (encryptedKey) return decrypt(encryptedKey);
-        }
-      } catch { /* fall through to platform key */ }
-    }
     const record = await getApiKeyByProvider(provider);
     if (!record) return null;
     try { return decrypt(record.encryptedKey); } catch { return null; }

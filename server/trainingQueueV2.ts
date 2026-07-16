@@ -23,8 +23,7 @@ import {
   getActiveRunBySessionId,
   updateScheduledJobRun,
 } from "./db";
-import { getAgencyById } from "./dbAgencies";
-import { sendAgencyKeyErrorEmail } from "./agencyKeyErrorEmail";
+
 import {
   generateCleanPromptAsync,
   generateSuggestivePromptAsync,
@@ -113,65 +112,13 @@ function extractBusinessName(session: any, business: any): string {
 
 /**
  * Resolve the target AI API key for a training session.
- * If the business belongs to an agency AND that agency has provided their own key
- * for this provider, use the agency's key.
- * Otherwise use the platform key.
- * HARD STOP: if an agency key is expected but missing/invalid, throw — never fall back.
+ * Always uses the platform key — all AI calls are handled centrally.
  */
 async function resolveTargetApiKey(
-  session: any,
-  business: any | null,
+  _session: any,
+  _business: any | null,
   provider: AIProvider
 ): Promise<{ key: string; agencyId: number | null }> {
-  const agencyId: number | null = business?.agencyId ?? null;
-
-  if (agencyId) {
-    const agency = await getAgencyById(agencyId);
-    if (agency) {
-      const encryptedAgencyKey =
-        provider === 'openai' ? agency.agencyOpenAiKey :
-        provider === 'google'  ? agency.agencyGeminiKey :
-        null;
-
-      if (encryptedAgencyKey) {
-        // Agency has provided their own key — use it, no fallback
-        try {
-          const key = decrypt(encryptedAgencyKey);
-          return { key, agencyId };
-        } catch (err: any) {
-          // Decryption failed — notify agency and hard stop
-          await sendAgencyKeyErrorEmail({
-            agencyName: agency.name,
-            agencyEmail: agency.contactEmail,
-            provider: provider === 'openai' ? 'openai' : 'gemini',
-            businessName: business?.name ?? 'Unknown Client',
-            sessionId: session.id,
-            errorReason: 'API key could not be decrypted. Please re-enter your key in Agency Settings.',
-          }).catch(() => {});
-          throw new Error(
-            `Agency API key decryption failed for provider ${provider}. ` +
-            `Agency ${agency.name} has been notified to update their key in Settings.`
-          );
-        }
-      }
-
-      // Agency exists but has NOT provided a key for this provider — hard stop
-      await sendAgencyKeyErrorEmail({
-        agencyName: agency.name,
-        agencyEmail: agency.contactEmail,
-        provider: provider === 'openai' ? 'openai' : 'gemini',
-        businessName: business?.name ?? 'Unknown Client',
-        sessionId: session.id,
-        errorReason: `No ${provider === 'openai' ? 'OpenAI' : 'Gemini'} API key configured. Please add your key in Agency Settings.`,
-      }).catch(() => {});
-      throw new Error(
-        `Agency ${agency.name} has not configured a ${provider} API key. ` +
-        `Training stopped. Agency has been notified to add their key in Settings.`
-      );
-    }
-  }
-
-  // No agency — use platform key
   const platformKeyRecord = await getApiKeyByProvider(provider);
   if (!platformKeyRecord) {
     throw new Error(`Platform API key for ${provider} not configured. Please add it in Settings.`);
