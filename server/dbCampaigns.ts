@@ -574,10 +574,14 @@ export async function getAllCampaignsWithBusinessInfo(): Promise<
     if (row.campaignId != null) missingUrlMap.set(row.campaignId, Number(row.missingCount));
   }
 
-  // A campaign is "blocked" if ANY of the following are true:
+  // A campaign is "blocked" (training cannot start) if ANY of the following are true:
   // 1. One or more credibility content pages are missing a live URL
-  // 2. llm.txt has not been verified via scan (llmTxtVerified = false)
-  // 3. JSON-LD schema has not been verified via scan (schemaVerified = false)
+  // 2. llm.txt has not been verified via scan (llmTxtVerified = false/null)
+  // 3. JSON-LD schema has not been verified via scan (schemaVerified = false/null)
+  //
+  // Note: llm.txt and schema are NOT required for URL submission / indexing —
+  // they only block training. But we still surface them as "blocked" so the
+  // admin knows they need to be done before training can start.
   return result.map((r: any) => {
     const missingUrlCount = missingUrlMap.get(r.id) ?? 0;
     return {

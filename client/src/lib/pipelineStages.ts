@@ -7,6 +7,19 @@
  * "complete" (green) if ALL prior stages are also complete. This prevents
  * orphaned timestamps from previous pipeline runs from lighting up stages
  * out of order.
+ *
+ * Gate logic (mirrors server/contentVerifier.ts):
+ *
+ *  Stage 4 — Content Published
+ *    Complete when: publishingCompletedAt is set AND no content pages are
+ *    missing a URL. llm.txt and schema are NOT required here — they can be
+ *    added before or after the URLs in any order.
+ *
+ *  Stage 5 — Indexing
+ *    Complete when: indexingVerifiedAt is set AND llmTxtVerified AND
+ *    schemaVerified. This means the Indexing pill stays amber/active until
+ *    all three are done, preventing the "gap" that would appear if indexing
+ *    completed before llm.txt/schema were verified.
  */
 
 export type StageStatus =
@@ -14,7 +27,7 @@ export type StageStatus =
   | "active"       // blue — step is currently running
   | "action"       // amber — step needs user action to proceed
   | "pending"      // grey — step hasn't started yet (or prior steps not done)
-  | "sprint"       // yellow — training sprint in progress
+  | "sprint"       // yellow pulsing — training sprint in progress
   | "maintenance"; // teal — ongoing post-sprint maintenance
 
 export interface PipelineStage {
@@ -49,38 +62,41 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     v !== null && v !== undefined && v !== "";
 
   // ── Raw completion checks (timestamp-only, no sequencing) ──
-  const s1_keywordsDone   = done(c.keywordResearchCompletedAt);
-  const s2_baselineDone   = done(c.baselineCheckCompletedAt);
-  const s3_credDone       = done(c.credibilityResearchCompletedAt) && done(c.contentGenerationCompletedAt);
-  // Content Published requires publishing timestamp AND llm.txt + schema + no missing URLs
-  const s4_contentPubRaw  = done(c.publishingCompletedAt);
-  const s4_contentPubFull =
-    s4_contentPubRaw &&
-    c.llmTxtVerified === true &&
-    c.schemaVerified === true &&
-    (c.missingUrlCount ?? 0) === 0;
-  const s5_indexingDone   = done(c.indexingVerifiedAt);
-  const s6_sprintStarted  = done(c.trainingStartedAt);
-  const s6_sprintDone     = done(c.sprintCompletedAt);
+  const s1_keywordsDone  = done(c.keywordResearchCompletedAt);
+  const s2_baselineDone  = done(c.baselineCheckCompletedAt);
+  const s3_credDone      = done(c.credibilityResearchCompletedAt) && done(c.contentGenerationCompletedAt);
 
-  // ── Sequential gating: each stage only "counts" if all prior stages are done ──
-  // Stage 1 complete: keywords done
+  // Stage 4 — Content Published
+  // Complete when: publishingCompletedAt set AND no content pages missing a URL.
+  // llm.txt and schema are NOT required here.
+  const s4_contentPubDone =
+    done(c.publishingCompletedAt) &&
+    (c.missingUrlCount ?? 0) === 0;
+
+  // Stage 5 — Indexing
+  // Complete when: indexing verified AND llm.txt verified AND schema verified.
+  // This keeps the pill active until all three are done so there's never a gap.
+  const s5_indexingDone =
+    done(c.indexingVerifiedAt) &&
+    c.llmTxtVerified === true &&
+    c.schemaVerified === true;
+
+  // Whether indexing has been submitted (URLs sent to Monkey Indexer)
+  const s5_indexingSubmitted = done(c.indexingSubmittedAt);
+
+  const s6_sprintStarted = done(c.trainingStartedAt);
+  const s6_sprintDone    = done(c.sprintCompletedAt);
+
+  // ── Sequential gating ──
   const stage1Complete = s1_keywordsDone;
-  // Stage 2 complete: baseline done AND stage 1 done
   const stage2Complete = stage1Complete && s2_baselineDone;
-  // Stage 3 complete: credibility done AND stage 2 done
   const stage3Complete = stage2Complete && s3_credDone;
-  // Stage 4 complete: content fully published AND stage 3 done
-  const stage4Complete = stage3Complete && s4_contentPubFull;
-  // Stage 5 complete: indexing done AND stage 4 done
+  const stage4Complete = stage3Complete && s4_contentPubDone;
   const stage5Complete = stage4Complete && s5_indexingDone;
-  // Stage 6 complete: sprint done AND stage 5 done
   const stage6Complete = stage5Complete && s6_sprintDone;
-  // Stage 7: maintenance (post-sprint)
-  const stage7Active = stage6Complete;
+  const stage7Active   = stage6Complete;
 
   // ── Determine which stage is currently active ──
-  // currentStep = the first incomplete stage
   let currentStep: number;
   if (!stage1Complete)      currentStep = 1;
   else if (!stage2Complete) currentStep = 2;
@@ -108,20 +124,38 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     return "pending";
   }
 
-  // Stage 4 needs action when: stage 3 is done but content isn't fully published
-  // (either publishing not done, or llm.txt/schema/URLs missing)
+  // Stage 4 needs action when: stage 3 done but content URLs or publishingCompletedAt missing
   const stage4NeedsAction = stage3Complete && !stage4Complete;
-  // Stage 2 needs action when: stage 1 is done but baseline hasn't run
+  // Stage 2 needs action when: stage 1 done but baseline hasn't run
   const stage2NeedsAction = stage1Complete && !stage2Complete;
+
+  // Stage 5 description — show what's still pending
+  function indexingDescription(): string {
+    if (stage5Complete) return "Indexing verified · llm.txt & schema confirmed";
+    if (!stage4Complete) return "Awaiting content publication";
+    const pending: string[] = [];
+    if (!s5_indexingSubmitted) pending.push("URL submission pending");
+    else if (!done(c.indexingVerifiedAt)) pending.push("indexing in progress");
+    if (c.llmTxtVerified !== true) pending.push("llm.txt not verified");
+    if (c.schemaVerified !== true) pending.push("schema not verified");
+    return pending.length > 0 ? pending.join(" · ") : "Verifying indexing…";
+  }
+
+  // Stage 4 description
+  function contentPubDescription(): string {
+    if (stage4Complete) return "All content URLs submitted";
+    if (!stage3Complete) return "Awaiting credibility content";
+    if (!done(c.publishingCompletedAt)) return "Add content to site and submit live URLs";
+    if ((c.missingUrlCount ?? 0) > 0) return `${c.missingUrlCount} content URL${c.missingUrlCount === 1 ? "" : "s"} still missing`;
+    return "Content published";
+  }
 
   return [
     {
       id: "keywords",
       label: "Keywords",
       status: stageStatus(1, stage1Complete, !stage1Complete && currentStep === 1, false),
-      description: stage1Complete
-        ? "Query matrix generated"
-        : "Generating keyword queries…",
+      description: stage1Complete ? "Query matrix generated" : "Generating keyword queries…",
       isCurrent: currentStep === 1,
     },
     {
@@ -137,34 +171,26 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
       id: "credibility",
       label: "Credibility Content",
       status: stageStatus(3, stage3Complete, !stage3Complete && currentStep === 3, false),
-      description: stage3Complete
-        ? "Credibility content generated"
-        : "Generating credibility content…",
+      description: stage3Complete ? "Credibility content generated" : "Generating credibility content…",
       isCurrent: currentStep === 3,
     },
     {
       id: "content_published",
       label: "Content Published",
       status: stageStatus(4, stage4Complete, false, stage4NeedsAction),
-      description: stage4Complete
-        ? "Content live, llm.txt & schema verified"
-        : s4_contentPubRaw
-          ? "Content published — verify llm.txt, schema & content URLs"
-          : "Add content to site, verify llm.txt & schema",
+      description: contentPubDescription(),
       isCurrent: currentStep === 4,
     },
     {
       id: "indexing",
       label: "Indexing",
-      status: stageStatus(5, stage5Complete, !stage5Complete && currentStep === 5, false),
-      description: stage5Complete
-        ? "Indexing verified"
-        : "Submitting to indexing…",
+      status: stageStatus(5, stage5Complete, !stage5Complete && currentStep === 5 && s5_indexingSubmitted, false),
+      description: indexingDescription(),
       isCurrent: currentStep === 5,
     },
     {
       id: "training",
-      label: s6_sprintDone ? "Sprint Complete" : s6_sprintStarted ? "Training Sprint" : "Training Sprint",
+      label: s6_sprintDone ? "Sprint Complete" : "Training Sprint",
       status: stageStatus(
         6,
         stage6Complete,

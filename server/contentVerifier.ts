@@ -2,13 +2,26 @@
  * contentVerifier.ts
  *
  * Verifies that a client's website has the required AI-optimisation assets
- * in place before the campaign is allowed to advance to indexing / training.
+ * in place before the campaign is allowed to advance through the pipeline.
  *
- * Checks performed:
- *  1. llm.txt   — fetches {website}/llm.txt and confirms HTTP 200 + non-empty body
- *  2. Schema    — fetches the homepage and looks for JSON-LD <script type="application/ld+json">
- *                 containing an @type field (any structured-data block counts)
- *  3. Content pages — all non-schema / non-llm_txt pages must have a publishedUrl recorded
+ * Two gates are enforced:
+ *
+ *  INDEXING GATE (enforceIndexingGate)
+ *    — Only checks that all content pages have a publishedUrl.
+ *    — llm.txt and schema are NOT required here; they can arrive before or
+ *      after the URLs. The Indexing pipeline stage is considered "complete"
+ *      only once indexing is done AND llm.txt + schema are verified, but the
+ *      actual URL submission to Monkey Indexer fires as soon as all URLs are in.
+ *
+ *  TRAINING GATE (enforceTrainingGate)
+ *    — Hard gate before training starts. Requires ALL THREE:
+ *        1. All content pages have a publishedUrl
+ *        2. llm.txt verified
+ *        3. JSON-LD schema verified
+ *    — This ensures the AI training environment is fully prepared.
+ *
+ * The old enforcePublishingGate is kept as an alias for enforceTrainingGate
+ * so existing call-sites don't break.
  */
 
 // Uses Node 18+ global fetch (no import needed)
@@ -48,7 +61,6 @@ async function fetchWithTimeout(url: string, timeoutMs = 8000): Promise<{ ok: bo
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    // Node 18+ global fetch
     const res = await (globalThis.fetch as typeof fetch)(url, {
       signal: controller.signal,
       headers: { "User-Agent": "RogueAI-ContentVerifier/1.0" },
@@ -106,7 +118,6 @@ export async function verifyCampaignContent(params: {
     if (base) {
       const r = await fetchWithTimeout(homeUrl);
       if (r.ok) {
-        // Look for any JSON-LD block with @type
         const hasJsonLd = /<script[^>]+type=["']application\/ld\+json["'][^>]*>[\s\S]*?"@type"[\s\S]*?<\/script>/i.test(r.text);
         if (hasJsonLd) {
           schemaDetected = true;
@@ -146,7 +157,7 @@ export async function verifyCampaignContent(params: {
       .where(eq(contentPages.campaignId, campaignId));
 
     for (const p of pages) {
-      if (NO_URL_REQUIRED.has(p.pageType)) continue; // skip — verified via scan instead
+      if (NO_URL_REQUIRED.has(p.pageType)) continue;
       total++;
       if (p.publishedUrl) {
         withUrl++;
@@ -166,11 +177,43 @@ export async function verifyCampaignContent(params: {
   };
 }
 
+// ─── Gate: URL-only (indexing submission) ────────────────────────────────────
+
 /**
- * Hard gate: throws an error if the campaign has unpublished content pages
- * or missing llm.txt / schema. Called by the pipeline before indexing and training.
+ * Indexing gate — only requires that all content pages have a publishedUrl.
+ * llm.txt and schema are NOT checked here; they can be added before or after
+ * URL submission. The Indexing pipeline stage won't show "complete" until
+ * llm.txt + schema are also verified, but the Monkey Indexer submission fires
+ * as soon as all URLs are in so we maximise indexing lead time.
  */
-export async function enforcePublishingGate(params: {
+export async function enforceIndexingGate(params: {
+  campaignId: number;
+  websiteUrl: string;
+}): Promise<void> {
+  const result = await verifyCampaignContent({
+    campaignId: params.campaignId,
+    websiteUrl: params.websiteUrl,
+    scanType: 'both', // still run the scan so llmTxtVerified/schemaVerified get updated
+  });
+
+  if (!result.contentPages.allComplete) {
+    const names = result.contentPages.missing.map((p) => p.pageTitle).join(", ");
+    throw new Error(
+      `Indexing gate blocked — ${result.contentPages.missing.length} content page(s) missing live URL: ${names}`
+    );
+  }
+  // llm.txt / schema failures are NOT blocking here — they are noted but don't throw
+}
+
+// ─── Gate: Full (training) ───────────────────────────────────────────────────
+
+/**
+ * Training gate — requires ALL THREE checks to pass before training can start:
+ *   1. All content pages have a publishedUrl
+ *   2. llm.txt detected at {website}/llm.txt
+ *   3. JSON-LD schema detected on homepage
+ */
+export async function enforceTrainingGate(params: {
   campaignId: number;
   websiteUrl: string;
 }): Promise<void> {
@@ -191,8 +234,19 @@ export async function enforcePublishingGate(params: {
 
   if (issues.length > 0) {
     throw new Error(
-      `Publishing gate blocked — campaign cannot advance until all content is live on the client site:\n` +
+      `Training gate blocked — campaign cannot start training until all content is live:\n` +
         issues.map((i) => `  • ${i}`).join("\n")
     );
   }
+}
+
+/**
+ * @deprecated Use enforceIndexingGate (for URL submission) or enforceTrainingGate
+ * (for training start). This alias calls enforceTrainingGate for backwards compatibility.
+ */
+export async function enforcePublishingGate(params: {
+  campaignId: number;
+  websiteUrl: string;
+}): Promise<void> {
+  return enforceTrainingGate(params);
 }

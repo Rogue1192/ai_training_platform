@@ -779,9 +779,12 @@ export function startScheduler(): void {
     });
   }, 24 * 60 * 60 * 1000);
 
-  // Auto-advance indexing_verification every 3 minutes — Monkey Indexer makes URLs
-  // accessible almost immediately after submission, so we poll frequently and advance
-  // to training as soon as 80%+ of URLs are reachable.
+  // Auto-advance previously-blocked publishing campaigns (llm.txt/schema now fixed)
+  checkBlockedPublishingCampaigns().catch((err: Error) => console.error("[Scheduler] Blocked publishing check failed:", err));
+  setInterval(() => {
+    checkBlockedPublishingCampaigns().catch((err: Error) => console.error("[Scheduler] Blocked publishing check failed:", err));
+  }, 10 * 60 * 1000); // every 10 minutes
+
   checkPendingIndexingVerifications().catch((err: Error) => console.error("[Scheduler] Indexing verification check failed:", err));
   setInterval(() => {
     checkPendingIndexingVerifications().catch((err: Error) => console.error("[Scheduler] Indexing verification check failed:", err));
@@ -848,6 +851,66 @@ export function startScheduler(): void {
   }, 24 * 60 * 60 * 1000); // once per day
 
   console.log("[Scheduler] Scheduler started successfully");
+}
+
+/**
+ * Auto-advance campaigns that are stuck in 'publishing' status because they were
+ * previously blocked by a missing llm.txt or schema, but those issues have since
+ * been fixed.
+ *
+ * Scenario: admin submits all content URLs → auto-indexing fires → gate fails
+ * (llm.txt/schema not yet live) → campaign stays in 'publishing'. Later the
+ * agency adds llm.txt and schema and verifies them in the UI. Without this
+ * poller the campaign would be stuck forever because the URL-submission trigger
+ * already fired and won't fire again.
+ *
+ * Runs every 10 minutes. Only picks up campaigns where:
+ *  - status = 'publishing'
+ *  - publishingCompletedAt IS NOT NULL (all URLs are in)
+ *  - indexingSubmittedAt IS NULL (indexing hasn't started yet)
+ *  - llmTxtVerified = true AND schemaVerified = true (gate is now clear)
+ */
+export async function checkBlockedPublishingCampaigns(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    const { campaigns } = await import('../drizzle/schema');
+    const { eq, and, isNull, isNotNull } = await import('drizzle-orm');
+
+    // Pick up campaigns where all URLs are in (publishingCompletedAt set) but
+    // indexing hasn't been submitted yet. llm.txt and schema are NOT required
+    // here — they can arrive before or after URL submission.
+    const blocked = await db
+      .select()
+      .from(campaigns)
+      .where(
+        and(
+          eq(campaigns.status, 'publishing'),
+          isNotNull(campaigns.publishingCompletedAt),
+          isNull(campaigns.indexingSubmittedAt)
+        )
+      );
+
+    if (blocked.length === 0) return;
+
+    console.log(`[Scheduler] Found ${blocked.length} previously-blocked publishing campaign(s) now gate-clear — advancing to indexing`);
+
+    const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
+    const ownerId = adminUsers[0]?.id ?? 0;
+    const { runPipelineStep } = await import('./pipelineOrchestrator');
+
+    for (const campaign of blocked) {
+      try {
+        const result = await runPipelineStep(campaign.id, 'indexing', ownerId);
+        console.log(`[Scheduler] Auto-advanced campaign ${campaign.id} to indexing: ${result.message}`);
+      } catch (err: any) {
+        console.error(`[Scheduler] Auto-advance to indexing failed for campaign ${campaign.id}:`, err.message);
+      }
+    }
+  } catch (err: any) {
+    console.error('[Scheduler] checkBlockedPublishingCampaigns error:', err.message);
+  }
 }
 
 /**

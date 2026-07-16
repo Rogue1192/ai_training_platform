@@ -293,13 +293,15 @@ export async function runPipelineStep(
       }
       
       case "indexing": {
-        // ── Publishing gate ───────────────────────────────────────────────────
-        // Block advancement if content pages are missing URLs or llm.txt / schema
-        // are not yet live on the client's site. Applies to ALL campaigns including
-        // legacy/pre-existing clients.
+        // ── Indexing gate (URL-only) ──────────────────────────────────────────────────────────────────────
+        // Only requires all content pages to have a publishedUrl.
+        // llm.txt and schema are NOT required here — they can be added before or
+        // after URL submission. The Indexing stage won't show "complete" on the
+        // pipeline bar until llm.txt + schema are also verified, but we submit
+        // to Monkey Indexer immediately to maximise indexing lead time.
         try {
-          const { enforcePublishingGate } = await import("./contentVerifier");
-          await enforcePublishingGate({
+          const { enforceIndexingGate } = await import("./contentVerifier");
+          await enforceIndexingGate({
             campaignId,
             websiteUrl: business.website || "",
           });
@@ -372,9 +374,9 @@ export async function runPipelineStep(
       }
       
       case "training": {
-        // ── Publishing gate ───────────────────────────────────────────────────
-        // Double-check gate at training entry too — catches campaigns that were
-        // manually advanced or existed before the gate was introduced.
+        // ── Training gate (full: URLs + llm.txt + schema) ──────────────────────────────────────────────────────────────────────
+        // Hard gate: ALL THREE must pass before training starts.
+        // enforcePublishingGate is an alias for enforceTrainingGate.
         try {
           const { enforcePublishingGate } = await import("./contentVerifier");
           await enforcePublishingGate({

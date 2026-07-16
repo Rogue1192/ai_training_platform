@@ -434,8 +434,7 @@ export default function CampaignDetail() {
       />
 
       {/* ── Training Blocked Banner ── */}
-      {campaign.isBlocked &&
-        ["training", "monitoring", "publishing", "indexing"].includes(campaign.status ?? "") && (() => {
+      {campaign.isBlocked && (() => {
           const blockers: string[] = [];
           if ((campaign as any).llmTxtVerified === false) blockers.push("llm.txt not verified");
           if ((campaign as any).schemaVerified === false) blockers.push("schema not verified");
@@ -653,10 +652,10 @@ export default function CampaignDetail() {
                     <Tooltip key={stage.id}>
                       <TooltipTrigger asChild>
                         <div className="flex-1 cursor-default">
-                          {/* Colored bar segment */}
+                          {/* Colored bar segment — pulse when sprint is active */}
                           <div className={`h-2 rounded-full transition-all ${
                             stage.status === "pending" ? "bg-muted" : stageColor(stage.status)
-                          } ${stage.isCurrent ? "ring-2 ring-offset-1 ring-offset-card " + stageColor(stage.status) : ""}`} />
+                          } ${stage.status === "sprint" ? "animate-pulse" : ""} ${stage.isCurrent ? "ring-2 ring-offset-1 ring-offset-card " + stageColor(stage.status) : ""}`} />
                           {/* Label below bar */}
                           <div className={`mt-1.5 text-[9px] leading-tight text-center ${
                             stage.status === "pending" ? "text-muted-foreground/40" : stageTextColor(stage.status)
@@ -673,6 +672,43 @@ export default function CampaignDetail() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ── Indexing Prompt Banner ── */}
+            {(() => {
+              const indexingStage = stages.find((s) => s.id === "indexing");
+              const needsIndexingPrompt = indexingStage?.isCurrent && !indexingStage?.status.includes("complete");
+              const indexingSubmitted = !!(campaign as any).indexingSubmittedAt;
+              const contentPubStage = stages.find((s) => s.id === "content_published");
+              const contentPubDone = contentPubStage?.status === "complete";
+              if (!contentPubDone || indexingSubmitted) return null;
+              return (
+                <Card className="border-blue-500/50 bg-blue-500/5">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <Rocket className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-medium text-blue-300 text-sm">Content published — submit to indexer to continue</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            All content URLs are in. Click to submit them to Monkey Indexer now. llm.txt and schema can be added before or after — indexing will complete once all three are verified.
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="shrink-0 bg-blue-500 hover:bg-blue-400 text-white"
+                        disabled={runStepMutation.isPending && runningStep === "indexing"}
+                        onClick={() => handleRunStep("indexing")}
+                      >
+                        {runStepMutation.isPending && runningStep === "indexing"
+                          ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Submitting…</>
+                          : <><Rocket className="w-3.5 h-3.5 mr-1.5" />Submit to Indexer</>}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
             {/* ── Baseline Prompt Banner ── */}
             {needsBaselinePrompt && (

@@ -61,7 +61,9 @@ function PipelineProgressBar({ campaign }: { campaign: {
             {/* Colored bar segment */}
             <div className={`h-1.5 rounded-full transition-all ${
               stage.status === 'pending' ? 'bg-muted' : stageColor(stage.status)
-            } ${stage.isCurrent ? 'ring-1 ring-offset-1 ring-offset-card ' + stageColor(stage.status) : ''}`} />
+            } ${stage.isCurrent ? 'ring-1 ring-offset-1 ring-offset-card ' + stageColor(stage.status) : ''} ${
+              stage.status === 'sprint' ? 'animate-pulse' : ''
+            }`} />
             {/* Label below bar */}
             <div className={`mt-1 text-[9px] leading-tight truncate text-center ${
               stage.status === 'pending' ? 'text-muted-foreground/40' : stageTextColor(stage.status)
@@ -328,24 +330,45 @@ export default function Campaigns() {
                           <h3 className="font-semibold text-foreground truncate">
                             {campaign.campaignName}
                           </h3>
-                          <Badge
-                            variant="outline"
-                            className={
-                              statusColors[campaign.status] || ""
-                            }
-                          >
-                            {statusLabels[campaign.status] ||
-                              campaign.status}
-                          </Badge>
+                          {/* Stage badge — derived from pipeline timestamps, not raw DB status */}
+                          {(() => {
+                            const stages = computePipelineStages({
+                              ...campaign,
+                              sprintCompletedAt: (campaign as any).sprintCompletedAt ?? null,
+                            });
+                            const current = stages.find(s => s.isCurrent) ?? stages[stages.length - 1];
+                            const badgeClass = {
+                              complete:     "bg-green-500/10 text-green-400 border-green-500/30",
+                              active:       "bg-blue-500/10 text-blue-400 border-blue-500/30",
+                              action:       "bg-amber-500/10 text-amber-400 border-amber-500/30",
+                              sprint:       "bg-yellow-400/10 text-yellow-400 border-yellow-400/30",
+                              maintenance:  "bg-teal-500/10 text-teal-400 border-teal-500/30",
+                              pending:      "bg-muted/50 text-muted-foreground border-border",
+                            }[current.status] ?? "";
+                            return (
+                              <Badge variant="outline" className={badgeClass}>
+                                {current.label}
+                              </Badge>
+                            );
+                          })()}
                           {campaign.isBlocked && (() => {
+                            const urlsMissing = (campaign.missingUrlCount ?? 0) > 0;
+                            const llmMissing = campaign.llmTxtVerified === false;
+                            const schemaMissing = campaign.schemaVerified === false;
                             const missing: string[] = [];
-                            if ((campaign.missingUrlCount ?? 0) > 0) missing.push(`${campaign.missingUrlCount} Content URL${campaign.missingUrlCount === 1 ? '' : 's'}`);
-                            if (campaign.llmTxtVerified === false) missing.push('llm.txt');
-                            if (campaign.schemaVerified === false) missing.push('Schema');
+                            if (urlsMissing) missing.push(`${campaign.missingUrlCount} Content URL${campaign.missingUrlCount === 1 ? '' : 's'}`);
+                            if (llmMissing) missing.push('llm.txt');
+                            if (schemaMissing) missing.push('Schema');
+                            // Determine what this blocks
+                            const blocksIndexing = urlsMissing;
+                            const blocksTraining = llmMissing || schemaMissing;
+                            const blockLabel = blocksIndexing && blocksTraining ? 'Blocks Indexing + Training'
+                              : blocksIndexing ? 'Blocks Indexing'
+                              : 'Blocks Training';
                             return (
                               <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30 text-xs gap-1">
                                 <AlertTriangle className="w-3 h-3" />
-                                {missing.length > 0 ? `Missing: ${missing.join(' + ')}` : 'Action Required'}
+                                {missing.length > 0 ? `Missing: ${missing.join(' + ')}` : blockLabel}
                               </Badge>
                             );
                           })()}
