@@ -224,112 +224,54 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
 
     // Determine the industry
     const industry = business.businessType || "general";
+    const usedCache = false;
 
-    // ── Pass 1: Keyword selection via DataForSEO keyword_suggestions ──────────
-    // Build seeds from businessType + specialties. Feed into DataForSEO
-    // keyword_suggestions, keep only commercial/transactional, sort by volume desc.
-    // This replaces the old keywords_for_site approach.
-    const { buildServiceSeeds } = await import("./dataforseoService");
-    const seeds = buildServiceSeeds(business.businessType, business.specialties);
-
-    let baseKeywords: string[] = [];
-    let usedCache = false;
-
-    if (seeds.length > 0) {
-      try {
-        const dfsKeywords = await getKeywordSuggestionsForProspect(seeds, {
-          locationCode: 2840,
-          languageCode: "en",
-          limit: 200,
-        });
-        baseKeywords = dfsKeywords.slice(0, maxQueries).map((k) => k.keyword);
-        console.log(`[Pipeline] DataForSEO keyword_suggestions returned ${dfsKeywords.length} commercial/transactional keywords, using top ${baseKeywords.length}`);
-
-        await logDFSCost({
-          campaignId,
-          businessId: campaign.businessId,
-          operationType: 'keyword_research',
-          endpoint: '/dataforseo_labs/google/keyword_suggestions/live',
-          costUsd: DFS_COSTS.keywordsForSite, // same cost tier
-          campaignCreatedAt: campaign.createdAt,
-          metadata: { seedCount: seeds.length, keywordsFound: dfsKeywords.length },
-        });
-      } catch (dfsErr: any) {
-        console.warn(`[Pipeline] DataForSEO keyword_suggestions failed, using seed fallback: ${dfsErr.message}`);
-      }
-    }
-
-    // Fallback: if DataForSEO returned nothing, expand seeds into buyer-intent queries
-    if (baseKeywords.length === 0) {
-      // Fallback: apply proven transactional-intent modifiers to the primary seed.
-      // Templates produce natural-sounding queries — not raw string concatenation.
-      const service = seeds[0] || industry;
-      const TRANSACTIONAL_TEMPLATES: [string, string][] = [
-        ["best",           "best {s}"],
-        ["top-rated",      "top-rated {s}"],
-        ["highly rated",   "highly rated {s}"],
-        ["five-star",      "five-star {s}"],
-        ["affordable",     "affordable {s}"],
-        ["budget-friendly","budget-friendly {s}"],
-        ["low-cost",       "low-cost {s}"],
-        ["local",          "local {s}"],
-        ["near me",        "{s} near me"],
-        ["trusted",        "trusted {s}"],
-        ["reputable",      "reputable {s}"],
-        ["recommended",    "recommended {s}"],
-        ["reliable",       "reliable {s}"],
-        ["licensed",       "licensed {s}"],
-        ["insured",        "insured {s}"],
-        ["certified",      "certified {s}"],
-        ["experienced",    "experienced {s}"],
-        ["financing",      "{s} that offers financing"],
-        ["payment plans",  "{s} with payment plans"],
-        ["free estimates", "{s} that offers free estimates"],
-      ];
-      baseKeywords = TRANSACTIONAL_TEMPLATES
-        .map(([, tmpl]) => tmpl.replace("{s}", service))
-        .slice(0, maxQueries);
-      console.log(`[Pipeline] Using transactional modifier fallback: ${baseKeywords.length} queries`);
-    }
-
-    // Contribute to industry cache for golden template learning
-    await contributeToIndustryCache(
-      industry,
-      baseKeywords.map((kw) => ({
-        keyword: kw,
-        aiSearchVolume: 0,
-        searchVolume: 0,
-        searchIntent: "commercial",
-      }))
-    );
-
-    // ── Build query×location matrix ──────────────────────────────────────────
-    const locations: string[] = allLocations;
-
-    if (locations.length === 0) {
+    // ── No locations → bail early ─────────────────────────────────────────────
+    if (allLocations.length === 0) {
       console.warn(`[Pipeline] No locations found for campaign ${campaignId} — matrix will be empty`);
       await updateCampaign(campaignId, {
         keywordResearchCompletedAt: new Date(),
         lastError: "No locations configured. Add locations to build query matrix.",
       });
-      return {
-        success: true,
-        keywordsFound: baseKeywords.length,
-        queryLocationsCreated: 0,
-        usedCache,
-      };
+      return { success: true, keywordsFound: 0, queryLocationsCreated: 0, usedCache };
     }
 
-    // Build keyword×location pairs, capped at effectiveMaxQuerySlots
-    const matrixPairs: { keyword: string; location: string }[] = [];
-    let slotsUsed = 0;
-    outer: for (const kw of baseKeywords) {
-      for (const location of locations) {
-        if (slotsUsed >= effectiveMaxQuerySlots) break outer;
-        matrixPairs.push({ keyword: kw, location });
-        slotsUsed++;
-      }
-    }
+    // ── Pass 1: Generate queries using the visibility-audit engine (3-bucket GPT-4o) ──
+    // This is the SAME engine used by the prospect visibility audit — the single
+    // source of truth for all query generation across the platform.
+    const { generateProspectQueries } = await import("./prospectAuditEngine");
+    const { buildServiceSeeds } = await import("./dataforseoService");
+    const seeds = buildServiceSeeds(business.businessType, business.specialties);
+    const seedKeywordsStr = seeds.length > 0 ? seeds.join(", ") : (business.businessType || industry);
+    const campaignScope = (campaign as any).campaignScope ?? "local";
+
+    console.log(`[Pipeline] Generating queries via prospect audit engine for campaign ${campaignId} — seeds: "${seedKeywordsStr}", locations: ${allLocations.join("; ")}`);
+
+    const prospectQueries = await generateProspectQueries({
+      businessName: business.name,
+      location: allLocations[0],
+      locations: allLocations,
+      seedKeywords: seedKeywordsStr,
+      campaignScope,
+    });
+
+    console.log(`[Pipeline] Prospect audit engine returned ${prospectQueries.length} query×location pairs`);
+
+    // Cap to effectiveMaxQuerySlots
+    const matrixPairs = prospectQueries
+      .slice(0, effectiveMaxQuerySlots)
+      .map((q) => ({ keyword: q.searchQuery, location: q.location }));
+
+    // Contribute to industry cache for golden template learning
+    await contributeToIndustryCache(
+      industry,
+      matrixPairs.map((p) => ({
+        keyword: p.keyword,
+        aiSearchVolume: 0,
+        searchVolume: 0,
+        searchIntent: "commercial",
+      }))
+    );
 
     // ── Pass 2: Per-location volume lookup on final query+location strings ────
     // Hit AI volume endpoint first; fall back to Google Ads × 25% for zeros.
@@ -396,12 +338,12 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
     });
 
     console.log(
-      `[Pipeline] Keyword research complete for campaign ${campaignId}: ${baseKeywords.length} keywords × ${locations.length} locations = ${entries.length} combos`
+      `[Pipeline] Keyword research complete for campaign ${campaignId}: ${matrixPairs.length} query×location pairs → ${entries.length} combos written`
     );
 
     return {
       success: true,
-      keywordsFound: baseKeywords.length,
+      keywordsFound: matrixPairs.length,
       queryLocationsCreated: entries.length,
       usedCache,
     };
