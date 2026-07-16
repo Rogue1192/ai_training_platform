@@ -194,14 +194,12 @@ export default function ClientDashboard() {
             <div className="space-y-3">
               <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Platform Breakdown</h3>
               <PlatformBreakdown score={currentScore} />
-              <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="mt-4">
                 <div className="rounded-lg bg-white/[0.03] p-3 text-center">
-                  <p className="text-2xl font-heading font-bold text-white">{currentScore.mentionedQueries}</p>
+                  <p className="text-2xl font-heading font-bold text-white">
+                    {currentScore.mentionedQueries} <span className="text-lg text-muted-foreground font-normal">of {currentScore.totalQueries}</span>
+                  </p>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Queries Mentioned</p>
-                </div>
-                <div className="rounded-lg bg-white/[0.03] p-3 text-center">
-                  <p className="text-2xl font-heading font-bold text-white">{currentScore.totalQueries}</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Tracked</p>
                 </div>
               </div>
             </div>
@@ -233,13 +231,13 @@ export default function ClientDashboard() {
           </motion.section>
         )}
 
-        {/* Wins Section */}
-        {report.recentWins.length > 0 && (
+        {/* Wins Section — only show after sprint completes */}
+        {!report.isBaselineOnly && report.recentWins.length > 0 && (
           <WinsSection wins={report.recentWins} />
         )}
 
-        {/* Bonus Wins Banner */}
-        <BonusWinsBanner bonusResults={bonusResults} />
+        {/* Bonus Wins Banner — only show after sprint completes */}
+        {!report.isBaselineOnly && <BonusWinsBanner bonusResults={bonusResults} />}
 
         {/* Visibility Trend */}
         <motion.section

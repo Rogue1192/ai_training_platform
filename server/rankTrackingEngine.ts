@@ -101,6 +101,7 @@ export interface CampaignRankReport {
   lastCheckAt: string | null;
   baselineCheckAt: string | null;
   totalChecks: number;
+  isBaselineOnly: boolean; // true when sprint has not yet completed — hide bonus queries on client dashboard
 }
 
 // ============= Visibility Scoring =============
@@ -831,5 +832,6 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
       : null,
     baselineCheckAt: campaign.baselineCheckCompletedAt?.toISOString() || null,
     totalChecks: Number(allSnapshotCount[0]?.count || 0),
+    isBaselineOnly: !(campaign as any).sprintCompletedAt,
   };
 }
