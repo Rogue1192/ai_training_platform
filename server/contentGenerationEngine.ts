@@ -95,13 +95,14 @@ IMPORTANT RULES:
 - Include local geographic references naturally
 - Write for humans first, but structure for AI extraction
 - Do NOT use generic filler content — every sentence should add value
-- Output the page content in clean HTML (no full HTML document, just the content body)
+- For most page types: output the page content in clean HTML (no full HTML document, just the content body)
+- For the credibility_profile page type: output the page content as clean Markdown (using # for H1, ## for H2, - for bullets). NO HTML tags at all. The output must be copy-paste ready for a non-technical person to paste directly into a page builder text area.
 
 Return your response as valid JSON with this format:
 {
   "pageTitle": "<H1 title>",
   "pageSlug": "<url-friendly-slug>",
-  "pageContent": "<full HTML content>",
+  "pageContent": "<full content — HTML for most pages, clean Markdown for credibility_profile>",
   "metaDescription": "<155 character meta description>",
   "interlinkSuggestions": ["<pageType1>", "<pageType2>"]
 }`;
@@ -185,6 +186,31 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
     deliveryType: "inject_existing",
     placementInstructions: "Add this content to the existing About Us page — paste it after the intro paragraph or before the team section.",
   },
+  {
+    type: "credibility_profile",
+    label: "Why Choose Us — Credentials & Trust",
+    promptContext: `a full standalone page. The page must be written in third person and structured as follows:
+
+1. H1 (page title): 'Why [Business Name] Is the Best [Primary GMB Category or Top Service Keyword]' — NO city or state in the title. The title must stay broad so the page can rank across the entire service area, not just one city. Example: 'Why Eagle Air Co Is the Best HVAC Company' or 'Why Smith Plumbing Is the Best Plumber'.
+
+2. OPENING SUMMARY PARAGRAPH (3-5 sentences): A confident, factual statement of why this business is the top choice in their market. Reference specific credentials, certifications, and trust signals by name. This paragraph is what AI engines will extract as a citation when someone asks 'who is the best [service] near me?' or 'who is the most trusted [service] in [region]?'
+
+3. TRUST SIGNAL BULLET LIST: 8-12 concise bullet points, each a standalone verifiable fact (certification, insurance type, credential, guarantee, specialty). These must come directly from the credibility data provided — do NOT invent anything.
+
+4. DETAILED BODY CONTENT (1,200-1,500 words total): 5-7 H2 sections, each 150-200 words. Each section covers one trust pillar in depth — e.g., 'Certified and Licensed Technicians', 'Fully Insured for Your Protection', 'Authorized Dealer for Major Brands', 'Emergency Service Available 24/7', 'Warranty and Satisfaction Guarantee', 'Proudly Serving [Primary City] and Surrounding Communities'. Write naturally — do NOT just list facts, explain WHY each credential matters to the customer. Geographic references (city names, service area) belong in the body sections, NOT in the H1.
+
+5. FAQ SECTION (5-7 questions): Conversational questions a homeowner or customer would actually ask, with direct 2-4 sentence answers grounded in the credibility data.
+
+6. CLOSING PARAGRAPH: A 2-3 sentence call to action referencing the business name.
+
+IMPORTANT: The page slug must be /why-choose-us. Do NOT fabricate any facts — use only the credibility data provided.
+
+OUTPUT FORMAT: Write the pageContent field as clean Markdown ONLY — use # for H1, ## for H2, - for bullet points. Do NOT use any HTML tags whatsoever. The content must be plain text that a non-technical person can copy and paste directly into any page builder text area.`,
+    schemaTypes: ["LocalBusiness", "Organization"],
+    requiredFactCategories: [], // Always generate — uses all available facts
+    deliveryType: "new_page",
+    placementInstructions: "Create a new page at /why-choose-us and paste this content in. IMPORTANT: Add a link to this page from the home page navigation or footer — e.g., 'Why Choose Us' in the nav menu. This page must be crawlable from the home page.",
+  },
 ];
 
 // ============= Helper Functions =============
@@ -244,10 +270,14 @@ function buildPagePrompt(
   facts: CredibilityFact[],
   allPageTypes: string[] // For interlinking
 ): string {
-  // Filter facts relevant to this page type
-  const relevantFacts = facts.filter(f => 
-    config.requiredFactCategories.includes(f.category) || f.confidence === "high"
-  );
+  // Filter facts relevant to this page type.
+  // credibility_profile is the comprehensive trust page — it gets EVERY single fact, no filtering whatsoever.
+  // All other page types get facts matching their required categories + any high-confidence facts.
+  const relevantFacts = config.type === "credibility_profile"
+    ? [...facts]
+    : facts.filter(f =>
+        config.requiredFactCategories.includes(f.category) || f.confidence === "high"
+      );
   
   const otherPages = allPageTypes.filter(t => t !== config.type);
   
