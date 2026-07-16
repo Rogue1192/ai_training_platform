@@ -411,7 +411,7 @@ function CalendarLightbox({
 
 // ─── CTA Bar ─────────────────────────────────────────────────────────────────
 
-function CTABar({ calendarEmbedCode }: { calendarEmbedCode: string | null }) {
+function CTABar({ calendarEmbedCode, ctaButtonText }: { calendarEmbedCode: string | null; ctaButtonText?: string | null }) {
   const [showCalendar, setShowCalendar] = useState(false);
 
   return (
@@ -436,7 +436,7 @@ function CTABar({ calendarEmbedCode }: { calendarEmbedCode: string | null }) {
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition-colors"
             >
               <Calendar className="w-4 h-4" />
-              Schedule a Free Strategy Call
+              {ctaButtonText || "Schedule a Free Strategy Call"}
             </button>
           ) : (
             <span className="text-sm text-gray-600 italic">Contact us to learn more</span>
@@ -452,7 +452,7 @@ function CTABar({ calendarEmbedCode }: { calendarEmbedCode: string | null }) {
             className="flex items-center gap-2 border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm"
           >
             <Calendar className="w-4 h-4" />
-            Get More AI Visibility — Book a Call
+            {ctaButtonText || "Get More AI Visibility — Book a Call"}
           </button>
         </div>
       )}
@@ -581,6 +581,7 @@ export default function PublicAuditReport() {
   const auditSource = meta?.source ?? 'internal';
   const isLeadCaptured = isAuthenticated || auditSource === 'internal' || leadCapturedLocally || (meta?.leadCaptured ?? false);
   const calendarEmbedCode = meta?.calendarEmbedCode ?? null;
+  const ctaButtonText = (meta as any)?.ctaButtonText ?? null;
 
   // The report content (always rendered; blurred when not captured)
   const reportContent = (
@@ -616,7 +617,7 @@ export default function PublicAuditReport() {
       )}
 
       {/* First CTA — appears right after the hero numbers */}
-      {isLeadCaptured && <CTABar calendarEmbedCode={calendarEmbedCode} />}
+      {isLeadCaptured && <CTABar calendarEmbedCode={calendarEmbedCode} ctaButtonText={ctaButtonText} />}
 
       {/* Interactive Revenue Gap Calculator */}
       {avgJobValue && avgJobValue > 0 && lostOpportunities > 0 && (
@@ -769,7 +770,7 @@ export default function PublicAuditReport() {
       </div>
 
       {/* Bottom CTA */}
-      {isLeadCaptured && <CTABar calendarEmbedCode={calendarEmbedCode} />}
+      {isLeadCaptured && <CTABar calendarEmbedCode={calendarEmbedCode} ctaButtonText={ctaButtonText} />}
 
       {/* Footer */}
       <ReportFooter />

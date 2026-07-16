@@ -3618,6 +3618,7 @@ export const agencyRouter = router({
       // Lead capture widget settings
       webhookUrl: z.string().optional().nullable(),
       calendarEmbedCode: z.string().optional().nullable(),
+      ctaButtonText: z.string().optional().nullable(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { getAgencyByUserId, updateAgency } = await import('./dbAgencies');
@@ -3633,8 +3634,8 @@ export const agencyRouter = router({
       // Agency user can update their own branding + API keys + lead widget settings
       const myAgency = await getAgencyByUserId(ctx.user.id);
       if (!myAgency || myAgency.id !== id) throw new Error('Forbidden');
-      const { brandName, brandLogoUrl, brandFromName, agencyOpenAiKey, agencyGeminiKey, webhookUrl, calendarEmbedCode } = processedUpdates;
-      return updateAgency(id, { brandName, brandLogoUrl, brandFromName, agencyOpenAiKey, agencyGeminiKey, webhookUrl, calendarEmbedCode });
+      const { brandName, brandLogoUrl, brandFromName, agencyOpenAiKey, agencyGeminiKey, webhookUrl, calendarEmbedCode, ctaButtonText } = processedUpdates;
+      return updateAgency(id, { brandName, brandLogoUrl, brandFromName, agencyOpenAiKey, agencyGeminiKey, webhookUrl, calendarEmbedCode, ctaButtonText });
     }),
 
   // Admin: delete an agency

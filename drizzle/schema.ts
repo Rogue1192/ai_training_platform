@@ -85,6 +85,8 @@ export const agencies = pgTable("agencies", {
   // Lead capture widget settings
   // Calendar embed code shown in the CTA lightbox on audit report pages
   calendarEmbedCode: text("calendarEmbedCode"),
+  // Custom label for the CTA booking button (defaults to "Schedule a Free Strategy Call")
+  ctaButtonText: varchar("ctaButtonText", { length: 255 }),
   // CRM webhook URL — fired when a prospect submits their lead info on an audit
   webhookUrl: varchar("webhookUrl", { length: 1000 }),
   // Status

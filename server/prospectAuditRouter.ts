@@ -535,13 +535,15 @@ export const prospectAuditRouter = router({
       if (!audit) return null;
 
       let calendarEmbedCode: string | null = null;
+      let ctaButtonText: string | null = null;
       if (audit.agencyId) {
         const [agency] = await db
-          .select({ calendarEmbedCode: agencies.calendarEmbedCode })
+          .select({ calendarEmbedCode: agencies.calendarEmbedCode, ctaButtonText: agencies.ctaButtonText })
           .from(agencies)
           .where(eq(agencies.id, audit.agencyId))
           .limit(1);
         calendarEmbedCode = agency?.calendarEmbedCode ?? null;
+        ctaButtonText = agency?.ctaButtonText ?? null;
       }
 
       // Fall back to super-admin global calendar embed
@@ -562,6 +564,7 @@ export const prospectAuditRouter = router({
         source: audit.source ?? 'internal',
         status: audit.status,
         calendarEmbedCode,
+        ctaButtonText,
       };
     }),
 
@@ -839,6 +842,7 @@ export const prospectAuditRouter = router({
           name: agencies.name,
           brandName: agencies.brandName,
           calendarEmbedCode: agencies.calendarEmbedCode,
+          ctaButtonText: agencies.ctaButtonText,
         })
         .from(agencies)
         .where(eq(agencies.id, input.agencyId))
@@ -847,6 +851,7 @@ export const prospectAuditRouter = router({
       return {
         agencyName: agency.brandName || agency.name,
         calendarEmbedCode: agency.calendarEmbedCode ?? null,
+        ctaButtonText: agency.ctaButtonText ?? null,
       };
     }),
 });

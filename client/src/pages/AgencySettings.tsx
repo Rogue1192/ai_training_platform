@@ -32,6 +32,7 @@ export default function AgencySettings() {
   // Lead capture widget
   const [webhookUrl, setWebhookUrl] = useState("");
   const [calendarEmbedCode, setCalendarEmbedCode] = useState("");
+  const [ctaButtonText, setCtaButtonText] = useState("");
   const [copiedEmbed, setCopiedEmbed] = useState(false);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function AgencySettings() {
       setBrandLogoUrl(agency.brandLogoUrl ?? "");
       setWebhookUrl((agency as any).webhookUrl ?? "");
       setCalendarEmbedCode((agency as any).calendarEmbedCode ?? "");
+      setCtaButtonText((agency as any).ctaButtonText ?? "");
     }
   }, [agency]);
 
@@ -88,6 +90,7 @@ export default function AgencySettings() {
       id: agency.id,
       webhookUrl: webhookUrl || null,
       calendarEmbedCode: calendarEmbedCode || null,
+      ctaButtonText: ctaButtonText || null,
     });
   };
 
@@ -329,6 +332,24 @@ export default function AgencySettings() {
             </p>
           </div>
 
+          {/* CTA Button Text */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5" />
+              CTA Button Text
+            </Label>
+            <Input
+              value={ctaButtonText}
+              onChange={(e) => setCtaButtonText(e.target.value)}
+              placeholder="Schedule a Free Strategy Call"
+              maxLength={255}
+            />
+            <p className="text-xs text-muted-foreground">
+              Customize the label on the booking button shown to prospects. Defaults to
+              &ldquo;Schedule a Free Strategy Call&rdquo; if left blank.
+            </p>
+          </div>
+
           {/* Calendar Embed Code */}
           <div className="space-y-1.5">
             <Label className="flex items-center gap-1.5">
@@ -344,7 +365,7 @@ export default function AgencySettings() {
             />
             <p className="text-xs text-muted-foreground">
               Paste your Calendly, GoHighLevel, or Cal.com embed snippet here. It will appear inside
-              a lightbox when prospects click the "Get More AI Visibility" button on their audit report.
+              a lightbox when prospects click the booking button on their audit report.
             </p>
           </div>
 

@@ -790,6 +790,7 @@ function ResultsStep({
   avgJobValue,
   shareToken,
   calendarEmbedCode,
+  ctaButtonText,
 }: {
   businessName: string;
   website?: string | null;
@@ -810,6 +811,7 @@ function ResultsStep({
   avgJobValue?: number;
   shareToken: string;
   calendarEmbedCode: string | null;
+  ctaButtonText?: string | null;
 }) {
   const totalAISearches = scores.totalAISearches ?? 0;
   const visibleSearches = scores.visibleSearches ?? 0;
@@ -1145,7 +1147,7 @@ function ResultsStep({
               className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition-colors"
             >
               <Calendar className="w-4 h-4" />
-              Schedule a Free Strategy Call
+              {ctaButtonText || "Schedule a Free Strategy Call"}
             </button>
           </motion.div>
         )}
@@ -1335,6 +1337,7 @@ export default function AuditWidget() {
     shareToken: string;
   } | null>(null);
   const [calendarEmbedCode, setCalendarEmbedCode] = useState<string | null>(null);
+  const [ctaButtonText, setCtaButtonText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const generateMutation = trpc.prospectAudit.widgetGenerateQueries.useMutation();
@@ -1347,6 +1350,9 @@ export default function AuditWidget() {
   useEffect(() => {
     if (agencyMetaQuery.data?.calendarEmbedCode) {
       setCalendarEmbedCode(agencyMetaQuery.data.calendarEmbedCode);
+    }
+    if (agencyMetaQuery.data?.ctaButtonText) {
+      setCtaButtonText(agencyMetaQuery.data.ctaButtonText);
     }
   }, [agencyMetaQuery.data]);
 
@@ -1518,6 +1524,7 @@ export default function AuditWidget() {
               }
               shareToken={results.shareToken}
               calendarEmbedCode={calendarEmbedCode}
+              ctaButtonText={ctaButtonText}
             />
           </motion.div>
         )}

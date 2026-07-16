@@ -1619,9 +1619,10 @@ export async function ensureAgencyWebhookColumns(): Promise<void> {
     await client`
       ALTER TABLE "agencies"
       ADD COLUMN IF NOT EXISTS "webhookUrl" text,
-      ADD COLUMN IF NOT EXISTS "calendarEmbedCode" text
+      ADD COLUMN IF NOT EXISTS "calendarEmbedCode" text,
+      ADD COLUMN IF NOT EXISTS "ctaButtonText" varchar(255)
     `;
-    console.log('[DB] agencies.webhookUrl + calendarEmbedCode columns ensured');
+    console.log('[DB] agencies.webhookUrl + calendarEmbedCode + ctaButtonText columns ensured');
   } catch (err: any) {
     console.warn('[DB] ensureAgencyWebhookColumns:', err.message);
   }
