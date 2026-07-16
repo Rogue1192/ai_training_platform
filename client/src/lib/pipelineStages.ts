@@ -74,15 +74,13 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     (c.missingUrlCount ?? 0) === 0;
 
   // Stage 5 — Indexing
-  // Complete when: indexing verified AND llm.txt verified AND schema verified.
-  // This keeps the pill active until all three are done so there's never a gap.
-  const s5_indexingDone =
-    done(c.indexingVerifiedAt) &&
-    c.llmTxtVerified === true &&
-    c.schemaVerified === true;
-
-  // Whether indexing has been submitted (URLs sent to Monkey Indexer)
+  // Only two states: pending (not submitted yet) or submitted (active/blue).
+  // We cannot guarantee pages are actually indexed, so we never show "complete".
+  // llm.txt and schema do NOT affect this pill — they are handled at training gate.
   const s5_indexingSubmitted = done(c.indexingSubmittedAt);
+  // For sequential gating purposes, treat indexing as "done" once submitted
+  // so stage 6 (training) can become the active step.
+  const s5_indexingDone = s5_indexingSubmitted;
 
   const s6_sprintStarted = done(c.trainingStartedAt);
   const s6_sprintDone    = done(c.sprintCompletedAt);
@@ -92,7 +90,8 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
   const stage2Complete = stage1Complete && s2_baselineDone;
   const stage3Complete = stage2Complete && s3_credDone;
   const stage4Complete = stage3Complete && s4_contentPubDone;
-  const stage5Complete = stage4Complete && s5_indexingDone;
+  // Stage 5 advances once submitted — we don't wait for verification or llm.txt/schema
+  const stage5Complete = stage4Complete && s5_indexingSubmitted;
   const stage6Complete = stage5Complete && s6_sprintDone;
   const stage7Active   = stage6Complete;
 
@@ -184,8 +183,18 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     {
       id: "indexing",
       label: "Indexing",
-      status: stageStatus(5, stage5Complete, !stage5Complete && currentStep === 5 && s5_indexingSubmitted, false),
-      description: indexingDescription(),
+      // Only two states: pending (grey) or submitted (blue).
+      // Never shows complete — we can't guarantee indexing actually happened.
+      status: !stage4Complete
+        ? "pending"
+        : s5_indexingSubmitted
+        ? "active"
+        : currentStep === 5 ? "pending" : "pending",
+      description: !stage4Complete
+        ? "Awaiting content publication"
+        : s5_indexingSubmitted
+        ? "URLs submitted to indexer"
+        : "Ready to submit to indexer",
       isCurrent: currentStep === 5,
     },
     {

@@ -194,12 +194,20 @@ export default function ClientDashboard() {
             <div className="space-y-3">
               <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Platform Breakdown</h3>
               <PlatformBreakdown score={currentScore} />
-              <div className="mt-4">
+              <div className="mt-4 grid grid-cols-2 gap-2">
                 <div className="rounded-lg bg-white/[0.03] p-3 text-center">
                   <p className="text-2xl font-heading font-bold text-white">
-                    {currentScore.mentionedQueries} <span className="text-lg text-muted-foreground font-normal">of {currentScore.totalQueries}</span>
+                    {currentScore.mentionedQueries} <span className="text-base text-muted-foreground font-normal">/ {currentScore.totalQueries}</span>
                   </p>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Queries Mentioned</p>
+                </div>
+                <div className="rounded-lg bg-white/[0.03] p-3 text-center">
+                  <p className="text-sm font-heading font-bold text-white">
+                    {report.lastCheckAt
+                      ? new Date(report.lastCheckAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                      : "—"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Report Date</p>
                 </div>
               </div>
             </div>
