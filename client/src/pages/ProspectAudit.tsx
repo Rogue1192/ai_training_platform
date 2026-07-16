@@ -34,6 +34,7 @@ import {
   Store,
   ShoppingCart,
   Globe2,
+  ArrowDownLeft,
 } from "lucide-react";
 import {
   VisibilityGauge,
@@ -650,10 +651,11 @@ function ResultsStep({
                 <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2">
                   Monthly AI Searches
                 </p>
+                <ArrowDownLeft className="w-7 h-7 text-white mx-auto mb-1" />
                 <p className="text-4xl font-heading font-bold text-white">
                   {totalAISearches.toLocaleString()}
                 </p>
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-sm text-white mt-2">
                   People in your area searching these phrases
                 </p>
               </div>
@@ -663,10 +665,11 @@ function ResultsStep({
                 <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-2">
                   Your AI Visibility
                 </p>
+                <ArrowDownLeft className="w-7 h-7 text-white mx-auto mb-1" />
                 <p className="text-4xl font-heading font-bold text-white">
                   {scores.overall}
                 </p>
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-sm text-white mt-2">
                   Score out of 100 &mdash; found in {scores.queriesMentioned} of {scores.totalQueries} queries
                 </p>
               </div>
@@ -676,16 +679,17 @@ function ResultsStep({
                 <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">
                   Potential Lost Opportunities
                 </p>
+                <ArrowDownLeft className="w-7 h-7 text-white mx-auto mb-1" />
                 <p className="text-4xl font-heading font-bold text-white">
                   {lostOpportunities.toLocaleString()}
                 </p>
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-sm text-white mt-2">
                   Searches per month where you weren't visible
                 </p>
               </div>
             </div>
             {volumeUsedFallback && (
-              <p className="text-[10px] text-gray-300 text-center mt-2">
+              <p className="text-sm text-white text-center mt-3">
                 * Search volume estimates based on available AI search data. Where direct AI search data is unavailable, estimates reflect approximately 25% of Google search volume — consistent with current AI search adoption rates for local service queries.
               </p>
             )}
@@ -726,7 +730,7 @@ function ResultsStep({
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 text-lg font-bold">%</span>
                 </div>
-                <p className="text-[11px] text-gray-200 mt-1.5 text-center">
+                <p className="text-sm text-white mt-1.5 text-center">
                   % of leads you typically convert to booked jobs
                 </p>
               </div>
@@ -756,7 +760,7 @@ function ResultsStep({
                   <span>30%</span>
                   <span>60%</span>
                 </div>
-                <p className="text-[11px] text-gray-200 mt-1 text-center">
+                <p className="text-sm text-white mt-1 text-center">
                   % of missed searches you capture as inbound leads
                 </p>
               </div>
@@ -804,7 +808,7 @@ function ResultsStep({
                   >
                     ${liveRevenueGap.toLocaleString()}
                   </motion.p>
-                  <p className="text-xs text-gray-400 mt-3">
+                  <p className="text-sm text-white mt-3">
                     {revenueView === "monthly"
                       ? `${lostOpportunities.toLocaleString()} missed searches × ${captureRate}% capture × ${closeRate}% close × $${avgJobValue!.toLocaleString()} avg job`
                       : `${lostOpportunities.toLocaleString()} missed searches × ${captureRate}% capture × ${closeRate}% close × $${avgJobValue!.toLocaleString()} avg job × 12 months`
@@ -818,7 +822,7 @@ function ResultsStep({
               )}
             </div>
 
-            <p className="text-[10px] text-gray-300 text-center mt-3">
+            <p className="text-sm text-white text-center mt-3">
               * This is a revenue opportunity model, not a guarantee. Actual results depend on market conditions, service quality, and follow-up processes.
             </p>
           </motion.section>

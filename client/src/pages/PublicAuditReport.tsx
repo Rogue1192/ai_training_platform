@@ -33,6 +33,7 @@ import {
   Bot,
   Sparkles,
   Eye,
+  ArrowDownLeft,
 } from "lucide-react";
 import {
   VisibilityGauge,
@@ -69,8 +70,9 @@ function StatCard({
   return (
     <div className={`rounded-xl border p-5 text-center ${colors[color]}`}>
       <p className="text-xs uppercase tracking-widest font-semibold mb-2 opacity-80">{label}</p>
+      <ArrowDownLeft className="w-7 h-7 text-white mx-auto mb-1" />
       <p className={`text-4xl font-black ${valueColors[color]}`}>{value}</p>
-      {sub && <p className="text-xs mt-2 opacity-70">{sub}</p>}
+      {sub && <p className="text-sm text-white mt-2">{sub}</p>}
     </div>
   );
 }
@@ -116,7 +118,7 @@ function RevenueCalculator({ avgJobValue, lostOpportunities }: { avgJobValue: nu
             />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-lg font-bold">%</span>
           </div>
-          <p className="text-[11px] text-gray-600 mt-1.5 text-center">% of leads you typically convert to booked jobs</p>
+          <p className="text-sm text-white mt-1.5 text-center">% of leads you typically convert to booked jobs</p>
         </div>
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -130,10 +132,10 @@ function RevenueCalculator({ avgJobValue, lostOpportunities }: { avgJobValue: nu
             className="w-full h-2 rounded-full appearance-none cursor-pointer"
             style={{ background: `linear-gradient(to right, #22c55e ${(captureRate / 60) * 100}%, rgba(255,255,255,0.1) ${(captureRate / 60) * 100}%)` }}
           />
-          <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+          <div className="flex justify-between text-[10px] text-gray-400 mt-1">
             <span>1%</span><span>30%</span><span>60%</span>
           </div>
-          <p className="text-[11px] text-gray-600 mt-1 text-center">% of missed searches you capture as inbound leads</p>
+          <p className="text-sm text-white mt-1 text-center">% of missed searches you capture as inbound leads</p>
         </div>
       </div>
       <div className="rounded-2xl border border-green-500/25 bg-gradient-to-br from-green-500/10 to-green-900/5 p-6 text-center relative overflow-hidden">
@@ -177,7 +179,7 @@ function RevenueCalculator({ avgJobValue, lostOpportunities }: { avgJobValue: nu
             >
               ${liveRevenueGap.toLocaleString()}
             </motion.p>
-            <p className="text-xs text-gray-400 mt-3">
+            <p className="text-sm text-white mt-3">
               {revenueView === "monthly"
                 ? `${lostOpportunities.toLocaleString()} missed searches × ${captureRate}% capture × ${closeRate}% close × $${avgJobValue.toLocaleString()} avg job`
                 : `${lostOpportunities.toLocaleString()} missed searches × ${captureRate}% capture × ${closeRate}% close × $${avgJobValue.toLocaleString()} avg job × 12 months`
@@ -188,7 +190,7 @@ function RevenueCalculator({ avgJobValue, lostOpportunities }: { avgJobValue: nu
           <p className="text-3xl font-bold text-gray-600">Enter your close rate above</p>
         )}
       </div>
-      <p className="text-[10px] text-gray-700 text-center mt-3">
+      <p className="text-sm text-white text-center mt-3">
         * This is a revenue opportunity model, not a guarantee. Actual results depend on market conditions, service quality, and follow-up processes.
       </p>
     </motion.section>
