@@ -211,11 +211,13 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
 
 IMPORTANT: Do NOT fabricate any facts. Do NOT skip any credibility facts. Every fact gets its own section.
 
+SLUG RULE: The pageSlug MUST be a URL-safe version of the full page title — lowercase, hyphens instead of spaces, no special characters. Example: if the title is 'Why Eagle Air Co Is the Best HVAC Company', the slug is 'why-eagle-air-co-is-the-best-hvac-company'. Do NOT use generic slugs like 'why-choose-us'. The slug is a critical SEO and AI-visibility signal.
+
 OUTPUT FORMAT: Clean Markdown ONLY — # for H1, ## for H2, - for bullets. NO HTML tags. Copy-paste ready for any page builder.`,
     schemaTypes: ["LocalBusiness", "Organization"],
     requiredFactCategories: [], // Always generate — uses all available facts
     deliveryType: "new_page",
-    placementInstructions: "Create a new page at /why-choose-us and paste this content in. IMPORTANT: Add a link to this page from the home page navigation or footer — e.g., 'Why Choose Us' in the nav menu. This page must be crawlable from the home page.",
+    placementInstructions: "Create a new page using the pageSlug as the URL path (e.g. /why-eagle-air-co-is-the-best-hvac-company) and paste this content in. IMPORTANT: Add a link to this page from the home page navigation or footer using the business name or 'Why Choose Us' as the link text. This page must be crawlable from the home page.",
   },
 ];
 
