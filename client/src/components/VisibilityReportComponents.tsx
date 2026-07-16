@@ -11,6 +11,8 @@ import { motion } from "framer-motion";
 import {
   AreaChart,
   Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -482,6 +484,25 @@ export function VisibilityTrendChart({ trends }: { trends: any[] }) {
     );
   }
 
+  // With only one data point there's nothing to draw a line between — show a
+  // clean message instead of a single floating dot.
+  if (trends.length === 1) {
+    const t = trends[0];
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
+        <p className="text-sm text-muted-foreground">
+          This is your Day 0 baseline — the trend graph will build as weekly checks run.
+        </p>
+        <div className="flex items-center gap-6 text-sm">
+          <span className="text-green-400 font-semibold">Overall: {t.overall}</span>
+          <span className="text-blue-400">ChatGPT: {t.chatgpt}</span>
+          <span className="text-purple-400">Gemini: {t.gemini}</span>
+          <span className="text-orange-400">AI Overview: {t.aiOverview}</span>
+        </div>
+      </div>
+    );
+  }
+
   const chartData = trends.map((t) => ({
     ...t,
     date: new Date(t.date).toLocaleDateString("en-US", {
@@ -492,28 +513,10 @@ export function VisibilityTrendChart({ trends }: { trends: any[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <AreaChart
+      <LineChart
         data={chartData}
         margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
       >
-        <defs>
-          <linearGradient id="gradOverall" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.4} />
-            <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-          </linearGradient>
-          <linearGradient id="gradChatGPT" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-          </linearGradient>
-          <linearGradient id="gradGemini" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
-            <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-          </linearGradient>
-          <linearGradient id="gradAI" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
-            <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-          </linearGradient>
-        </defs>
         <CartesianGrid
           strokeDasharray="3 3"
           stroke="rgba(255,255,255,0.05)"
@@ -539,36 +542,40 @@ export function VisibilityTrendChart({ trends }: { trends: any[] }) {
             color: "#e2e8f0",
           }}
         />
-        <Area
+        <Line
           type="monotone"
           dataKey="overall"
           stroke="#22c55e"
           strokeWidth={2.5}
-          fill="url(#gradOverall)"
+          dot={false}
+          activeDot={{ r: 4 }}
           name="Overall"
         />
-        <Area
+        <Line
           type="monotone"
           dataKey="chatgpt"
           stroke="#3b82f6"
           strokeWidth={1.5}
-          fill="url(#gradChatGPT)"
+          dot={false}
+          activeDot={{ r: 3 }}
           name="ChatGPT"
         />
-        <Area
+        <Line
           type="monotone"
           dataKey="gemini"
           stroke="#a855f7"
           strokeWidth={1.5}
-          fill="url(#gradGemini)"
+          dot={false}
+          activeDot={{ r: 3 }}
           name="Gemini"
         />
-        <Area
+        <Line
           type="monotone"
           dataKey="aiOverview"
           stroke="#f97316"
           strokeWidth={1.5}
-          fill="url(#gradAI)"
+          dot={false}
+          activeDot={{ r: 3 }}
           name="AI Overview"
         />
         <Legend
@@ -576,7 +583,7 @@ export function VisibilityTrendChart({ trends }: { trends: any[] }) {
           iconType="circle"
           iconSize={8}
         />
-      </AreaChart>
+      </LineChart>
     </ResponsiveContainer>
   );
 }

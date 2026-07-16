@@ -211,8 +211,8 @@ export default function ClientDashboard() {
           <BaselineScoreCards score={baselineScore} establishedAt={report.baselineCheckAt} />
         )}
 
-        {/* Before/After Comparison */}
-        {baselineScore && (
+        {/* Before/After Comparison — only show after at least one post-baseline check */}
+        {baselineScore && !report.isBaselineOnly && (
           <motion.section
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
