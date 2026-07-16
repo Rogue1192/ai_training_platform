@@ -225,6 +225,19 @@ export default function CampaignDetail() {
     onError: (err) => toast.error(err.message),
   });
 
+  const [isRunningBaseline, setIsRunningBaseline] = useState(false);
+  const runBaselineMutation = trpc.campaign.runBaselineCheck.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Baseline complete — ${(result as any).snapshotsCreated ?? 0} snapshot(s) recorded`);
+      setIsRunningBaseline(false);
+      refetchCampaign();
+    },
+    onError: (error) => {
+      toast.error(`Baseline check failed: ${error.message}`);
+      setIsRunningBaseline(false);
+    },
+  });
+
   const [isRunningRankCheck, setIsRunningRankCheck] = useState(false);
   const rankCheckMutation = trpc.rankTracking.runCheck.useMutation({
     onSuccess: (result) => {
@@ -352,6 +365,22 @@ export default function CampaignDetail() {
           >
             <RefreshCw className="w-4 h-4 mr-2" />
             Regenerate Queries
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setIsRunningBaseline(true);
+              runBaselineMutation.mutate({ campaignId });
+            }}
+            disabled={isRunningBaseline || runBaselineMutation.isPending}
+            title="Run baseline rank check across all queries — records Day 0 positions before training"
+          >
+            {isRunningBaseline || runBaselineMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Eye className="w-4 h-4 mr-2" />
+            )}
+            Run Baseline
           </Button>
           <Button onClick={handleRunFull} disabled={runFullMutation.isPending}>
             {runFullMutation.isPending ? (
