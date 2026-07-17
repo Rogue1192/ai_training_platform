@@ -398,145 +398,26 @@ export async function runPipelineStep(
           console.log(`[Pipeline] Smart scheduler mode change skipped: ${e.message}`);
         }
 
-        // ── Create one training session per keyword × location × AI model ──────────
-        // Each session has exactly 8 prompt variations for that specific query+location.
-        // This keeps context windows tight and token costs low vs. one giant pooled session.
-        const { trainingSessions: tsTable, campaignQueryLocations: cqlTable } = await import("../drizzle/schema");
-        const { expandQueryToPrompts } = await import("./queryPromptExpander");
-        const { createTrainingSession } = await import("./db");
+        // ── V3: Create 4-day sprint schedule ──────────────────────────────────────
+        // trainingQueries (phrases) are seeded when campaignQueryLocations are created.
+        // The pipeline step just needs to create the trainingDayRuns sprint schedule
+        // and set the campaign status to training. checkV3SprintRuns fires Day 1
+        // on its next 30-min tick.
+        const { createSprintSchedule } = await import("./trainingWorkerV3");
 
-        // Fetch all query-location combos for this campaign
-        const queryLocations = await db.select().from(cqlTable)
-          .where(eq(cqlTable.campaignId, campaignId));
+        // Idempotency: only create the sprint schedule if no day runs exist yet
+        const { trainingDayRuns: tdrCheck } = await import("../drizzle/schema");
+        const existingRuns = await db.select({ id: tdrCheck.id })
+          .from(tdrCheck)
+          .where(eq(tdrCheck.campaignId, campaignId))
+          .limit(1);
 
-        // Check which ql+label combinations already have sessions.
-        // This is TARGET-LEVEL idempotency: a combo that already has ChatGPT and
-        // Gemini sessions will still get an AI Overview session created on re-runs,
-        // and a new 4th target added in future can be backfilled the same way.
-        // We key by qlId + trainingName suffix (last segment after " | ") so that
-        // Gemini and AI Overview — which share the same model — are distinguished.
-        const existingSessionKeys = new Set(
-          (await db.select({
-            qlId: tsTable.campaignQueryLocationId,
-            name: tsTable.trainingName,
-          }).from(tsTable)
-            .where(eq(tsTable.campaignId, campaignId)))
-            .filter(r => r.qlId != null && r.name != null)
-            .map(r => {
-              // Extract the label segment: last " | "-delimited part of the name
-              const parts = (r.name as string).split(" | ");
-              const label = parts[parts.length - 1] ?? "";
-              return `${r.qlId}::${label}`;
-            })
-        );
-
-        const sessionTargets = [
-          { provider: "openai" as const, model: "gpt-4.1", label: "ChatGPT" },
-          { provider: "google" as const, model: "gemini-2.5-flash", label: "Gemini" },
-          // AI Overview uses the same Gemini model but with search-query-style prompt
-          // framing so the model learns to surface the business in Google AI Overview.
-          // Distinguished by the "AI Overview" label in trainingName.
-          { provider: "google" as const, model: "gemini-2.5-flash", label: "AI Overview" },
-        ];
-
-        let sessionsCreated = 0;
-        let sessionsSkipped = 0;
-
-        // Scope-aware helpers
-        const campaignScope = (campaign as any).campaignScope ?? 'local';
-        const isLocal = campaignScope === 'local';
-
-        for (const ql of queryLocations) {
-          // (idempotency is now checked per-target below)
-
-          // Build 8 prompt variations scoped to this specific query + location
-          // For national/ecommerce campaigns, omit the location so prompts don't
-          // anchor the business to a specific city.
-          const expanded = expandQueryToPrompts({
-            rawQuery: ql.searchQuery,
-            businessName: business.name,
-            businessType: business.businessType || "service provider",
-            location: isLocal ? ql.location : (ql.location || ""),
-          });
-          const prompts = expanded.all; // max 8 variations
-
-          const trainingGoal = isLocal
-            ? `Train AI to recommend ${business.name} for ${ql.searchQuery} in ${ql.location}`
-            : `Train AI to recommend ${business.name} for ${ql.searchQuery}`;
-          const topic = isLocal
-            ? `${business.name} — ${ql.searchQuery} — ${ql.location}`
-            : `${business.name} — ${ql.searchQuery}`;
-
-          for (const target of sessionTargets) {
-            // Skip this specific ql+label combo if a session already exists
-            const sessionKey = `${ql.id}::${target.label}`;
-            if (existingSessionKeys.has(sessionKey)) {
-              sessionsSkipped++;
-              continue;
-            }
-            try {
-              await createTrainingSession({
-                userId,
-                businessId: campaign.businessId,
-                campaignId,
-                campaignQueryLocationId: ql.id,
-                trainingName: isLocal
-                  ? `${business.name} | ${ql.location} | ${ql.searchQuery} | ${target.label}`
-                  : `${business.name} | ${ql.searchQuery} | ${target.label}`,
-                topic,
-                targetAiProvider: target.provider as any,
-                targetAiModel: target.model,
-                influencerAiProvider: "minimax" as any,
-                influencerAiModel: "MiniMax-M2.7",
-                trainingPrompts: prompts,
-                trainingGoal,
-                iterations: 50,
-                currentProgress: 0,
-                status: "paused" as any,
-                isLegacy: false,
-              });
-              sessionsCreated++;
-            } catch (e: any) {
-              console.warn(`[Pipeline] Could not create ${target.label} session for ql#${ql.id}: ${e.message}`);
-            }
-          }
-
-          // Mark this combo as ready for its first training run (only if at least
-          // one session was created — avoids resetting status on fully-skipped combos)
-          if (sessionsCreated > 0) {
-            await db.update(cqlTable).set({
-              trainingStatus: "training",
-              updatedAt: new Date(),
-            }).where(eq(cqlTable.id, ql.id));
-          }
-        }
-
-        // ── Bootstrap the training cycle (fire Run 1) ─────────────────────────
-        // Without this the sessions created above stay `paused` forever. The
-        // hourly cycle-advancer (checkTrainingCycleAdvances → advanceCampaignCycle)
-        // only picks up combos whose nextPollAt is in the past, but nextPollAt
-        // starts NULL and is ONLY set inside the cycle itself. startInitialTrainingCycle
-        // is the one place that fires Run 1 and seeds nextPollAt = now + 24h so the
-        // scheduler can take over for runs 2–4. It was defined but never called.
-        try {
-          const { startInitialTrainingCycle } = await import("./trainingCycleOrchestrator");
-          const kickoff = await startInitialTrainingCycle(campaignId, userId);
-          console.log(`[Pipeline] Initial training cycle bootstrapped: ${kickoff.combosStarted} combo(s) started Run 1`);
-          if (kickoff.errors.length) {
-            console.warn(`[Pipeline] Initial cycle kickoff errors:`, kickoff.errors);
-          }
-        } catch (e: any) {
-          console.warn(`[Pipeline] Failed to bootstrap initial training cycle: ${e.message}`);
-        }
-
-        const totalCombos = queryLocations.length;
         let trainingMessage: string;
-        if (sessionsCreated > 0) {
-          trainingMessage = `Created ${sessionsCreated} training sessions across ${totalCombos} keyword×location combos (3 targets each: ChatGPT, Gemini, AI Overview). ${sessionsSkipped > 0 ? `${sessionsSkipped} target sessions already existed and were skipped.` : ""} Training cycle will start automatically — Run 1 fires immediately, then 24h LLM polls between runs 2–4.`;
-        } else if (sessionsSkipped === totalCombos * 3) {
-          trainingMessage = `All ${totalCombos} keyword×location combos already have training sessions (ChatGPT, Gemini, AI Overview). Training cycle continuing.`;
+        if (existingRuns.length === 0) {
+          await createSprintSchedule(campaignId);
+          trainingMessage = `V3 sprint schedule created (4 training days). Day 1 will fire on the next scheduler tick (within 30 minutes).`;
         } else {
-          trainingMessage = `Campaign ready for training (aggressive mode). Could not auto-create sessions — create them manually from the Training page.`;
+          trainingMessage = `Sprint schedule already exists for campaign ${campaignId} — training continuing.`;
         }
         
         // Update campaign status
