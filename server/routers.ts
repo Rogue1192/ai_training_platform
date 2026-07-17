@@ -1519,6 +1519,121 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           accessCount: 0,
         });
 
+        // ── Scenario A: Prospect audit exists for this domain ───────────────────
+        // If a completed prospect audit exists for the same normalised domain,
+        // promote its queries and snapshot results to the campaign so we can skip
+        // keyword research, query review, and the baseline check entirely.
+        // The audit data IS the baseline — no re-run needed.
+        let scenarioA = false;
+        try {
+          const { prospectAudits, rankSnapshots: rsTable } = await import('../drizzle/schema');
+          const { eq: eqA, isNotNull: isNotNullA, and: andA } = await import('drizzle-orm');
+          // Derive normalised domain from the business website
+          const { getBusinessById: _getBizForAudit } = await import('./db');
+          const bizForAudit = await _getBizForAudit(businessId);
+          const websiteRaw = bizForAudit?.website ?? '';
+          let normalizedDomain = '';
+          try {
+            const u = new URL(websiteRaw.startsWith('http') ? websiteRaw : `https://${websiteRaw}`);
+            normalizedDomain = u.hostname.replace(/^www\./, '');
+          } catch { /* ignore */ }
+
+          if (normalizedDomain) {
+            const [existingAudit] = await db
+              .select()
+              .from(prospectAudits)
+              .where(andA(
+                eqA(prospectAudits.normalizedDomain, normalizedDomain),
+                isNotNullA(prospectAudits.completedAt),
+                isNotNullA(prospectAudits.snapshotResults),
+              ))
+              .orderBy(prospectAudits.completedAt)
+              .limit(1);
+
+            if (existingAudit && Array.isArray(existingAudit.queries) && (existingAudit.queries as any[]).length > 0) {
+              const auditQueries = existingAudit.queries as Array<{ searchQuery: string; location: string }>;
+              const auditSnapshots = (existingAudit.snapshotResults ?? []) as Array<any>;
+
+              // 1. Seed campaignQueryLocations from audit queries (if not already seeded above)
+              if (entries.length === 0) {
+                const auditEntries = auditQueries.map(q => ({
+                  campaignId: campaign.id,
+                  searchQuery: q.searchQuery,
+                  location: q.location,
+                  trainingStatus: 'pending' as const,
+                  trainingSessions: 0,
+                }));
+                await createCampaignQueryLocations(auditEntries);
+
+                // 2. Seed trainingQueries from audit queries
+                const uniqueAuditQueries = Array.from(new Set(auditQueries.map(q => q.searchQuery)));
+                const { trainingQueries: tqAudit } = await import('../drizzle/schema');
+                for (let i = 0; i < uniqueAuditQueries.length; i++) {
+                  await db.insert(tqAudit).values({
+                    campaignId: campaign.id,
+                    businessId,
+                    phraseText: uniqueAuditQueries[i],
+                    phraseVariations: [uniqueAuditQueries[i]],
+                    sortOrder: i + 1,
+                    isActive: true,
+                    lockedAt: new Date(),
+                  });
+                }
+              }
+
+              // 3. Promote audit snapshots to rankSnapshots as baseline data
+              // We need the queryLocationId for each snapshot — look them up by searchQuery+location
+              const { campaignQueryLocations: cqlTable } = await import('../drizzle/schema');
+              const { eq: eqQL } = await import('drizzle-orm');
+              const allCQL = await db.select().from(cqlTable).where(eqQL(cqlTable.campaignId, campaign.id));
+              const cqlMap = new Map(allCQL.map(c => [`${c.searchQuery}|||${c.location}`, c.id]));
+
+              for (const snap of auditSnapshots) {
+                const cqlId = cqlMap.get(`${snap.searchQuery}|||${snap.location}`);
+                if (!cqlId) continue;
+                await db.insert(rsTable).values({
+                  campaignId: campaign.id,
+                  queryLocationId: cqlId,
+                  chatgptMentioned: snap.chatgptMentioned ?? false,
+                  chatgptPosition: snap.chatgptPosition ?? null,
+                  chatgptResponseSnippet: snap.chatgptResponseSnippet ?? null,
+                  geminiMentioned: snap.geminiMentioned ?? false,
+                  geminiPosition: snap.geminiPosition ?? null,
+                  geminiResponseSnippet: snap.geminiResponseSnippet ?? null,
+                  aiOverviewMentioned: snap.aiOverviewMentioned ?? false,
+                  aiOverviewPosition: snap.aiOverviewPosition ?? null,
+                  aiOverviewResponseSnippet: snap.aiOverviewResponseSnippet ?? null,
+                  sourcesCited: snap.sourcesCited ?? [],
+                  checkType: 'baseline',
+                  isTracked: true,
+                  checkedAt: existingAudit.completedAt ?? new Date(),
+                });
+              }
+
+              // 4. Advance campaign: mark keyword research + baseline as done, skip to credibility_research
+              const { campaigns: cmpTable } = await import('../drizzle/schema');
+              await db.update(cmpTable).set({
+                status: 'credibility_research',
+                keywordResearchCompletedAt: existingAudit.completedAt ?? new Date(),
+                baselineCheckCompletedAt: existingAudit.completedAt ?? new Date(),
+                updatedAt: new Date(),
+              }).where(eqA(cmpTable.id, campaign.id));
+
+              // 5. Link the audit back to this campaign
+              await db.update(prospectAudits).set({
+                campaignId: campaign.id,
+                baselinePromotedAt: new Date(),
+                updatedAt: new Date(),
+              }).where(eqA(prospectAudits.id, existingAudit.id));
+
+              scenarioA = true;
+              console.log(`[ManualCreate] Scenario A: promoted audit ${existingAudit.id} to campaign ${campaign.id} — skipping keyword research and baseline check`);
+            }
+          }
+        } catch (auditErr: any) {
+          console.error('[ManualCreate] Scenario A audit promotion failed (non-fatal):', auditErr.message);
+        }
+
         // Auto-start pipeline
         setImmediate(async () => {
           try {
@@ -1534,7 +1649,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           campaignId: campaign.id,
           businessId,
           dashboardToken: accessToken,
-          message: `Campaign "${campaign.campaignName}" created successfully.`,
+          message: `Campaign "${campaign.campaignName}" created successfully.${ scenarioA ? ' Existing audit baseline linked — skipping keyword research and baseline check.' : '' }`,
+          scenarioA,
         };
       }),
 
@@ -3372,10 +3488,47 @@ export const llmInsightsRouter = router({
       runNext: z.boolean().optional().default(true),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { updateCampaign, getCampaignById } = await import('./dbCampaigns');
+      const { updateCampaign, getCampaignById, getQueryLocationsByCampaignId } = await import('./dbCampaigns');
       const campaign = await getCampaignById(input.campaignId);
       if (!campaign) throw new Error('Campaign not found');
       if (campaign.status !== 'query_review') throw new Error('Campaign is not in query_review status');
+
+      // Seed trainingQueries from campaignQueryLocations if not already seeded.
+      // This is the canonical seeding point for the standard pipeline path
+      // (keyword research auto-generates queries → admin approves → we seed here).
+      try {
+        const { getDb } = await import('./db');
+        const db = await getDb();
+        if (db) {
+          const { trainingQueries } = await import('../drizzle/schema');
+          const { eq: eqTQ, count: countTQ } = await import('drizzle-orm');
+          // Only seed if trainingQueries is empty for this campaign
+          const existing = await db
+            .select({ n: countTQ() })
+            .from(trainingQueries)
+            .where(eqTQ(trainingQueries.campaignId, input.campaignId));
+          const alreadySeeded = Number(existing[0]?.n ?? 0) > 0;
+          if (!alreadySeeded) {
+            const queryLocations = await getQueryLocationsByCampaignId(input.campaignId);
+            const uniqueQueries = Array.from(new Set(queryLocations.map((q: any) => q.searchQuery).filter(Boolean)));
+            for (let i = 0; i < uniqueQueries.length; i++) {
+              await db.insert(trainingQueries).values({
+                campaignId: input.campaignId,
+                businessId: campaign.businessId,
+                phraseText: uniqueQueries[i],
+                phraseVariations: [uniqueQueries[i]],
+                sortOrder: i + 1,
+                isActive: true,
+                lockedAt: new Date(),
+              });
+            }
+            console.log(`[approveQueryReview] Seeded ${uniqueQueries.length} trainingQueries for campaign ${input.campaignId}`);
+          }
+        }
+      } catch (seedErr: any) {
+        console.error('[approveQueryReview] trainingQueries seeding failed (non-fatal):', seedErr.message);
+      }
+
       // Advance to baseline_check — MUST run before content_generation and indexing
       await updateCampaign(input.campaignId, { status: 'baseline_check', baselineCheckCompletedAt: null });
       if (input.runNext) {

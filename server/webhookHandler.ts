@@ -477,6 +477,32 @@ export function createWebhookRouter(): Router {
 
       if (entries.length > 0) {
         await createCampaignQueryLocations(entries);
+
+        // Seed trainingQueries from the pre-set queries so the V3 sprint scheduler
+        // has something to train on. This mirrors what approveQueryReview does for
+        // the standard (auto-generate) path.
+        try {
+          const { getDb } = await import('./db');
+          const db = await getDb();
+          if (db) {
+            const { trainingQueries: tqTable } = await import('../drizzle/schema');
+            const uniqueQueries = Array.from(new Set(entries.map(e => e.searchQuery).filter(Boolean)));
+            for (let i = 0; i < uniqueQueries.length; i++) {
+              await db.insert(tqTable).values({
+                campaignId: campaign.id,
+                businessId,
+                phraseText: uniqueQueries[i],
+                phraseVariations: [uniqueQueries[i]],
+                sortOrder: i + 1,
+                isActive: true,
+                lockedAt: new Date(),
+              });
+            }
+            console.log(`[Webhook] Seeded ${uniqueQueries.length} trainingQueries for campaign ${campaign.id}`);
+          }
+        } catch (seedErr: any) {
+          console.error('[Webhook] trainingQueries seeding failed (non-fatal):', seedErr.message);
+        }
       }
 
       // Create the client dashboard with a private access token

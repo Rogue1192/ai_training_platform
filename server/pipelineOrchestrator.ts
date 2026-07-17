@@ -4,14 +4,13 @@
  * Connects all AI Answer Forge sprint services into a single automated pipeline.
  * When a GHL webhook creates a campaign, the orchestrator can run the full flow:
  * 
- * 1. Keyword Research (Sprint 3) — already built
- * 2. Credibility Research (Sprint 4) — already built
- * 3. Content Generation (Sprint 5) — already built
- * 4. Content Publishing — manual copy workflow (content generated, team notified, URLs entered in dashboard)
- * 5. Monkey Indexer Indexing Submission — replaces SinByte
- * 6. Wait 3-4 days for indexing
- * 7. Baseline Rank Check (Sprint 3) — already built
- * 8. Training kickoff (Sprint 11 — future)
+ * 1. Keyword Research — auto-generates queries; pauses at query_review for admin approval
+ * 2. Baseline Check — fires automatically after query approval; captures Day-0 AI visibility snapshot
+ * 3. Credibility Research — auto-runs after baseline
+ * 4. Content Generation — auto-runs after credibility research
+ * 5. Publishing — pauses here if content URLs are missing; auto-advances if all URLs already present
+ * 6. Indexing — submits live URLs to Monkey Indexer; scheduler advances to training after submission
+ * 7. V3 Sprint Training — 4-day sprint; scheduler fires each day automatically
  * 
  * The orchestrator tracks progress per campaign and can resume from any step
  * if a previous step failed. It also supports running individual steps manually.
@@ -246,45 +245,67 @@ export async function runPipelineStep(
       }
       
       case "publishing": {
-        // Content is generated and stored in the DB. Notify the team and pause here.
-        // Pipeline resumes automatically once all live URLs are entered in the Content tab.
+        // Check if all publishable content pages already have URLs entered.
+        // If yes: set publishingCompletedAt and let the pipeline continue to indexing.
+        // If no: send the team notification email and pause here — pipeline resumes
+        //        automatically when setContentPageUrl enters the last missing URL.
         const { contentPages: cpTable } = await import("../drizzle/schema");
-        const { eq: eqOp } = await import("drizzle-orm");
-        const pages = await db.select().from(cpTable).where(eqOp(cpTable.campaignId, campaignId));
-        const NON_PUBLISHABLE_TYPES = new Set(["llm_txt", "schema_package", "schema_audit", "schema_delivery"]);
-        const pageCount = pages.filter(p => !NON_PUBLISHABLE_TYPES.has(p.pageType)).length;
-        const adminUrl = `${process.env.APP_BASE_URL ?? ""}/campaigns/${campaignId}`;
-        try {
-          const { notifyOwner } = await import("./_core/notification");
-          await notifyOwner({
-            title: `Content Ready for Publishing: ${business.name}`,
-            content: [
-              `${pageCount} credibility page(s) have been generated for ${business.name} and are ready to be copied into the client's website.`,
-              "",
-              "Action required:",
-              "1. Open the campaign in the dashboard (link below).",
-              "2. Go to the Content tab — each page shows its placement instructions and a Copy button.",
-              "3. Paste the content into the correct page on the client's site.",
-              "4. Enter the live URL for each page in the dashboard.",
-              "5. Indexing will start automatically once all URLs are saved.",
-              "",
-              `Campaign: ${adminUrl}`,
-            ].join("\n"),
-          });
-        } catch (emailErr: any) {
-          console.error("[Pipeline] Failed to send content-ready notification:", emailErr.message);
+        const { eq: eqOp, isNull: isNullOp, notInArray: notInArrayOp } = await import("drizzle-orm");
+        const NON_PUBLISHABLE_TYPES = ["llm_txt", "schema_package", "schema_audit", "schema_delivery"];
+        const allPages = await db.select().from(cpTable).where(eqOp(cpTable.campaignId, campaignId));
+        const publishablePages = allPages.filter(p => !NON_PUBLISHABLE_TYPES.includes(p.pageType));
+        const missingUrlPages = publishablePages.filter(p => !p.publishedUrl);
+
+        if (missingUrlPages.length === 0 && publishablePages.length > 0) {
+          // All URLs present — auto-advance: set publishingCompletedAt and continue pipeline
+          await db.update(campaigns).set({
+            publishingCompletedAt: new Date(),
+            status: "indexing",
+            updatedAt: new Date(),
+          }).where(eq(campaigns.id, campaignId));
+          result = {
+            step,
+            success: true,
+            message: `All ${publishablePages.length} content URL(s) already present — publishing complete, advancing to indexing.`,
+            data: { pageCount: publishablePages.length, autoAdvanced: true },
+            nextStep: "indexing",
+          };
+        } else {
+          // URLs missing — notify team and pause
+          const pageCount = publishablePages.length;
+          const adminUrl = `${process.env.APP_BASE_URL ?? ""}/campaigns/${campaignId}`;
+          try {
+            const { notifyOwner } = await import("./_core/notification");
+            await notifyOwner({
+              title: `Content Ready for Publishing: ${business.name}`,
+              content: [
+                `${pageCount} credibility page(s) have been generated for ${business.name} and are ready to be copied into the client's website.`,
+                "",
+                "Action required:",
+                "1. Open the campaign in the dashboard (link below).",
+                "2. Go to the Content tab — each page shows its placement instructions and a Copy button.",
+                "3. Paste the content into the correct page on the client's site.",
+                "4. Enter the live URL for each page in the dashboard.",
+                "5. Indexing will start automatically once all URLs are saved.",
+                "",
+                `Campaign: ${adminUrl}`,
+              ].join("\n"),
+            });
+          } catch (emailErr: any) {
+            console.error("[Pipeline] Failed to send content-ready notification:", emailErr.message);
+          }
+          await db.update(campaigns).set({
+            status: "publishing",
+            updatedAt: new Date(),
+          }).where(eq(campaigns.id, campaignId));
+          result = {
+            step,
+            success: true,
+            message: `Content ready for publishing. ${pageCount} page(s) generated — team notified. Enter live URLs in the Content tab to trigger indexing.`,
+            data: { pageCount, waitingForUrls: true },
+            // nextStep intentionally omitted — pipeline pauses here until admin enters URLs
+          };
         }
-        await db.update(campaigns).set({
-          status: "publishing",
-          updatedAt: new Date(),
-        }).where(eq(campaigns.id, campaignId));
-        result = {
-          step,
-          success: true,
-          message: `Content ready for publishing. ${pageCount} page(s) generated — team notified. Enter live URLs in the Content tab to trigger indexing.`,
-          data: { pageCount },
-          // nextStep intentionally omitted — pipeline pauses here until admin enters URLs
-        };
         break;
       }
       
@@ -504,8 +525,14 @@ export async function runFullPipeline(
       return { stepsRun, stoppedAt: step, reason: "stopped" };
     }
 
-    // Stop after indexing submission — training gate (llm.txt + schema) must be
-    // cleared manually before the pipeline advances to training.
+    // Stop after publishing if URLs are still missing — pipeline resumes automatically
+    // when setContentPageUrl enters the last URL.
+    if (step === "publishing" && result.data?.waitingForUrls) {
+      return { stepsRun, stoppedAt: step, reason: "waiting" };
+    }
+
+    // Stop after indexing submission — training kickoff is handled by the scheduler
+    // (checkPendingTrainingKickoffs) once indexingSubmittedAt is set.
     if (step === "indexing") {
       return { stepsRun, stoppedAt: step, reason: "waiting" };
     }
