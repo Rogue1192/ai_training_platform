@@ -1388,40 +1388,49 @@ export async function checkV3SprintRuns(): Promise<void> {
 
     console.log(`[SchedulerV3] Found ${pendingRuns.length} pending training day run(s)`);
 
+    // Non-publishable page types that never get a publishedUrl
+    const { inArray: inArrayV3, not: notV3 } = await import('drizzle-orm');
+    const NON_PUBLISHABLE = ['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery'];
+
     for (const run of pendingRuns) {
-      // Verify campaign still passes all gates
-      const [campaign] = await db
-        .select()
-        .from(cTable)
-        .where(
-          andV3(
-            eqV3(cTable.id, run.campaignId),
-            eqV3(cTable.llmTxtVerified, true),
-            eqV3(cTable.schemaVerified, true)
+      // Day 1 only: verify llm.txt and schema are verified before starting the sprint.
+      // Days 2-4: these were already verified on Day 1 — skip the gate to avoid
+      // blocking training if a flag was accidentally cleared.
+      if (run.runDay === 1) {
+        const [campaign] = await db
+          .select()
+          .from(cTable)
+          .where(
+            andV3(
+              eqV3(cTable.id, run.campaignId),
+              eqV3(cTable.llmTxtVerified, true),
+              eqV3(cTable.schemaVerified, true)
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
 
-      if (!campaign) {
-        console.log(`[SchedulerV3] Campaign ${run.campaignId} failed gate check — skipping run ${run.id}`);
-        continue;
-      }
+        if (!campaign) {
+          console.log(`[SchedulerV3] Campaign ${run.campaignId} failed Day 1 gate check (llm.txt/schema not verified) — skipping run ${run.id}`);
+          continue;
+        }
 
-      // Check all content page URLs are present
-      const missingUrlPages = await db
-        .select({ id: cpTable.id })
-        .from(cpTable)
-        .where(
-          andV3(
-            eqV3(cpTable.campaignId, run.campaignId),
-            isNullV3(cpTable.publishedUrl)
+        // Day 1 only: check all publishable content page URLs are present
+        const missingUrlPages = await db
+          .select({ id: cpTable.id })
+          .from(cpTable)
+          .where(
+            andV3(
+              eqV3(cpTable.campaignId, run.campaignId),
+              isNullV3(cpTable.publishedUrl),
+              notV3(inArrayV3(cpTable.pageType, NON_PUBLISHABLE))
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
 
-      if (missingUrlPages.length > 0) {
-        console.log(`[SchedulerV3] Campaign ${run.campaignId} has missing content URLs — skipping run ${run.id}`);
-        continue;
+        if (missingUrlPages.length > 0) {
+          console.log(`[SchedulerV3] Campaign ${run.campaignId} has missing content URLs on Day 1 — skipping run ${run.id}`);
+          continue;
+        }
       }
 
       try {
