@@ -618,7 +618,8 @@ export async function generateAllContentPages(params: {
             address: businessAddress,
             website: websiteUrl,
             description: businessDescription,
-          }
+          },
+          schemaPkg.publishedPageUrls ?? []
         );
 
         // Step 4a: Store audit result as schema_audit page

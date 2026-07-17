@@ -2145,7 +2145,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
               address: business.address ?? null,
               website: websiteUrl,
               description: business.description ?? null,
-            }
+            },
+            schemaPkg.publishedPageUrls ?? []
           );
 
           // Upsert schema_audit

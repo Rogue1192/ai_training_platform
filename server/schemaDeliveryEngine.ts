@@ -147,7 +147,8 @@ export function buildSchemaDeliveryPlan(
     website?: string | null;
     description?: string | null;
     priceRange?: string | null;
-  }
+  },
+  publishedPageUrls: Array<{ pageType: string; url: string; title: string }> = []
 ): SchemaDeliveryPlan {
   const blocks: SchemaDeliveryBlock[] = [];
   const gapFields: SchemaGapField[] = [];
@@ -183,61 +184,102 @@ export function buildSchemaDeliveryPlan(
   // Pre-build a set of scraped FAQ Q&A pairs from the audit for enrichment
   const scrapedFaqPairs = audit.existingFaqPairs || [];
 
+  // Build a lookup map: pageType → published URL
+  const pageUrlMap = new Map<string, string>();
+  for (const p of publishedPageUrls) {
+    pageUrlMap.set(p.pageType, p.url);
+  }
+
+  /**
+   * Build a placement instruction for a per-page schema block.
+   * Always references the actual published URL when available.
+   * Schema goes in the <head> of the page — NOT in the body content.
+   */
+  function perPageInstruction(pageType: string, fallbackPageName: string, extraNote?: string): string {
+    const url = pageUrlMap.get(pageType);
+    const location = url ? `the <head> of ${url}` : `the <head> of the ${fallbackPageName} page`;
+    const base = `Paste into ${location}. In WordPress, use the page's SEO plugin (Yoast/RankMath → Schema tab) or the page's Header Scripts field. Do NOT paste into the page body — schema goes in the <head> only.`;
+    return extraNote ? `${base} ${extraNote}` : base;
+  }
+
   const pageTypeLabels: Record<string, { label: string; instructions: string; priority: number }> = {
     faq: {
       label: "FAQPage Schema",
-      instructions:
-        "Paste at the bottom of the FAQ page content (before </body>). This enables Google FAQ rich results and helps AI models extract your Q&A pairs directly.",
+      instructions: perPageInstruction(
+        "faq",
+        "FAQ",
+        "This FAQPage schema MUST only appear on the FAQ page — not site-wide. It enables Google FAQ rich results and helps AI models extract Q&A pairs directly."
+      ),
+      priority: 2,
+    },
+    faq_page: {
+      label: "FAQPage Schema",
+      instructions: perPageInstruction(
+        "faq_page",
+        "FAQ",
+        "This FAQPage schema MUST only appear on the FAQ page — not site-wide. It enables Google FAQ rich results and helps AI models extract Q&A pairs directly."
+      ),
       priority: 2,
     },
     about: {
       label: "About Page Schema (Article)",
-      instructions:
-        "Paste at the bottom of the About Us page content. Signals to AI crawlers that this is authoritative content about the business.",
+      instructions: perPageInstruction(
+        "about",
+        "About Us",
+        "Signals to AI crawlers that this is authoritative content about the business."
+      ),
       priority: 3,
+    },
+    pricing: {
+      label: "Pricing Page Schema",
+      instructions: perPageInstruction("pricing", "Pricing"),
+      priority: 5,
+    },
+    credibility_profile: {
+      label: "Credibility Profile Schema",
+      instructions: perPageInstruction(
+        "credibility_profile",
+        "Credibility / Why Choose Us",
+        "Includes credentials, certifications, and trust signals for this business."
+      ),
+      priority: 4,
     },
     credibility_awards: {
       label: "Awards & Recognition Schema",
-      instructions:
-        "Paste at the bottom of the Awards/Recognition page content.",
+      instructions: perPageInstruction("credibility_awards", "Awards/Recognition"),
       priority: 5,
     },
     credibility_certifications: {
       label: "Certifications Schema",
-      instructions:
-        "Paste at the bottom of the Certifications page content.",
+      instructions: perPageInstruction("credibility_certifications", "Certifications"),
       priority: 5,
     },
     credibility_team: {
       label: "Team Page Schema",
-      instructions:
-        "Paste at the bottom of the Team/Staff page content.",
+      instructions: perPageInstruction("credibility_team", "Team/Staff"),
       priority: 6,
     },
     credibility_services: {
       label: "Services Schema",
-      instructions:
-        "Paste at the bottom of the Services page content.",
+      instructions: perPageInstruction("credibility_services", "Services"),
       priority: 4,
     },
     credibility_process: {
       label: "Process / How It Works Schema",
-      instructions:
-        "Paste at the bottom of the Process/How It Works page content.",
+      instructions: perPageInstruction("credibility_process", "Process/How It Works"),
       priority: 6,
     },
     credibility_pricing: {
       label: "Pricing Schema",
-      instructions:
-        "Paste at the bottom of the Pricing page content.",
+      instructions: perPageInstruction("credibility_pricing", "Pricing"),
       priority: 5,
     },
   };
 
   for (const [pageType, pageSchema] of Object.entries(schemaPkg.pageSchemas)) {
     const meta = pageTypeLabels[pageType] || {
-      label: `${pageType} Page Schema`,
-      instructions: `Paste at the bottom of the ${pageType} page content.`,
+      label: `${pageType.replace(/_/g, " ")} Page Schema`,
+      instructions: perPageInstruction(pageType, pageType.replace(/_/g, " ")),
       priority: 7,
     };
 

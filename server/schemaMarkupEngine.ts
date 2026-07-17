@@ -49,6 +49,8 @@ export interface SchemaPackage {
   siteWideSchema: SchemaBlock;
   /** Per-page schemas keyed by pageType */
   pageSchemas: Record<string, SchemaBlock>;
+  /** Published URL for each content page — used to build per-page placement instructions */
+  publishedPageUrls: Array<{ pageType: string; url: string; title: string }>;
   /** Human-readable summary of what was included */
   summary: string;
   /** ISO timestamp */
@@ -697,6 +699,8 @@ export function buildCertificationsPageSchema(page: {
   businessName: string;
   businessWebsite?: string | null;
   businessType?: string | null;
+  /** When true, also extract FAQs from the page content and include a FAQPage block */
+  includeFaqGraph?: boolean;
 }, certFacts: CredibilityFact[]): SchemaBlock {
   const schemaType = resolveSchemaType(page.businessType);
   const credentials = certFacts.map((f) => ({
@@ -706,7 +710,7 @@ export function buildCertificationsPageSchema(page: {
     ...(f.verificationUrl ? { url: f.verificationUrl } : {}),
   }));
 
-  return {
+  const articleBlock: SchemaBlock = {
     "@context": "https://schema.org",
     "@type": "Article",
     headline: page.pageTitle,
@@ -724,6 +728,40 @@ export function buildCertificationsPageSchema(page: {
     },
     datePublished: new Date().toISOString().split("T")[0],
   };
+
+  // For credibility_profile pages: also extract the FAQ section and attach a
+  // FAQPage block in an @graph. The credibility_profile page is Markdown and
+  // always ends with a ## FAQ / ## Frequently Asked Questions section whose
+  // Q&As are grounded in the business's specific credentials — far more
+  // valuable for AI citation than the generic /faq page.
+  if (page.includeFaqGraph) {
+    const faqSchema = buildFAQPageSchema({
+      pageTitle: page.pageTitle,
+      pageContent: page.pageContent,
+      publishedUrl: page.publishedUrl,
+      businessName: page.businessName,
+      businessWebsite: page.businessWebsite,
+    });
+
+    const hasFaqs =
+      Array.isArray(faqSchema.mainEntity) && faqSchema.mainEntity.length > 0;
+
+    if (hasFaqs) {
+      // Return an @graph so both Article and FAQPage live on the same page URL.
+      // The @type field is set to the primary type (Article) for SchemaBlock
+      // compatibility; the full graph is in @graph.
+      return {
+        "@context": "https://schema.org",
+        "@type": "Article", // primary type for SchemaBlock interface
+        "@graph": [
+          { ...articleBlock, "@context": undefined },
+          { ...faqSchema, "@context": undefined },
+        ],
+      };
+    }
+  }
+
+  return articleBlock;
 }
 
 /**
@@ -804,7 +842,7 @@ export function buildPageSchema(
 
     case "credibility_profile":
       return buildCertificationsPageSchema(
-        base,
+        { ...base, includeFaqGraph: true }, // extract FAQ section → FAQPage @graph
         facts // all facts — no filtering for the credibility page
       );
 
@@ -934,10 +972,19 @@ export async function buildSchemaPackageForBusiness(
     }
   }
 
+  // Internal pipeline page types that must NEVER generate schema markup.
+  // These are system objects stored as contentPages rows but are not real web pages.
+  const INTERNAL_PAGE_TYPES = new Set([
+    "llm_txt",        // llm.txt file — not a web page
+    "schema_package", // the schema package itself — would be circular
+    "schema_audit",   // internal crawl audit data
+    "schema_delivery", // internal delivery plan
+  ]);
+
   // Build per-page schemas
   const pageSchemas: Record<string, SchemaBlock> = {};
   for (const page of pages) {
-    if (page.pageType === "llm_txt") continue; // llm.txt is not a web page
+    if (INTERNAL_PAGE_TYPES.has(page.pageType)) continue; // skip internal pipeline objects
     try {
       pageSchemas[page.pageType] = buildPageSchema(
         {
@@ -970,6 +1017,7 @@ export async function buildSchemaPackageForBusiness(
   return {
     siteWideSchema,
     pageSchemas,
+    publishedPageUrls,
     summary: summaryParts.join(" | "),
     generatedAt: new Date().toISOString(),
   };
