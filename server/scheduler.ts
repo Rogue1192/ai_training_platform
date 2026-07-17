@@ -1524,13 +1524,7 @@ export async function checkV3WeeklyMaintenance(): Promise<void> {
       const [campaign] = await db
         .select()
         .from(cTable)
-        .where(
-          andV3(
-            eqV3(cTable.id, campaignId),
-            eqV3(cTable.llmTxtVerified, true),
-            eqV3(cTable.schemaVerified, true)
-          )
-        )
+        .where(eqV3(cTable.id, campaignId))
         .limit(1);
 
       if (!campaign) continue;
