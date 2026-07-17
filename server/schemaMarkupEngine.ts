@@ -985,6 +985,14 @@ export async function buildSchemaPackageForBusiness(
   const pageSchemas: Record<string, SchemaBlock> = {};
   for (const page of pages) {
     if (INTERNAL_PAGE_TYPES.has(page.pageType)) continue; // skip internal pipeline objects
+    // Skip pages with no content — schema would be empty/hallucinated.
+    // This guards against credibility_profile (or any page) that failed to
+    // generate: the FAQ extractor would get an empty string and either return
+    // nothing or make up questions.
+    if (!page.pageContent || page.pageContent.trim().length < 50) {
+      console.warn(`[SchemaEngine] Skipping ${page.pageType} — no content (length=${page.pageContent?.length ?? 0})`);
+      continue;
+    }
     try {
       pageSchemas[page.pageType] = buildPageSchema(
         {

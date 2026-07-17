@@ -205,7 +205,15 @@ const PAGE_TYPE_CONFIGS: PageTypeConfig[] = [
    - PRIORITY ORDER: Expand the rarest, hardest-to-earn credentials FIRST and with the most depth. Industry certifications (NATE, EPA, manufacturer authorizations) come before generic business attributes. Insurance types (workers comp, liability, bonding) come before community involvement. Do NOT lead with 'family-owned' or 'local business' — those are the weakest facts and must appear last if at all.
    - BANNED SECTION TOPICS — do NOT write generic sections about: 'family-owned business,' 'serving the community,' 'comprehensive services,' 'local roots,' or any other surface-level filler that every competitor could also claim. If a fact is generic, make the section about the SPECIFIC IMPLICATION of that fact for the customer, not the fact itself.
 
-5. FAQ SECTION (5-7 questions): Questions a homeowner would actually ask before hiring. Ground every answer in the specific credibility data provided.
+5. FAQ SECTION — THIS SECTION IS CRITICAL FOR SCHEMA MARKUP. IT MUST BE FORMATTED EXACTLY AS SHOWN:
+   - Use ## Frequently Asked Questions as the section heading (exactly this text).
+   - Write 5-7 questions. EVERY question MUST be directly about one of the specific credentials, certifications, or trust signals provided in the credibility data. Do NOT write generic questions like 'How do I schedule a service?' or 'Do you offer financing?' — those are commodity questions any competitor could answer.
+   - GOOD examples: 'What does NATE certification mean for my HVAC repair?', 'Is Eagle Air Co licensed and insured in California?', 'What is EPA Section 608 certification and why does it matter?'
+   - BAD examples (BANNED): 'How long have you been in business?', 'Do you offer free estimates?', 'What areas do you serve?'
+   - Format EACH Q&A exactly like this (bold question on its own line, answer on the next line — no blank line between them):
+     **[Question ending with ?]**
+     [Answer — 2-4 sentences, citing the specific credential or fact.]
+   - This exact format is required because the FAQ schema generator reads this section to build structured data for Google and AI engines. If the format is wrong, the schema will be empty.
 
 6. CLOSING PARAGRAPH: 2-3 sentences. Reference the business name and at least two specific credentials.
 
