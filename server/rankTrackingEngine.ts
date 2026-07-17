@@ -230,7 +230,13 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
       business.name,
       (business as any).agencyId ?? null,
       business.website ?? null,
-      business.phone ?? null
+      business.phone ?? null,
+      {
+        campaignId,
+        businessId: (business as any).id,
+        campaignCreatedAt: campaign.createdAt,
+        operationType: 'rank_check',
+      }
     );
     mentions.push(mention);
 
@@ -262,16 +268,7 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
 
     newSnapshots.push({ chatgptMentioned, chatgptPosition, geminiMentioned, geminiPosition, aiOverviewMentioned, aiOverviewPosition });
 
-    // Log rank check cost (3 LLM calls per query: ChatGPT + Gemini + AI Overview)
-    await logDFSCost({
-      campaignId,
-      businessId: (business as any).id,
-      operationType: 'rank_check',
-      endpoint: 'direct_llm_check',
-      costUsd: DFS_COSTS.llmResponse * 3,
-      campaignCreatedAt: campaign.createdAt,
-      metadata: { query: ql.searchQuery, location: ql.location, checkType: 'scheduled' },
-    }).catch(() => {});
+    // Cost logging is now handled inside checkLLMVisibilityDirect via costContext (real per-provider token costs)
 
     // Detect wins by comparing to previous snapshot
     const prev = previousSnapshots.get(ql.id);

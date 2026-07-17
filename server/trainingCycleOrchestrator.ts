@@ -209,18 +209,14 @@ async function pollCombo(
       business.agencyId ?? null,
       business.website ?? null,
       business.phone ?? null,
+      {
+        campaignId,
+        businessId,
+        campaignCreatedAt,
+        operationType: 'training_poll',
+      }
     );
-
-    // Log cost: 3 direct LLM calls (ChatGPT + Gemini + AI Overview)
-    await logDFSCost({
-      campaignId,
-      businessId,
-      operationType: 'rank_check',
-      endpoint: 'direct_llm_check',
-      costUsd: DFS_COSTS.llmResponse * 3,
-      campaignCreatedAt,
-      metadata: { query: ql.searchQuery, location: ql.location, checkType: 'training_poll' },
-    });
+    // Cost logging is now handled inside checkLLMVisibilityDirect via costContext (real per-provider token costs)
 
     const chatgptMentioned = mention.llmResponses.chatgpt?.mentioned ?? false;
     const geminiMentioned = mention.llmResponses.gemini?.mentioned ?? false;

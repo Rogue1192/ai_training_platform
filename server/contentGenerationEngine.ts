@@ -688,6 +688,33 @@ export async function generateAllContentPages(params: {
     console.warn(`[Content Generation] Schema package build failed:`, schemaPackageError.message);
   }
 
+  // ── Log content generation costs ─────────────────────────────────────────────
+  // Estimate tokens from total content length (claude-sonnet-4-5: ~4 chars per token)
+  // Input: prompt overhead (~2000 tokens per page) + content review
+  // Output: generated content length
+  try {
+    const { logLLMCost } = await import("./costLogger");
+    const campaignRecord = db ? await db.select({ createdAt: campaigns.createdAt }).from(campaigns).where(eq(campaigns.id, campaignId)).limit(1) : [];
+    const campaignCreatedAt = (campaignRecord as any)[0]?.createdAt ?? new Date();
+    const totalOutputChars = generatedPages.reduce((sum, p) => sum + (p.pageContent?.length ?? 0), 0) + llmTxtContent.length;
+    const estimatedOutputTokens = Math.round(totalOutputChars / 4);
+    const estimatedInputTokens = pageConfigs.length * 2000; // ~2k input tokens per page
+    if (estimatedOutputTokens > 0) {
+      await logLLMCost({
+        campaignId,
+        businessId,
+        operationType: 'content_generation',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5-20250929',
+        inputTokens: estimatedInputTokens,
+        outputTokens: estimatedOutputTokens,
+        campaignCreatedAt,
+      });
+    }
+  } catch (costErr: any) {
+    console.warn('[Content Generation] Cost logging failed (non-fatal):', costErr.message);
+  }
+
   const result: ContentGenerationResult = {
     pages: generatedPages,
     llmTxtContent,

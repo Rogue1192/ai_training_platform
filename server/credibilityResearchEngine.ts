@@ -14,6 +14,7 @@ import { getApiKeyByProvider } from "./db";
 import { getDb } from "./db";
 import { credibilityData, businesses, campaigns } from "../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
+import { logLLMCost } from "./costLogger";
 
 // ============= Types =============
 
@@ -307,7 +308,20 @@ export async function runCredibilityResearch(params: {
   console.log(`[Credibility Research] Starting research for ${businessName} (campaign ${campaignId})`);
   
   const response = await callAI("anthropic", apiKey, model, messages);
-  
+
+  // Log cost — fire-and-forget (never block the pipeline on cost logging)
+  const [costCampaign] = await (await getDb())!.select({ createdAt: campaigns.createdAt, businessId: campaigns.businessId }).from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+  logLLMCost({
+    campaignId,
+    businessId: costCampaign?.businessId ?? null,
+    operationType: "credibility_research",
+    provider: "anthropic",
+    model,
+    inputTokens: response.inputTokens ?? 0,
+    outputTokens: response.outputTokens ?? 0,
+    campaignCreatedAt: costCampaign?.createdAt ?? new Date(),
+  }).catch(() => {});
+
   // Parse the JSON response
   let researchData: any;
   try {

@@ -941,11 +941,25 @@ export async function checkLLMVisibilityDirect(
   businessName: string,
   agencyId?: number | null,
   businessWebsite?: string | null,
-  businessPhone?: string | null
+  businessPhone?: string | null,
+  costContext?: {
+    campaignId: number;
+    businessId?: number | null;
+    campaignCreatedAt: Date;
+    operationType: string;
+  } | null
 ): Promise<DirectVisibilityResult> {
   const { callAI } = await import("./aiProviders");
   const { getApiKeyByProvider } = await import("./db");
   const { decrypt } = await import("./encryption");
+
+  // ── Token accumulators for cost logging (declared early so closures can reference them) ──
+  let _chatgptInputTokens = 0;
+  let _chatgptOutputTokens = 0;
+  let _geminiInputTokens = 0;
+  let _geminiOutputTokens = 0;
+  let _sentimentInputTokens = 0;
+  let _sentimentOutputTokens = 0;
 
   // ── Helper: resolve API key for a provider — always uses platform key ───────
   async function resolveKey(provider: "openai" | "google"): Promise<string | null> {
@@ -1075,6 +1089,8 @@ Reply with ONLY the single word: positive, neutral, or negative.`,
         },
         { role: "user", content: relevantSentences },
       ]);
+      _sentimentInputTokens += (resp.inputTokens ?? 0);
+      _sentimentOutputTokens += (resp.outputTokens ?? 0);
       const word = resp.content.trim().toLowerCase();
       if (word === "positive" || word === "negative") return word;
       return "neutral";
@@ -1128,6 +1144,12 @@ Reply with ONLY the single word: positive, neutral, or negative.`,
         .filter((a: any) => a.type === "url_citation")
         .map((a: any) => a.url as string)
         .filter(Boolean);
+      // Extract token usage from Responses API
+      const _chatgptUsage = responsesResp.data?.usage;
+      if (_chatgptUsage) {
+        _chatgptInputTokens += (_chatgptUsage.input_tokens ?? 0);
+        _chatgptOutputTokens += (_chatgptUsage.output_tokens ?? 0);
+      }
       const mentioned = detectMention(textContent, businessName);
       const snippet = textContent.substring(0, 500);
       const recommendationRank = mentioned ? extractRecommendationRank(textContent, businessName) : null;
@@ -1142,6 +1164,8 @@ Reply with ONLY the single word: positive, neutral, or negative.`,
           { role: "system", content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge." },
           { role: "user", content: query },
         ]);
+        _chatgptInputTokens += (resp.inputTokens ?? 0);
+        _chatgptOutputTokens += (resp.outputTokens ?? 0);
         const mentioned = detectMention(resp.content, businessName);
         const snippet = resp.content.substring(0, 500);
         const recommendationRank = mentioned ? extractRecommendationRank(resp.content, businessName) : null;
@@ -1165,6 +1189,8 @@ Reply with ONLY the single word: positive, neutral, or negative.`,
         { role: "system", content: "You are a helpful AI assistant that provides honest, unbiased recommendations based on your knowledge." },
         { role: "user", content: query },
       ], { webSearch: true });
+      _geminiInputTokens += (resp.inputTokens ?? 0);
+      _geminiOutputTokens += (resp.outputTokens ?? 0);
       const mentioned = detectMention(resp.content, businessName);
       const snippet = resp.content.substring(0, 500);
       const recommendationRank = mentioned ? extractRecommendationRank(resp.content, businessName) : null;
@@ -1275,6 +1301,29 @@ Reply with ONLY the single word: positive, neutral, or negative.`,
     runGemini(),
     runAIOverview(),
   ]);
+
+  // ── Log real per-provider costs if cost context was provided ─────────────────
+  if (costContext) {
+    const { logLLMCost, logDFSCost, DFS_COSTS } = await import("./costLogger");
+    const { campaignId, businessId, campaignCreatedAt, operationType } = costContext;
+
+    // ChatGPT (gpt-4o via Responses API or fallback)
+    if (_chatgptInputTokens > 0 || _chatgptOutputTokens > 0) {
+      await logLLMCost({ campaignId, businessId, operationType, provider: "openai", model: "gpt-4o", inputTokens: _chatgptInputTokens, outputTokens: _chatgptOutputTokens, campaignCreatedAt });
+    }
+    // Gemini (gemini-2.5-flash)
+    if (_geminiInputTokens > 0 || _geminiOutputTokens > 0) {
+      await logLLMCost({ campaignId, businessId, operationType, provider: "google", model: "gemini-2.5-flash", inputTokens: _geminiInputTokens, outputTokens: _geminiOutputTokens, campaignCreatedAt });
+    }
+    // Sentiment classification (gpt-4o-mini, may fire 1-3 times per query)
+    if (_sentimentInputTokens > 0 || _sentimentOutputTokens > 0) {
+      await logLLMCost({ campaignId, businessId, operationType: `${operationType}_sentiment`, provider: "openai", model: "gpt-4o-mini", inputTokens: _sentimentInputTokens, outputTokens: _sentimentOutputTokens, campaignCreatedAt });
+    }
+    // AI Overview DataForSEO SERP call (flat cost per query)
+    if (result.llmResponses.aiOverview !== undefined) {
+      await logDFSCost({ campaignId, businessId, operationType, endpoint: "/serp/google/organic/live/advanced", costUsd: DFS_COSTS.llmResponse, campaignCreatedAt });
+    }
+  }
 
   return result;
 }

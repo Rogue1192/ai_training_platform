@@ -433,7 +433,13 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
         business.name,
         business.agencyId ?? null,
         business.website ?? null,
-        business.phone ?? null
+        business.phone ?? null,
+        {
+          campaignId,
+          businessId: campaign.businessId,
+          campaignCreatedAt: campaign.createdAt,
+          operationType: 'baseline_check',
+        }
       );
 
       const chatgptMentioned = mention.llmResponses.chatgpt?.mentioned || false;
@@ -457,16 +463,7 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
         checkedAt: new Date(),
       });
 
-      // Log rank check LLM costs (3 LLM calls per query: ChatGPT + Gemini + AI Overview)
-      await logDFSCost({
-        campaignId,
-        businessId: campaign.businessId,
-        operationType: 'rank_check',
-        endpoint: 'direct_llm_check',
-        costUsd: DFS_COSTS.llmResponse * 3,
-        campaignCreatedAt: campaign.createdAt,
-        metadata: { query: ql.searchQuery, location: ql.location, checkType: 'baseline' },
-      });
+      // Cost logging is now handled inside checkLLMVisibilityDirect via costContext (real per-provider token costs)
 
       // Update the query-location with current rank status
       const isMentioned = chatgptMentioned || geminiMentioned || aiOverviewMentioned;

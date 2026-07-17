@@ -215,28 +215,20 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
           (business as any).name,
           (business as any).agencyId ?? null,
           (business as any).website ?? null,
-          (business as any).phone ?? null
+          (business as any).phone ?? null,
+          {
+            campaignId,
+            businessId: (business as any).id,
+            campaignCreatedAt: (campaign as any).createdAt,
+            operationType: 'bonus_query_scan',
+          }
         );
+        // Cost logging is now handled inside checkLLMVisibilityDirect via costContext (real per-provider token costs)
 
         chatgptMentioned = result.llmResponses.chatgpt?.mentioned || false;
         chatgptSnippet = result.llmResponses.chatgpt?.snippet || null;
         geminiMentioned = result.llmResponses.gemini?.mentioned || false;
         geminiSnippet = result.llmResponses.gemini?.snippet || null;
-
-        // Log cost (2 LLM calls per bonus query)
-        await logDFSCost({
-          campaignId,
-          businessId: (business as any).id,
-          operationType: "bonus_query_scan",
-          endpoint: "bonus_llm_check",
-          costUsd: DFS_COSTS.llmResponse * 2,
-          campaignCreatedAt: (campaign as any).createdAt,
-          metadata: {
-            bonusQuery: adjacentQuery,
-            sourceQuery: ql.searchQuery,
-            location: ql.location,
-          },
-        }).catch(() => {});
       } catch (err) {
         console.error(`[BonusScanner] Visibility check failed for "${adjacentQuery}":`, err);
       }
