@@ -880,7 +880,7 @@ export async function runProspectAudit(
       aiOverviewPosition: s.aiOverviewPosition,
     }));
 
-    const vis = calculateVisibilityScore(scoreInput, queries.length);
+    const vis = calculateVisibilityScore(scoreInput, snapshots.length);
 
     // ── Search volume pain-point calculation ─────────────────────────────────
     // For each query, determine the estimated monthly AI searches.
@@ -913,7 +913,7 @@ export async function runProspectAudit(
       gemini: vis.gemini,
       aiOverview: vis.aiOverview,
       mentionedQueries: vis.mentionedQueries,
-      totalQueries: queries.length,
+      totalQueries: snapshots.length,
       totalAISearches,
       visibleSearches,
       lostOpportunities,
