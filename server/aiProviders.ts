@@ -12,6 +12,8 @@ export interface AIResponse {
   responseTime: number;
   inputTokens: number;
   outputTokens: number;
+  /** Grounding sources returned by Gemini when webSearch=true. Each entry is { uri, title }. */
+  sources?: Array<{ uri: string; title?: string }>;
 }
 
 // ============= Provider-specific callers =============
@@ -165,7 +167,15 @@ async function callGoogle(
     const content = parts.map((p: any) => p.text || "").join("");
     const inputTokens = response.data.usageMetadata?.promptTokenCount ?? 0;
     const outputTokens = response.data.usageMetadata?.candidatesTokenCount ?? 0;
-    return { content, responseTime, inputTokens, outputTokens };
+    // Extract grounding sources from groundingMetadata when webSearch grounding is active.
+    // Gemini returns these in candidates[0].groundingMetadata.groundingChunks[].web
+    const groundingChunks: any[] =
+      response.data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+    const sources: Array<{ uri: string; title?: string }> = groundingChunks
+      .map((chunk: any) => chunk?.web)
+      .filter((web: any) => web?.uri)
+      .map((web: any) => ({ uri: web.uri as string, title: web.title as string | undefined }));
+    return { content, responseTime, inputTokens, outputTokens, ...(sources.length > 0 ? { sources } : {}) };
   } catch (error: any) {
     throw new Error(`Google AI API error: ${error.response?.data?.error?.message || error.message}`);
   }
