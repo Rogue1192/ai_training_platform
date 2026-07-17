@@ -21,8 +21,7 @@ import {
 import { resolveModel } from "./aiProviders";
 import { scheduledJobs, trainingSessions, trainingConversations, campaigns, users } from "../drizzle/schema";
 import { eq, and, lte, isNull, lt, sql, desc } from "drizzle-orm";
-import { startTrainingSession } from "./trainingEngine";
-import { trainingQueueV2 } from "./trainingQueueV2";
+// V2 training system removed — all training runs through V3 (trainingWorkerV3)
 
 // Scheduler interval in milliseconds (1 minute)
 const SCHEDULER_INTERVAL = 60 * 1000;
@@ -394,149 +393,21 @@ export function getStaleThresholdMs(retryIntervalMinutes: number): number {
 }
 
 /**
- * Detect and recover stale training sessions that have been in_progress for too long.
- * Uses a dynamic per-session threshold based on each session's retryInterval so that
- * long-running sessions with large retry intervals are not prematurely killed.
+ * V2 stale session detector — DISABLED.
+ * V2 training sessions are no longer supported. Stuck run recovery is handled
+ * by detectAndRecoverStuckV3Runs() for V3 trainingDayRuns.
  */
 async function detectAndRecoverStaleSessions(): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-
-  try {
-    // Fetch ALL in_progress sessions — we'll evaluate staleness individually
-    const inProgressSessions = await db
-      .select()
-      .from(trainingSessions)
-      .where(eq(trainingSessions.status, "in_progress"));
-
-    let recoveredCount = 0;
-
-    for (const session of inProgressSessions) {
-      const timeSinceUpdate = Date.now() - new Date(session.updatedAt).getTime();
-      const thresholdMs = getStaleThresholdMs(session.retryInterval);
-
-      if (timeSinceUpdate < thresholdMs) {
-        // Session is still within its expected window — skip
-        continue;
-      }
-
-      const runningHours = (timeSinceUpdate / (1000 * 60 * 60)).toFixed(1);
-      const thresholdMin = Math.round(thresholdMs / (60 * 1000));
-      
-      console.warn(
-        `[Scheduler] Stale session detected: ID ${session.id} ` +
-        `has had no progress for ${runningHours} hours ` +
-        `(threshold: ${thresholdMin} min based on ${session.retryInterval}-min retry interval, ` +
-        `last updated: ${session.updatedAt})`
-      );
-      
-      // Mark as error so the scheduler can re-run it or the user can restart
-      await db.update(trainingSessions).set({
-        status: "error",
-        errorMessage:
-          `Session had no progress for ${runningHours} hours ` +
-          `(expected update every ${session.retryInterval} min). ` +
-          `Automatically marked as stale. You can restart it manually or wait for the next scheduled run.`,
-        updatedAt: new Date(),
-      }).where(eq(trainingSessions.id, session.id));
-      
-      console.log(`[Scheduler] Marked session ${session.id} as error (stale recovery)`);
-      recoveredCount++;
-    }
-
-    if (recoveredCount > 0) {
-      console.log(`[Scheduler] Recovered ${recoveredCount} stale session(s)`);
-    }
-  } catch (error) {
-    console.error("[Scheduler] Error detecting stale sessions:", error);
-  }
+  // V2 removed — no-op. V3 equivalent: detectAndRecoverStuckV3Runs()
 }
 
 /**
- * Recover stuck in_progress sessions where BullMQ delayed jobs were lost.
- * Checks for sessions that are in_progress but haven't had a new conversation
- * in retryInterval × 1.5 minutes. If found, re-queues the next iteration.
- * This runs BEFORE the staleness detector so we can rescue sessions before they're killed.
+ * V2 stuck session re-queue — DISABLED.
+ * V2 training sessions are no longer supported. Stuck run recovery is handled
+ * by detectAndRecoverStuckV3Runs() for V3 trainingDayRuns.
  */
 async function recoverStuckSessions(): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-
-  try {
-    const inProgressSessions = await db
-      .select()
-      .from(trainingSessions)
-      .where(eq(trainingSessions.status, "in_progress"));
-
-    for (const session of inProgressSessions) {
-      // Skip sessions that are in baseline or evaluation phase (no retry interval applies)
-      if (session.trainingPhase !== "training") continue;
-
-      // Check the latest conversation for this session
-      const latestConvos = await db
-        .select()
-        .from(trainingConversations)
-        .where(eq(trainingConversations.trainingSessionId, session.id))
-        .orderBy(desc(trainingConversations.createdAt))
-        .limit(1);
-
-      if (latestConvos.length === 0) continue;
-
-      const latestConvo = latestConvos[0];
-      const timeSinceLastConvo = Date.now() - new Date(latestConvo.createdAt).getTime();
-      const recoveryThresholdMs = session.retryInterval * 1.5 * 60 * 1000; // retryInterval × 1.5
-
-      if (timeSinceLastConvo < recoveryThresholdMs) {
-        // Session had a recent conversation — it's fine, delayed job is probably pending
-        continue;
-      }
-
-      // Session is stuck — the delayed job was lost
-      // Figure out which iteration to re-queue
-      const nextIteration = latestConvo.iterationNumber + 1;
-
-      // Don't re-queue if we've already completed all iterations
-      if (nextIteration > session.iterations) {
-        // Should be in evaluation phase — re-queue evaluation
-        console.log(
-          `[Scheduler] Session ${session.id} stuck after all iterations, re-queuing evaluation`
-        );
-        await trainingQueueV2.add("phase-job", {
-          sessionId: session.id,
-          userId: session.userId ?? 0,
-          phase: "evaluation",
-        }, {
-          delay: 2000,
-        });
-      } else {
-        const minutesSinceConvo = Math.round(timeSinceLastConvo / (60 * 1000));
-        console.log(
-          `[Scheduler] Recovering stuck session ${session.id}: ` +
-          `last conversation was iter ${latestConvo.iterationNumber} ` +
-          `${minutesSinceConvo} min ago (threshold: ${Math.round(recoveryThresholdMs / 60000)} min). ` +
-          `Re-queuing iteration ${nextIteration}`
-        );
-
-        await trainingQueueV2.add("phase-job", {
-          sessionId: session.id,
-          userId: session.userId ?? 0,
-          phase: "training",
-          iterationNumber: nextIteration,
-        }, {
-          delay: 2000, // Small delay to avoid race conditions
-        });
-      }
-
-      // Update the session's updatedAt so the staleness detector doesn't kill it
-      await db.update(trainingSessions).set({
-        updatedAt: new Date(),
-      }).where(eq(trainingSessions.id, session.id));
-
-      console.log(`[Scheduler] Re-queued session ${session.id} and refreshed updatedAt`);
-    }
-  } catch (error) {
-    console.error("[Scheduler] Error recovering stuck sessions:", error);
-  }
+  // V2 removed — no-op. V3 equivalent: detectAndRecoverStuckV3Runs()
 }
 
 /**
@@ -648,56 +519,10 @@ async function executeScheduledJob(
     triggeredBy,
   });
 
-  try {
-    // Auto-migrate deprecated model names before resetting
-    const resolvedTarget = resolveModel(session.targetAiModel);
-    const resolvedInfluencer = resolveModel(session.influencerAiModel);
-    const modelUpdates: Record<string, string> = {};
-    if (resolvedTarget !== session.targetAiModel) {
-      modelUpdates.targetAiModel = resolvedTarget;
-      console.log(`[Scheduler] Auto-migrating target model: ${session.targetAiModel} → ${resolvedTarget}`);
-    }
-    if (resolvedInfluencer !== session.influencerAiModel) {
-      modelUpdates.influencerAiModel = resolvedInfluencer;
-      console.log(`[Scheduler] Auto-migrating influencer model: ${session.influencerAiModel} → ${resolvedInfluencer}`);
-    }
-    if (Object.keys(modelUpdates).length > 0) {
-      await updateTrainingSession(session.id, modelUpdates);
-    }
-
-    // Fully reset the training session
-    await resetTrainingSessionForRerun(session.id);
-
-    // Start the training session
-    await startTrainingSession(session.id, session.userId);
-
-    // Calculate next run time
-    const nextRun = calculateNextRun(
-      job.scheduleType as "daily" | "weekly" | "monthly" | "custom",
-      {
-        timeOfDay: job.timeOfDay,
-        dayOfWeek: job.dayOfWeek,
-        dayOfMonth: job.dayOfMonth,
-        timezone: job.timezone,
-      }
-    );
-
-    // Update job with lastRun, nextRun, and increment runCount
-    await db.update(scheduledJobs).set({
-      lastRun: new Date(),
-      nextRun,
-      runCount: sql`${scheduledJobs.runCount} + 1`,
-      updatedAt: new Date(),
-    }).where(eq(scheduledJobs.id, job.id));
-
-    // Update run record (training is now in_progress, we'll update to completed when session finishes)
-    // For now mark as "running" - a separate process can update this when the session completes
-    await updateScheduledJobRun(run.id, {
-      status: "completed", // The session was successfully started
-    });
-
-    console.log(`[Scheduler] Job ${job.id} executed successfully. Next run: ${nextRun.toISOString()}`);
-    return { success: true, runId: run.id };
+    try {
+    // V2 training sessions are no longer supported. All training runs through V3 (trainingWorkerV3).
+    // Deactivate this scheduled job so it never fires again.
+    throw new Error('V2 training sessions are no longer supported. This scheduled job has been deactivated. Training now runs automatically through the V3 sprint engine.');
   } catch (error: any) {
     console.error(`[Scheduler] Job ${job.id} failed:`, error.message);
 
@@ -718,12 +543,16 @@ async function executeScheduledJob(
         timezone: job.timezone,
       }
     );
-    await db.update(scheduledJobs).set({ nextRun, updatedAt: new Date() }).where(eq(scheduledJobs.id, job.id));
-
+        // If this is a V2 deprecation error, deactivate the job permanently
+    if (error.message.includes('V2 training sessions are no longer supported')) {
+      await db.update(scheduledJobs).set({ isActive: false, updatedAt: new Date() }).where(eq(scheduledJobs.id, job.id));
+      console.log(`[Scheduler] Deactivated V2 scheduled job ${job.id} permanently`);
+    } else {
+      await db.update(scheduledJobs).set({ nextRun, updatedAt: new Date() }).where(eq(scheduledJobs.id, job.id));
+    }
     return { success: false, error: error.message, runId: run.id };
   }
 }
-
 /**
  * Manually trigger a scheduled job (Run Now)
  */
@@ -842,6 +671,11 @@ export function startScheduler(): void {
   checkV3SprintRuns().catch((err: Error) => console.error("[SchedulerV3] Sprint run check failed:", err));
   setInterval(() => {
     checkV3SprintRuns().catch((err: Error) => console.error("[SchedulerV3] Sprint run check failed:", err));
+  }, 30 * 60 * 1000); // every 30 minutes
+  // V3 Stuck run recovery — resets any day runs stuck in 'running' for >2h back to 'pending'.
+  detectAndRecoverStuckV3Runs().catch((err: Error) => console.error("[SchedulerV3] Stuck run recovery failed:", err));
+  setInterval(() => {
+    detectAndRecoverStuckV3Runs().catch((err: Error) => console.error("[SchedulerV3] Stuck run recovery failed:", err));
   }, 30 * 60 * 1000); // every 30 minutes
 
   // V3 Weekly maintenance — creates new maintenance run records once per day.
@@ -1713,4 +1547,45 @@ export function stopScheduler(): void {
  */
 export function isSchedulerRunning(): boolean {
   return schedulerTimer !== null;
+}
+
+// ─── V3 Stuck Run Detector ────────────────────────────────────────────────────
+/**
+ * detectAndRecoverStuckV3Runs
+ *
+ * V3 equivalent of detectAndRecoverStaleSessions.
+ * Finds any trainingDayRuns stuck in 'running' status for more than 2 hours
+ * and resets them to 'pending' so checkV3SprintRuns picks them up again.
+ *
+ * Runs every 30 minutes alongside checkV3SprintRuns.
+ */
+export async function detectAndRecoverStuckV3Runs(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const { trainingDayRuns: tdrTable } = await import('../drizzle/schema');
+    const { eq: eqV3, and: andV3, lt: ltV3 } = await import('drizzle-orm');
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    // trainingDayRuns has no updatedAt — use createdAt as the staleness signal
+    const stuckRuns = await db
+      .select()
+      .from(tdrTable)
+      .where(
+        andV3(
+          eqV3(tdrTable.status, 'running'),
+          ltV3(tdrTable.createdAt, twoHoursAgo)
+        )
+      );
+    if (stuckRuns.length === 0) return;
+    console.log(`[SchedulerV3] Found ${stuckRuns.length} stuck V3 day run(s) — resetting to pending`);
+    for (const run of stuckRuns) {
+      await db
+        .update(tdrTable)
+        .set({ status: 'pending' })
+        .where(eqV3(tdrTable.id, run.id));
+      console.log(`[SchedulerV3] Reset stuck day run ${run.id} (campaign ${run.campaignId}, day ${run.runDay}) to pending`);
+    }
+  } catch (err: any) {
+    console.error('[SchedulerV3] detectAndRecoverStuckV3Runs error:', err.message);
+  }
 }

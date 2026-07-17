@@ -3353,8 +3353,8 @@ export const llmInsightsRouter = router({
     }),
 
   /**
-   * Approve the query review step for a campaign — sets status back to
-   * keyword_research_complete so the pipeline can continue from credibility_research.
+   * Approve the query review step for a campaign — sets status to baseline_check so the
+   * pipeline runs baseline BEFORE any content generation or indexing that could influence AI rankings.
    * Optionally runs the next pipeline step immediately.
    */
   approveQueryReview: protectedProcedure
@@ -3367,10 +3367,10 @@ export const llmInsightsRouter = router({
       const campaign = await getCampaignById(input.campaignId);
       if (!campaign) throw new Error('Campaign not found');
       if (campaign.status !== 'query_review') throw new Error('Campaign is not in query_review status');
-      // Mark query review as approved by advancing status
-      await updateCampaign(input.campaignId, { status: 'credibility_research' });
+      // Advance to baseline_check — MUST run before content_generation and indexing
+      await updateCampaign(input.campaignId, { status: 'baseline_check', baselineCheckCompletedAt: null });
       if (input.runNext) {
-        // Run the full pipeline from credibility_research onward
+        // Run the full pipeline starting from baseline_check
         const { runFullPipeline } = await import('./pipelineOrchestrator');
         runFullPipeline(input.campaignId, ctx.user.id).catch((err: any) => {
           console.error('[approveQueryReview] Pipeline error:', err.message);

@@ -32,13 +32,14 @@ import { logLLMCost } from "./costLogger";
 import {
   buildTrainingContext,
   buildEnrichedSystemMessage,
+  buildAiOverviewSystemMessage,
+  toSearchQueryStyle,
 } from "./trainingContextEnricher";
 import { generateSuggestivePrompt } from "./promptGeneration";
 import {
   trainingQueries,
   trainingPhraseStatus,
   trainingDayRuns,
-  trainingSessions,
   campaigns,
   businesses,
 } from "../drizzle/schema";
@@ -48,10 +49,13 @@ import { eq, and, isNull, sql } from "drizzle-orm";
 
 const MAX_TRAINER_TURNS = 20;
 const TRAINER_MODEL = "MiniMax-M2.7";
-const TARGET_PROVIDERS: Array<"openai" | "google"> = ["openai", "google"];
-const TARGET_MODELS: Record<"openai" | "google", string> = {
-  openai: "gpt-4o",
-  google: "gemini-2.0-flash",
+// google_ai_overview uses the same Gemini model but with search-query-style prompts
+// to train AI Overview snippet-style responses (not conversational chat).
+const TARGET_PROVIDERS: Array<"openai" | "google" | "google_ai_overview"> = ["openai", "google", "google_ai_overview"];
+const TARGET_MODELS: Record<"openai" | "google" | "google_ai_overview", string> = {
+  openai: "gpt-4.1",
+  google: "gemini-2.5-flash",
+  google_ai_overview: "gemini-2.5-flash",
 };
 const CONSECUTIVE_WINS_NEEDED = 2;
 
@@ -64,7 +68,7 @@ interface SessionParams {
   phraseText: string;
   variationText: string;
   variationIndex: number;
-  targetProvider: "openai" | "google";
+  targetProvider: "openai" | "google" | "google_ai_overview";
   campaignCreatedAt: Date;
 }
 
@@ -80,9 +84,11 @@ interface SessionResult {
 
 // ─── API Key helpers ──────────────────────────────────────────────────────────
 
-async function getDecryptedKey(provider: "openai" | "google" | "minimax"): Promise<string> {
-  const record = await getApiKeyByProvider(provider);
-  if (!record) throw new Error(`No API key configured for provider: ${provider}`);
+async function getDecryptedKey(provider: "openai" | "google" | "google_ai_overview" | "minimax"): Promise<string> {
+  // google_ai_overview uses the same API key as google
+  const lookupProvider = provider === "google_ai_overview" ? "google" : provider;
+  const record = await getApiKeyByProvider(lookupProvider);
+  if (!record) throw new Error(`No API key configured for provider: ${lookupProvider}`);
   return decrypt(record.encryptedKey);
 }
 
@@ -168,7 +174,10 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
   // Get API keys
   const minimaxKey = await getDecryptedKey("minimax");
   const targetKey = await getDecryptedKey(targetProvider);
+  // google_ai_overview uses the google model under the hood
+  const actualProvider: "openai" | "google" = targetProvider === "google_ai_overview" ? "google" : targetProvider;
   const targetModel = TARGET_MODELS[targetProvider];
+  const isAiOverview = targetProvider === "google_ai_overview";
 
   // Get training context (credibility facts, published pages, specialties)
   const ctx = await buildTrainingContext(businessId);
@@ -186,8 +195,18 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
     ctx.specialties
   );
 
-  // Build target AI system prompt (neutral — target AI doesn't know about the business)
-  const targetSystemPrompt = "You are a helpful AI assistant. Answer questions naturally and honestly based on your knowledge.";
+  // Build target AI system prompt:
+  // - AI Overview: search-query-style system prompt that trains snippet-style responses
+  // - Gemini/ChatGPT: neutral conversational prompt
+  const targetSystemPrompt = isAiOverview
+    ? await buildAiOverviewSystemMessage(ctx)
+    : "You are a helpful AI assistant. Answer questions naturally and honestly based on your knowledge.";
+
+  // For AI Overview sessions, convert the variation to search-query style
+  // (short keyword-style queries like Google Search actually receives)
+  const sessionVariationText = isAiOverview
+    ? toSearchQueryStyle(variationText, ctx.businessType, ctx.targetLocations[0] || ctx.businessLocation)
+    : variationText;
 
   // Conversation history shared between both AIs
   const conversationHistory: AIMessage[] = [];
@@ -201,7 +220,7 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
 
   // ── Turn 1: User (system) sends the initial query variation ──────────────────
   // This is NOT a MiniMax call — it's just the seed query
-  const initialQuery = variationText;
+  const initialQuery = sessionVariationText;
   conversationHistory.push({ role: "user", content: initialQuery });
 
   // ── Turn 1: Target AI responds ───────────────────────────────────────────────
@@ -209,7 +228,7 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
     { role: "system", content: targetSystemPrompt },
     ...conversationHistory,
   ];
-  const targetResp1 = await callAI(targetProvider, targetKey, targetModel, targetMessages1);
+  const targetResp1 = await callAI(actualProvider, targetKey, targetModel, targetMessages1);
   conversationHistory.push({ role: "assistant", content: targetResp1.content });
   targetInputTokens += targetResp1.inputTokens;
   targetOutputTokens += targetResp1.outputTokens;
@@ -220,7 +239,7 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
     campaignId,
     businessId,
     operationType: "training_target_turn",
-    provider: targetProvider,
+    provider: actualProvider,
     model: targetModel,
     inputTokens: targetResp1.inputTokens,
     outputTokens: targetResp1.outputTokens,
@@ -280,7 +299,7 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
       { role: "system", content: targetSystemPrompt },
       ...conversationHistory,
     ];
-    const targetResp = await callAI(targetProvider, targetKey, targetModel, targetMessages);
+    const targetResp = await callAI(actualProvider, targetKey, targetModel, targetMessages);
     conversationHistory.push({ role: "assistant", content: targetResp.content });
     targetInputTokens += targetResp.inputTokens;
     targetOutputTokens += targetResp.outputTokens;
@@ -291,7 +310,7 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
       campaignId,
       businessId,
       operationType: "training_target_turn",
-      provider: targetProvider,
+      provider: actualProvider,
       model: targetModel,
       inputTokens: targetResp.inputTokens,
       outputTokens: targetResp.outputTokens,
@@ -307,11 +326,18 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
   }
 
   // ── Clean probe: new session, neutral system, base phrase verbatim ───────────
+  // For AI Overview: use search-query-style probe; for others: use base phrase as-is
+  const cleanProbeText = isAiOverview
+    ? toSearchQueryStyle(phraseText, ctx.businessType, ctx.targetLocations[0] || ctx.businessLocation)
+    : phraseText;
+  const cleanProbeSystemPrompt = isAiOverview
+    ? "You are a Google Search AI assistant. Generate a concise AI Overview summary for the following search query."
+    : "You are a helpful AI assistant. Answer questions naturally and honestly based on your knowledge.";
   const cleanProbeMessages: AIMessage[] = [
-    { role: "system", content: "You are a helpful AI assistant. Answer questions naturally and honestly based on your knowledge." },
-    { role: "user", content: phraseText }, // base phrase, not variation
+    { role: "system", content: cleanProbeSystemPrompt },
+    { role: "user", content: cleanProbeText },
   ];
-  const cleanProbeResp = await callAI(targetProvider, targetKey, targetModel, cleanProbeMessages);
+  const cleanProbeResp = await callAI(actualProvider, targetKey, targetModel, cleanProbeMessages);
   const cleanProbeMentioned = cleanProbeResp.content.toLowerCase().includes(ctx.businessName.toLowerCase());
   sessionWin = cleanProbeMentioned;
 
@@ -320,7 +346,7 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
     campaignId,
     businessId,
     operationType: "training_clean_probe",
-    provider: targetProvider,
+    provider: actualProvider,
     model: targetModel,
     inputTokens: cleanProbeResp.inputTokens,
     outputTokens: cleanProbeResp.outputTokens,
@@ -388,7 +414,7 @@ export async function generateQueryVariations(
 async function updatePhraseStatus(
   campaignId: number,
   queryId: number,
-  targetProvider: "openai" | "google",
+  targetProvider: "openai" | "google" | "google_ai_overview",
   sessionWin: boolean
 ): Promise<{ consecutiveWins: number; isGraduated: boolean }> {
   const db = await getDb();
@@ -520,7 +546,8 @@ export async function runTrainingDay(campaignId: number, dayRunId: number): Prom
         }
 
         try {
-          console.log(`[TrainingV3] Running session: "${variationText}" (var ${vi}) on ${targetProvider}`);
+          const label = targetProvider === "google_ai_overview" ? "AI Overview" : targetProvider;
+          console.log(`[TrainingV3] Running session: "${variationText}" (var ${vi}) on ${label}`);
 
           const result = await runTrainingSession({
             campaignId,
@@ -543,7 +570,7 @@ export async function runTrainingDay(campaignId: number, dayRunId: number): Prom
 
           if (isGraduated) {
             phrasesGraduated++;
-            console.log(`[TrainingV3] GRADUATED: "${query.phraseText}" on ${targetProvider} (2 consecutive wins)`);
+            console.log(`[TrainingV3] GRADUATED: "${query.phraseText}" on ${label} (2 consecutive wins)`);
           }
 
           sessionsCompleted++;
@@ -555,7 +582,8 @@ export async function runTrainingDay(campaignId: number, dayRunId: number): Prom
             .where(eq(trainingDayRuns.id, dayRunId));
 
         } catch (err: any) {
-          console.error(`[TrainingV3] Session error for "${variationText}" on ${targetProvider}:`, err.message);
+          const label = targetProvider === "google_ai_overview" ? "AI Overview" : targetProvider;
+          console.error(`[TrainingV3] Session error for "${variationText}" on ${label}:`, err.message);
           sessionsCompleted++;
         }
       }
@@ -621,16 +649,15 @@ export async function runEndOfDayWebSearch(campaignId: number, dayRunId: number)
         null
       );
 
-      // Check if mentioned on any platform
-      const mentionedAnywhere =
-        result.llmResponses.chatgpt?.mentioned ||
-        result.llmResponses.gemini?.mentioned ||
-        result.llmResponses.aiOverview?.mentioned;
-
       // For each provider, update phrase status:
       // If graduated during training but NOT appearing in web search → put back in rotation
       for (const targetProvider of TARGET_PROVIDERS) {
-        const providerResult = targetProvider === "openai" ? result.llmResponses.chatgpt : result.llmResponses.gemini;
+        // Map provider to the correct web search result:
+        // google_ai_overview checks the aiOverview result; google checks gemini result
+        const providerResult =
+          targetProvider === "openai" ? result.llmResponses.chatgpt
+          : targetProvider === "google_ai_overview" ? result.llmResponses.aiOverview
+          : result.llmResponses.gemini;
         const webMentioned = providerResult?.mentioned ?? false;
 
         const statusRows = await db
