@@ -45,7 +45,6 @@ import {
   Store,
   ShoppingCart,
   Globe2,
-  ArrowDownLeft,
 } from "lucide-react";
 import {
   VisibilityGauge,
@@ -873,7 +872,6 @@ function ResultsStep({
                 <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2">
                   Monthly AI Searches
                 </p>
-                <ArrowDownLeft className="w-7 h-7 text-white mx-auto mb-1" />
                 <p className="text-4xl font-heading font-bold text-white">
                   {totalAISearches.toLocaleString()}
                 </p>
@@ -885,7 +883,6 @@ function ResultsStep({
                 <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-2">
                   Your AI Visibility
                 </p>
-                <ArrowDownLeft className="w-7 h-7 text-white mx-auto mb-1" />
                 <p className="text-4xl font-heading font-bold text-white">
                   {visibilityPct}%
                 </p>
@@ -897,7 +894,6 @@ function ResultsStep({
                 <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">
                   Potential Lost Opportunities
                 </p>
-                <ArrowDownLeft className="w-7 h-7 text-white mx-auto mb-1" />
                 <p className="text-4xl font-heading font-bold text-white">
                   {lostOpportunities.toLocaleString()}
                 </p>

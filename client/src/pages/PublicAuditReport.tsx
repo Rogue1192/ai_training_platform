@@ -33,7 +33,6 @@ import {
   Bot,
   Sparkles,
   Eye,
-  ArrowDownLeft,
 } from "lucide-react";
 import {
   VisibilityGauge,
@@ -70,7 +69,6 @@ function StatCard({
   return (
     <div className={`rounded-xl border p-5 text-center ${colors[color]}`}>
       <p className="text-xs uppercase tracking-widest font-semibold mb-2 opacity-80">{label}</p>
-      <ArrowDownLeft className="w-7 h-7 text-white mx-auto mb-1" />
       <p className={`text-4xl font-black ${valueColors[color]}`}>{value}</p>
       {sub && <p className="text-sm text-white mt-2">{sub}</p>}
     </div>
