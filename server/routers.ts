@@ -1866,11 +1866,20 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           .where(eq(contentPages.id, input.pageId))
           .returning();
         if (!updatedPage) throw new Error("Content page not found");
-        // Check if ALL pages for this campaign now have a publishedUrl
+        // Check if ALL publishable pages for this campaign now have a publishedUrl.
+        // Exclude llm_txt, schema_package, schema_audit, schema_delivery — these never
+        // get a publishedUrl and must not block the publishing completion gate.
+        const { inArray, not } = await import("drizzle-orm");
+        const NON_PUBLISHABLE_TYPES = ["llm_txt", "schema_package", "schema_audit", "schema_delivery"];
         const allPages = await db
           .select({ id: contentPages.id, publishedUrl: contentPages.publishedUrl })
           .from(contentPages)
-          .where(eq(contentPages.campaignId, updatedPage.campaignId!));
+          .where(
+            and(
+              eq(contentPages.campaignId, updatedPage.campaignId!),
+              not(inArray(contentPages.pageType, NON_PUBLISHABLE_TYPES))
+            )
+          );
         const allHaveUrls = allPages.length > 0 && allPages.every((p: { id: number; publishedUrl: string | null }) => !!p.publishedUrl);
         if (allHaveUrls && updatedPage.campaignId) {
           // All pages now have URLs. Mark publishing complete first — the manual-copy
