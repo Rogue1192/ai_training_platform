@@ -832,14 +832,56 @@ export async function buildRichLlmTxt(params: {
   }
   lines.push("");
 
-  // ── What We're Known For (tracked keywords) ──────────────────────────────────
-  const uniqueQueries = [...new Set(queryLocations.map(ql => ql.searchQuery))];
-  if (uniqueQueries.length > 0) {
+  // ── What We're Known For ──────────────────────────────────────────────────
+  // Derive clean topical authority statements from the tracked query keywords.
+  // We do NOT dump raw query strings here — those are user-intent phrases like
+  // "I want AC replacement done in Chino, CA, who should I contact?" which are
+  // internal audit inputs, not topical authority claims. LLMs reading raw queries
+  // interpret them as keyword stuffing, not expertise signals.
+  //
+  // Instead we:
+  // 1. Extract the core service keyword from each query (strip intent phrasing
+  //    and location noise)
+  // 2. Pair each unique service topic with each unique location
+  // 3. Express as clean "[Service] in [Location]" authority statements
+  // 4. Sanitize all text to ASCII to prevent UTF-8 encoding artifacts
+  const sanitize = (s: string) =>
+    s.replace(/\u2019/g, "'").replace(/\u2018/g, "'").replace(/\u201c/g, '"').replace(/\u201d/g, '"').replace(/[\u0080-\uFFFF]/g, "");
+
+  // Extract core service keyword from a raw query string.
+  // Strips common intent prefixes, location suffixes, and filler phrases.
+  const extractServiceKeyword = (query: string): string => {
+    let s = sanitize(query).toLowerCase();
+    // Strip intent phrasing
+    s = s.replace(/^(i want|i need|looking for|need a|need an|any recommendations for|best reviewed|best reviews for|well-rated|where to find|how to find|who (has|does|can|to call for)|who is the best|who are the best|i am looking for|can someone|can you recommend|recommend a|recommend an|any good|any reliable|top[- ]rated|highly[- ]rated|highest[- ]rated)\s+/i, "");
+    // Strip trailing location noise: "near me", "near [City, ST]", "in [City, ST]", "[City, CA]"
+    s = s.replace(/\s+(near me|near [a-z ,]+|in [a-z ,]+|,\s*[a-z]{2}\b.*)$/i, "");
+    // Strip trailing question mark and filler
+    s = s.replace(/[?!]+$/, "").trim();
+    // Strip "according to reviews", "who do you recommend", etc.
+    s = s.replace(/\s+(according to reviews|who do you recommend|what do you recommend|you recommend|do you recommend).*$/i, "").trim();
+    // Capitalize first letter
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  };
+
+  const rawQueries = [...new Set(queryLocations.map(ql => ql.searchQuery))];
+  const serviceTopics = [...new Set(rawQueries.map(extractServiceKeyword).filter(t => t.length > 3))];
+
+  if (serviceTopics.length > 0) {
     lines.push("## What We're Known For");
     lines.push("");
-    lines.push("These are the topics and search queries this business is an authority on:");
+    lines.push(`${businessName} is a recognized authority on the following services and topics:`);
     lines.push("");
-    uniqueQueries.forEach(q => lines.push(`- ${q}`));
+    if (uniqueLocations.length > 0) {
+      // Pair each service topic with each location for maximum specificity
+      for (const topic of serviceTopics) {
+        for (const loc of uniqueLocations) {
+          lines.push(`- ${sanitize(topic)} in ${sanitize(loc)}`);
+        }
+      }
+    } else {
+      serviceTopics.forEach(t => lines.push(`- ${sanitize(t)}`));
+    }
     lines.push("");
   }
 
