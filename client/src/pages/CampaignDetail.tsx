@@ -80,7 +80,6 @@ const PIPELINE_STEPS = [
   { key: "content_generation", label: "Content", icon: FileText, color: "text-indigo-400", bg: "bg-indigo-500/10", border: "border-indigo-500/30" },
   { key: "publishing", label: "Publish", icon: Globe, color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/30" },
   { key: "indexing", label: "Indexing", icon: Zap, color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/30" },
-  { key: "indexing_verification", label: "Verify", icon: CheckCircle2, color: "text-teal-400", bg: "bg-teal-500/10", border: "border-teal-500/30" },
   { key: "training", label: "Training", icon: Brain, color: "text-primary", bg: "bg-primary/10", border: "border-primary/30" },
 ] as const;
 
@@ -92,7 +91,6 @@ const statusTimestampMap: Record<string, string> = {
   content_generation: "contentGenerationCompletedAt",
   publishing: "publishingCompletedAt",
   indexing: "indexingSubmittedAt",
-  indexing_verification: "indexingVerifiedAt",
   baseline_check: "baselineCheckCompletedAt",
   training: "trainingStartedAt",
 };
@@ -626,7 +624,6 @@ export default function CampaignDetail() {
           contentGenerationCompletedAt: (campaign as any).contentGenerationCompletedAt ?? null,
           publishingCompletedAt: (campaign as any).publishingCompletedAt ?? null,
           indexingSubmittedAt: (campaign as any).indexingSubmittedAt ?? null,
-          indexingVerifiedAt: (campaign as any).indexingVerifiedAt ?? null,
           trainingStartedAt: (campaign as any).trainingStartedAt ?? null,
           sprintCompletedAt: (campaign as any).sprintCompletedAt ?? null,
           llmTxtVerified: (campaign as any).llmTxtVerified ?? null,

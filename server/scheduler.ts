@@ -622,17 +622,12 @@ export function startScheduler(): void {
     checkBlockedPublishingCampaigns().catch((err: Error) => console.error("[Scheduler] Blocked publishing check failed:", err));
   }, 10 * 60 * 1000); // every 10 minutes
 
-  checkPendingIndexingVerifications().catch((err: Error) => console.error("[Scheduler] Indexing verification check failed:", err));
-  setInterval(() => {
-    checkPendingIndexingVerifications().catch((err: Error) => console.error("[Scheduler] Indexing verification check failed:", err));
-  }, 3 * 60 * 1000); // every 3 minutes
-
-  // Check for campaigns ready for training kickoff — runs every 6 hours.
-  // Catches any campaigns that slipped through the indexing_verification auto-advance.
+  // Safety net: kick off training for campaigns where indexing was submitted
+  // but training hasn't started yet (llm.txt + schema gate cleared).
   checkPendingTrainingKickoffs().catch((err: Error) => console.error("[Scheduler] Training kickoff check failed:", err));
   setInterval(() => {
     checkPendingTrainingKickoffs().catch((err: Error) => console.error("[Scheduler] Training kickoff check failed:", err));
-  }, 6 * 60 * 60 * 1000);
+  }, 10 * 60 * 1000); // every 10 minutes
 
   // Advance training cycles every hour:
   // - Fires 24h LLM polls after each run, advances to next run, detects wins
@@ -847,91 +842,27 @@ export async function checkBlockedPublishingCampaigns(): Promise<void> {
 }
 
 /**
- * Auto-advance campaigns stuck in indexing_verification.
- *
- * Monkey Indexer makes URLs accessible within minutes of submission.
- * This runs every 3 minutes and calls verifyCampaignIndexing for any campaign
- * that has submitted indexing but not yet verified it. Once 80%+ of URLs are
- * accessible, verifyCampaignIndexing sets indexingVerifiedAt and advances
- * the campaign status to training automatically.
- */
-export async function checkPendingIndexingVerifications(): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-
-  try {
-    // Find campaigns that have submitted indexing but not yet verified AND haven't started training yet.
-    // Critically: exclude campaigns that already have trainingStartedAt set — those are already
-    // past this step and re-running would overwrite their rank data with a fresh baseline check.
-    const pendingCampaigns = await db
-      .select()
-      .from(campaigns)
-      .where(
-        and(
-          sql`${campaigns.indexingSubmittedAt} IS NOT NULL`,
-          isNull(campaigns.indexingVerifiedAt),
-          isNull(campaigns.trainingStartedAt)  // ← safety: never re-trigger for active campaigns
-        )
-      );
-
-    if (pendingCampaigns.length === 0) return;
-
-    const { verifyCampaignIndexing } = await import('./monkeyIndexer');
-    const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
-    const ownerId = adminUsers[0]?.id ?? 0;
-
-    for (const campaign of pendingCampaigns) {
-      try {
-        const result = await verifyCampaignIndexing(campaign.id);
-        if (result.verified) {
-          console.log(`[Scheduler] Indexing verified for campaign ${campaign.id} (${result.accessibleUrls}/${result.totalUrls} URLs accessible) — advancing pipeline`);
-          const { runPipelineStep, determineNextStep } = await import('./pipelineOrchestrator');
-          // Re-fetch campaign to get the latest state (verifyCampaignIndexing may have updated it)
-          const { getCampaignById } = await import('./dbCampaigns');
-          const freshCampaign = await getCampaignById(campaign.id);
-          if (!freshCampaign) continue;
-          // Use determineNextStep so we always run the correct next step, not hardcoded 'training'.
-          // This respects the new pipeline order (baseline_check comes before credibility_research)
-          // and won't re-run steps that are already completed.
-          const nextStep = determineNextStep(freshCampaign);
-          if (nextStep === 'indexing_verification') {
-            // Still waiting — shouldn't happen but guard against infinite loop
-            console.log(`[Scheduler] Campaign ${campaign.id} indexing verified but determineNextStep still returns indexing_verification — skipping`);
-            continue;
-          }
-          const stepResult = await runPipelineStep(campaign.id, nextStep, ownerId);
-          console.log(`[Scheduler] Pipeline step '${nextStep}' for campaign ${campaign.id}: ${stepResult.message}`);
-        }
-      } catch (err: any) {
-        console.error(`[Scheduler] Indexing verification failed for campaign ${campaign.id}:`, err.message);
-      }
-    }
-  } catch (err: any) {
-    console.error('[Scheduler] checkPendingIndexingVerifications error:', err.message);
-  }
-}
-
-/**
  * Check for campaigns that are ready to begin training (safety net).
  *
- * Logic: indexingVerifiedAt is set but trainingStartedAt is null.
- * This is a fallback for campaigns that slipped through the 3-minute
- * indexing verification poller.
+ * Logic: indexingSubmittedAt is set, llm.txt + schema are verified,
+ * but trainingStartedAt is null. The enforcePublishingGate inside the
+ * training pipeline step handles the llm.txt/schema check — this job
+ * just ensures no campaign gets permanently stuck after indexing.
  *
- * Runs every 6 hours.
+ * Runs every 10 minutes.
  */
 export async function checkPendingTrainingKickoffs(): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
   try {
-    // Find campaigns where indexing is verified but training hasn't started
+    // Find campaigns where indexing has been submitted but training hasn't started
     const readyCampaigns = await db
       .select()
       .from(campaigns)
       .where(
         and(
-          sql`${campaigns.indexingVerifiedAt} IS NOT NULL`,
+          sql`${campaigns.indexingSubmittedAt} IS NOT NULL`,
           isNull(campaigns.trainingStartedAt)
         )
       );
@@ -947,7 +878,7 @@ export async function checkPendingTrainingKickoffs(): Promise<void> {
 
     for (const campaign of readyCampaigns) {
       try {
-        console.log(`[Scheduler] Kicking off training for campaign ${campaign.id} (indexing verified ${campaign.indexingVerifiedAt?.toISOString()})`);
+        console.log(`[Scheduler] Kicking off training for campaign ${campaign.id} (indexing submitted ${campaign.indexingSubmittedAt?.toISOString()})`);
         const result = await runPipelineStep(campaign.id, 'training', ownerId);
         console.log(`[Scheduler] Training kickoff for campaign ${campaign.id}: ${result.message}`);
       } catch (err: any) {
@@ -1074,7 +1005,7 @@ async function checkScheduledRankTracking(): Promise<void> {
     // should NOT burn API credits on rank checks — the data would be meaningless anyway
     // since no content has been published yet.
     //
-    // Eligible statuses: publishing, indexing, indexing_verification, baseline_check,
+    // Eligible statuses: publishing, indexing, baseline_check,
     // training, monitoring, paused (paused = was active, manually paused).
     // Ineligible: pending, keyword_research, query_review, credibility_research,
     //             content_generation, error.

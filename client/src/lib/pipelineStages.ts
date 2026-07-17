@@ -16,10 +16,9 @@
  *    added before or after the URLs in any order.
  *
  *  Stage 5 — Indexing
- *    Complete when: indexingVerifiedAt is set AND llmTxtVerified AND
- *    schemaVerified. This means the Indexing pill stays amber/active until
- *    all three are done, preventing the "gap" that would appear if indexing
- *    completed before llm.txt/schema were verified.
+ *    Complete when: indexingSubmittedAt is set. Indexing verification step
+ *    has been removed — submission to MonkeyIndexer is sufficient to advance.
+ *    llm.txt and schema are handled at the training gate, not here.
  */
 
 export type StageStatus =
@@ -47,7 +46,6 @@ interface CampaignPipelineFields {
   contentGenerationCompletedAt: Date | string | null;
   publishingCompletedAt: Date | string | null;
   indexingSubmittedAt: Date | string | null;
-  indexingVerifiedAt: Date | string | null;
   trainingStartedAt: Date | string | null;
   sprintCompletedAt: Date | string | null;
   llmTxtVerified: boolean | null;
@@ -130,14 +128,13 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
 
   // Stage 5 description — show what's still pending
   function indexingDescription(): string {
-    if (stage5Complete) return "Indexing verified · llm.txt & schema confirmed";
+    if (stage5Complete) return "Submitted to MonkeyIndexer · llm.txt & schema confirmed";
     if (!stage4Complete) return "Awaiting content publication";
     const pending: string[] = [];
     if (!s5_indexingSubmitted) pending.push("URL submission pending");
-    else if (!done(c.indexingVerifiedAt)) pending.push("indexing in progress");
     if (c.llmTxtVerified !== true) pending.push("llm.txt not verified");
     if (c.schemaVerified !== true) pending.push("schema not verified");
-    return pending.length > 0 ? pending.join(" · ") : "Verifying indexing…";
+    return pending.length > 0 ? pending.join(" · ") : "Submitted to MonkeyIndexer";
   }
 
   // Stage 4 description

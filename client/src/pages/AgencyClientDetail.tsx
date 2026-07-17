@@ -846,7 +846,7 @@ function CampaignRow({ campaign, businessId, clientEmail, clientName, businessNa
         {/* Content Publish Panel — shown for any campaign that has passed content generation,
              including pre-existing/active campaigns so agencies can still add credibility
              content, llm.txt, and schema markup to client sites retroactively. */}
-        {(['publishing', 'indexing', 'indexing_verification', 'training', 'monitoring', 'completed', 'active'].includes(campaign.status)) && (
+        {(['publishing', 'indexing', 'training', 'monitoring', 'completed', 'active'].includes(campaign.status)) && (
           <div className="border-t pt-3">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
               <FileText className="h-3.5 w-3.5" />

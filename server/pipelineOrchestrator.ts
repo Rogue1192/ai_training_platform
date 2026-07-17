@@ -30,7 +30,6 @@ export type PipelineStep =
   | "content_generation"
   | "publishing"
   | "indexing"
-  | "indexing_verification"
   | "baseline_check"
   | "training";
 
@@ -63,7 +62,6 @@ const PIPELINE_STEPS: PipelineStep[] = [
   "content_generation",
   "publishing",
   "indexing",
-  "indexing_verification",
   "training",
 ];
 
@@ -98,7 +96,6 @@ export function determineNextStep(campaign: any): PipelineStep {
   if (!campaign.contentGenerationCompletedAt) return "content_generation";
   if (!campaign.publishingCompletedAt) return "publishing";
   if (!campaign.indexingSubmittedAt) return "indexing";
-  if (!campaign.indexingVerifiedAt) return "indexing_verification";
   return "training";
 }
 
@@ -113,7 +110,6 @@ export function getCompletedSteps(campaign: any): PipelineStep[] {
   if (campaign.contentGenerationCompletedAt) completed.push("content_generation");
   if (campaign.publishingCompletedAt) completed.push("publishing");
   if (campaign.indexingSubmittedAt) completed.push("indexing");
-  if (campaign.indexingVerifiedAt) completed.push("indexing_verification");
   if (campaign.trainingStartedAt) completed.push("training");
   return completed;
 }
@@ -325,22 +321,7 @@ export async function runPipelineStep(
             ? `Submitted ${indexResult.urlsSubmitted} URLs to Monkey Indexer. Credits remaining: ${indexResult.creditsRemaining ?? "?"}. Verification in 3-4 days.`
             : `Indexing submission failed: ${indexResult.error}`,
           data: indexResult,
-          nextStep: "indexing_verification",
-        };
-        break;
-      }
-      
-      case "indexing_verification": {
-        const { verifyCampaignIndexing } = await import("./monkeyIndexer");
-        const verifyResult = await verifyCampaignIndexing(campaignId);
-        result = {
-          step,
-          success: verifyResult.verified,
-          message: verifyResult.verified
-            ? `Indexing verified: ${verifyResult.accessibleUrls}/${verifyResult.totalUrls} URLs accessible.`
-            : `Indexing not yet verified: ${verifyResult.accessibleUrls}/${verifyResult.totalUrls} URLs accessible. ${verifyResult.inaccessibleUrls.length} still pending.`,
-          data: verifyResult,
-          nextStep: verifyResult.verified ? "training" : "indexing_verification",
+          nextStep: "training",
         };
         break;
       }
@@ -523,13 +504,9 @@ export async function runFullPipeline(
       return { stepsRun, stoppedAt: step, reason: "stopped" };
     }
 
-    // Stop after indexing submission (need to wait 3-4 days)
+    // Stop after indexing submission — training gate (llm.txt + schema) must be
+    // cleared manually before the pipeline advances to training.
     if (step === "indexing") {
-      return { stepsRun, stoppedAt: step, reason: "waiting" };
-    }
-    
-    // Stop after indexing verification if not yet verified
-    if (step === "indexing_verification" && result.nextStep === "indexing_verification") {
       return { stepsRun, stoppedAt: step, reason: "waiting" };
     }
     
@@ -590,7 +567,6 @@ export function getPipelineStepLabels(): Array<{ step: PipelineStep; label: stri
     { step: "content_generation", label: "Content Generation", description: "Generate optimized content pages for AI citation" },
     { step: "publishing", label: "Content Publishing", description: "Copy generated content pages to client website and enter live URLs" },
     { step: "indexing", label: "Indexing Submission", description: "Submit URLs to Monkey Indexer for fast Google indexing" },
-    { step: "indexing_verification", label: "Indexing Verification", description: "Verify published URLs are accessible (auto-advances within minutes)" },
     { step: "training", label: "AI Training", description: "Train AI models to cite the business" },
   ];
 }

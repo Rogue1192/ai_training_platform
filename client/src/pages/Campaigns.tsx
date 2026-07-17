@@ -36,7 +36,6 @@ function PipelineProgressBar({ campaign }: { campaign: {
   contentGenerationCompletedAt: Date | string | null;
   publishingCompletedAt: Date | string | null;
   indexingSubmittedAt: Date | string | null;
-  indexingVerifiedAt: Date | string | null;
   trainingStartedAt: Date | string | null;
   sprintCompletedAt?: Date | string | null;
   llmTxtVerified: boolean | null;
