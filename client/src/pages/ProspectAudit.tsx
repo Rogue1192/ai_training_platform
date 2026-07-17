@@ -704,7 +704,7 @@ function ResultsStep({
               <TrendingUp className="w-5 h-5 text-green-400" />
               Revenue Opportunity Calculator
             </h2>
-            <p className="text-xs text-gray-300 mb-6">
+            <p className="text-sm text-white mb-6">
               Adjust the sliders to model what capturing a portion of this missed visibility could mean for your business.
             </p>
 

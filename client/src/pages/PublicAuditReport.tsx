@@ -100,7 +100,7 @@ function RevenueCalculator({ avgJobValue, lostOpportunities }: { avgJobValue: nu
         <TrendingUp className="w-5 h-5 text-green-400" />
         Revenue Opportunity Calculator
       </h2>
-      <p className="text-xs text-gray-500 mb-6">
+      <p className="text-sm text-white mb-6">
         Adjust the inputs below to model what capturing a portion of this missed visibility could mean for your business.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
