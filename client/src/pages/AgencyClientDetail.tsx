@@ -794,6 +794,22 @@ function CampaignRow({ campaign, businessId, clientEmail, clientName, businessNa
 
   const baseUrl = window.location.origin;
 
+  // Quick share link — gets or creates a /report/:token link for this campaign
+  const [quickShareLink, setQuickShareLink] = useState<string | null>(null);
+  const [quickShareCopied, setQuickShareCopied] = useState(false);
+  const getQuickShareLink = trpc.campaign.getOrCreateBaselineShareLink.useMutation({
+    onSuccess: (data) => {
+      const url = `${baseUrl}/report/${data.token}`;
+      setQuickShareLink(url);
+      navigator.clipboard.writeText(url).then(() => {
+        setQuickShareCopied(true);
+        toast.success("Baseline report link copied! Ready to text or email.");
+        setTimeout(() => setQuickShareCopied(false), 2500);
+      });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   function copyLink(token: string) {
     navigator.clipboard.writeText(`${baseUrl}/report/${token}`);
     toast.success("Link copied to clipboard");
@@ -840,6 +856,49 @@ function CampaignRow({ campaign, businessId, clientEmail, clientName, businessNa
               <ExternalLink className="h-3 w-3 mr-1" />
               {showReport ? "Hide Report" : "View Report"}
             </Button>
+            {/* Quick share link — only shown when campaign has a baseline */}
+            {(campaign as any).baselineCheckCompletedAt && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-7 px-2 text-primary hover:text-primary/80"
+                  onClick={() => {
+                    if (quickShareLink) {
+                      navigator.clipboard.writeText(quickShareLink).then(() => {
+                        setQuickShareCopied(true);
+                        toast.success("Report link copied!");
+                        setTimeout(() => setQuickShareCopied(false), 2500);
+                      });
+                    } else {
+                      getQuickShareLink.mutate({ campaignId: campaign.id });
+                    }
+                  }}
+                  disabled={getQuickShareLink.isPending}
+                  title="Copy shareable baseline report link (text or email to client)"
+                >
+                  {getQuickShareLink.isPending ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : quickShareCopied ? (
+                    <CheckCircle className="h-3 w-3 mr-1 text-green-400" />
+                  ) : (
+                    <Copy className="h-3 w-3 mr-1" />
+                  )}
+                  {quickShareCopied ? "Copied!" : "Share Report"}
+                </Button>
+                {quickShareLink && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
+                    onClick={() => window.open(quickShareLink, "_blank")}
+                    title="Open report in new tab"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </Button>
+                )}
+              </>
+            )}
           </div>
         </div>
 

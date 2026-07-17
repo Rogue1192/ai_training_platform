@@ -15,7 +15,93 @@ import { parseLocations, serializeLocations } from "@shared/location";
 import {
   Loader2, Plus, Building2, MapPin, Phone, Globe, Trash2, Pencil,
   Shield, Search, CheckSquare, Square, Archive, X, AlertTriangle, CheckCircle2,
+  Copy, BarChart2, ExternalLink,
 } from "lucide-react";
+
+// ─── Baseline Report Share Button (Business Card) ──────────────────────────
+// Looks up the most recent campaign for this business, then gets/creates a
+// shareable /report/:token link. Shown on every business card in Super Admin.
+function BusinessBaselineButton({ businessId }: { businessId: number }) {
+  const [link, setLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Lazy-load campaigns for this business only when the button is clicked
+  const { data: campaigns, isLoading: loadingCampaigns } = trpc.business.listCampaigns.useQuery(
+    { businessId },
+    { enabled: true, staleTime: 60_000 }
+  );
+
+  const getLink = trpc.campaign.getOrCreateBaselineShareLink.useMutation({
+    onSuccess: (data) => {
+      const url = `${window.location.origin}/report/${data.token}`;
+      setLink(url);
+      navigator.clipboard.writeText(url).then(() => {
+        setCopied(true);
+        toast.success("Baseline report link copied!");
+        setTimeout(() => setCopied(false), 2500);
+      });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Find the most recent campaign that has a completed baseline
+  const baselineCampaign = campaigns?.find((c: any) => c.baselineCheckCompletedAt);
+
+  if (!baselineCampaign && !loadingCampaigns) return null;
+
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (link) {
+      navigator.clipboard.writeText(link).then(() => {
+        setCopied(true);
+        toast.success("Baseline report link copied!");
+        setTimeout(() => setCopied(false), 2500);
+      });
+    } else if (baselineCampaign) {
+      getLink.mutate({ campaignId: baselineCampaign.id });
+    }
+  }
+
+  function handleOpen(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (link) window.open(link, "_blank");
+    else if (baselineCampaign) getLink.mutate({ campaignId: baselineCampaign.id });
+  }
+
+  return (
+    <div className="flex gap-1 pt-1">
+      <Button
+        variant="outline"
+        size="sm"
+        className="flex-1 gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+        onClick={handleCopy}
+        disabled={getLink.isPending || loadingCampaigns || !baselineCampaign}
+        title="Copy shareable baseline report link"
+      >
+        {getLink.isPending ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        ) : copied ? (
+          <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+        ) : (
+          <Copy className="w-3.5 h-3.5" />
+        )}
+        <BarChart2 className="w-3.5 h-3.5" />
+        {copied ? "Copied!" : "Baseline Report"}
+      </Button>
+      {link && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="px-2 text-muted-foreground hover:text-primary"
+          onClick={handleOpen}
+          title="Open baseline report in new tab"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+        </Button>
+      )}
+    </div>
+  );
+}
 
 // ─── Schema / Credibility Completeness Checker ───────────────────────────────
 
@@ -1129,6 +1215,9 @@ export default function Businesses() {
                       <span>Credibility data available</span>
                     </div>
                   )}
+                  {/* Baseline Report share button — only shown when a campaign has a completed baseline */}
+                  <BusinessBaselineButton businessId={business.id} />
+
                   <div className="flex gap-2 pt-2">
                     {(business as any).isArchived && (
                       <Button

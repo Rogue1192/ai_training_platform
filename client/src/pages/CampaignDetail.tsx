@@ -61,6 +61,7 @@ import {
   Mail,
   CalendarDays,
   ListChecks,
+  BarChart2,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
@@ -275,6 +276,22 @@ export default function CampaignDetail() {
       toast.error(`Email failed: ${error.message}`);
       setIsSendingReportEmail(false);
     },
+  });
+
+  // Baseline share link state
+  const [baselineShareLink, setBaselineShareLink] = useState<string | null>(null);
+  const [baselineShareCopied, setBaselineShareCopied] = useState(false);
+  const getBaselineShareLink = trpc.campaign.getOrCreateBaselineShareLink.useMutation({
+    onSuccess: (data) => {
+      const url = `${window.location.origin}/report/${data.token}`;
+      setBaselineShareLink(url);
+      navigator.clipboard.writeText(url).then(() => {
+        setBaselineShareCopied(true);
+        toast.success("Baseline report link copied!");
+        setTimeout(() => setBaselineShareCopied(false), 2500);
+      });
+    },
+    onError: (err) => toast.error(err.message),
   });
 
   // Compute pipeline progress
@@ -1190,6 +1207,46 @@ export default function CampaignDetail() {
                 : "No rank data yet — run a baseline check to get started"}
             </p>
             <div className="flex items-center gap-2">
+              {/* Share link — copy /report/:token to clipboard */}
+              {rankReport?.baselineCheckAt && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (baselineShareLink) {
+                        navigator.clipboard.writeText(baselineShareLink).then(() => {
+                          setBaselineShareCopied(true);
+                          toast.success("Report link copied!");
+                          setTimeout(() => setBaselineShareCopied(false), 2500);
+                        });
+                      } else {
+                        getBaselineShareLink.mutate({ campaignId });
+                      }
+                    }}
+                    disabled={getBaselineShareLink.isPending}
+                    title="Copy shareable report link (text or email to client)"
+                  >
+                    {getBaselineShareLink.isPending ? (
+                      <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Getting Link...</>
+                    ) : baselineShareCopied ? (
+                      <><CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-green-400" />Copied!</>
+                    ) : (
+                      <><Copy className="w-3.5 h-3.5 mr-1.5" /><BarChart2 className="w-3.5 h-3.5 mr-1.5" />Share Report Link</>
+                    )}
+                  </Button>
+                  {baselineShareLink && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => window.open(baselineShareLink, "_blank")}
+                      title="Open report in new tab"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </>
+              )}
               <Button
                 variant="outline"
                 size="sm"

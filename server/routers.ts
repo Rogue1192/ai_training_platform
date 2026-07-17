@@ -275,6 +275,20 @@ export const appRouter = router({
         });
         return { success: true, businessId: business.id };
       }),
+
+    // Get all campaigns for a specific business (used by business cards to show baseline report button)
+    listCampaigns: protectedProcedure
+      .input(z.object({ businessId: z.number() }))
+      .query(async ({ input }) => {
+        const { getCampaignsByBusinessId } = await import('./dbCampaigns');
+        const campaigns = await getCampaignsByBusinessId(input.businessId);
+        // Return lightweight fields only — just enough for the baseline report button
+        return campaigns.map((c: any) => ({
+          id: c.id,
+          status: c.status,
+          baselineCheckCompletedAt: c.baselineCheckCompletedAt ?? null,
+        }));
+      }),
   }),
 
   // API key management
@@ -2331,6 +2345,58 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
 
         // No audit result — schema_package only
         return { success: true, mode: "package_only", deliveryMode: "full_replace", blockCount: 0, gapFieldCount: 0 };
+      }),
+
+    // Get or create a shareable baseline report link for a campaign.
+    // Reuses the existing clientDashboards / /report/:token system.
+    // Returns { token, url } — the URL can be texted/emailed to the client.
+    // Available to both admin and agency users.
+    getOrCreateBaselineShareLink: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { getDb } = await import('./db');
+        const { clientDashboards, campaigns, businesses } = await import('../drizzle/schema');
+        const { eq, and } = await import('drizzle-orm');
+        const crypto = await import('crypto');
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+
+        // Fetch campaign to get businessId and verify access
+        const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, input.campaignId)).limit(1);
+        if (!campaign) throw new Error('Campaign not found');
+
+        // Agency users can only access their own clients' campaigns
+        if (ctx.user.role !== 'admin') {
+          const { getAgencyByUserId } = await import('./dbAgencies');
+          const agency = await getAgencyByUserId(ctx.user.id);
+          if (!agency) throw new Error('Forbidden');
+          const [biz] = await db.select().from(businesses).where(eq(businesses.id, campaign.businessId)).limit(1);
+          if (!biz || biz.agencyId !== agency.id) throw new Error('Forbidden');
+        }
+
+        // Look for an existing active dashboard link for this campaign
+        const existing = await db.select()
+          .from(clientDashboards)
+          .where(and(
+            eq(clientDashboards.campaignId, input.campaignId),
+            eq(clientDashboards.isActive, true)
+          ))
+          .limit(1);
+
+        if (existing[0]) {
+          return { token: existing[0].accessToken };
+        }
+
+        // Create a new one
+        const accessToken = crypto.randomBytes(32).toString('hex');
+        const [created] = await db.insert(clientDashboards).values({
+          businessId: campaign.businessId,
+          campaignId: input.campaignId,
+          accessToken,
+          dashboardTitle: null,
+          isActive: true,
+        }).returning();
+        return { token: created.accessToken };
       }),
 
     // Update the HTML content of a content page (allows editing links/text even after page is published)

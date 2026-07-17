@@ -20,6 +20,8 @@ import {
   PauseCircle,
   XCircle,
   Play,
+  BarChart2,
+  ExternalLink,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
@@ -27,6 +29,82 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { computePipelineStages, stageColor, stageTextColor, type StageStatus } from "@/lib/pipelineStages";
+
+// ─── Baseline Report Share Button ────────────────────────────────────────────
+// Appears on campaign cards when baselineCheckCompletedAt is set.
+// Clicking it generates (or retrieves) a /report/:token link and copies it.
+function BaselineShareButton({ campaignId }: { campaignId: number }) {
+  const [copied, setCopied] = useState(false);
+  const [link, setLink] = useState<string | null>(null);
+  const getLink = trpc.campaign.getOrCreateBaselineShareLink.useMutation({
+    onSuccess: (data) => {
+      const url = `${window.location.origin}/report/${data.token}`;
+      setLink(url);
+      navigator.clipboard.writeText(url).then(() => {
+        setCopied(true);
+        toast.success("Baseline report link copied!");
+        setTimeout(() => setCopied(false), 2500);
+      });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function handleClick(e: React.MouseEvent) {
+    e.stopPropagation(); // don't navigate to campaign detail
+    if (link) {
+      navigator.clipboard.writeText(link).then(() => {
+        setCopied(true);
+        toast.success("Baseline report link copied!");
+        setTimeout(() => setCopied(false), 2500);
+      });
+    } else {
+      getLink.mutate({ campaignId });
+    }
+  }
+
+  function handleOpen(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (link) {
+      window.open(link, "_blank");
+    } else {
+      getLink.mutate({ campaignId });
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 px-2 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+        onClick={handleClick}
+        disabled={getLink.isPending}
+        title="Copy baseline report link"
+      >
+        {getLink.isPending ? (
+          <Loader2 className="w-3 h-3 animate-spin" />
+        ) : copied ? (
+          <CheckCircle2 className="w-3 h-3 text-green-400" />
+        ) : (
+          <Copy className="w-3 h-3" />
+        )}
+        <BarChart2 className="w-3 h-3" />
+        <span className="hidden sm:inline">Report</span>
+      </Button>
+      {link && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
+          onClick={handleOpen}
+          title="Open baseline report"
+        >
+          <ExternalLink className="w-3 h-3" />
+        </Button>
+      )}
+    </div>
+  );
+}
 
 // Inline pipeline progress bar component used on each campaign card
 function PipelineProgressBar({ campaign }: { campaign: {
@@ -340,6 +418,7 @@ export default function Campaigns() {
                               complete:     "bg-green-500/10 text-green-400 border-green-500/30",
                               active:       "bg-blue-500/10 text-blue-400 border-blue-500/30",
                               action:       "bg-amber-500/10 text-amber-400 border-amber-500/30",
+                              blocked:      "bg-red-500/10 text-red-400 border-red-500/30",
                               sprint:       "bg-yellow-400/10 text-yellow-400 border-yellow-400/30",
                               maintenance:  "bg-teal-500/10 text-teal-400 border-teal-500/30",
                               pending:      "bg-muted/50 text-muted-foreground border-border",
@@ -388,6 +467,10 @@ export default function Campaigns() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {/* Baseline Report share button — only when baseline is done */}
+                      {(campaign as any).baselineCheckCompletedAt && (
+                        <BaselineShareButton campaignId={campaign.id} />
+                      )}
                       <span className="text-xs text-muted-foreground">
                         {new Date(campaign.createdAt).toLocaleDateString()}
                       </span>

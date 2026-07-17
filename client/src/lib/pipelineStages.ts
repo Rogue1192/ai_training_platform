@@ -19,14 +19,20 @@
  *    Complete when: indexingSubmittedAt is set. Indexing verification step
  *    has been removed — submission to MonkeyIndexer is sufficient to advance.
  *    llm.txt and schema are handled at the training gate, not here.
+ *
+ *  Stage 6 — Training Sprint
+ *    "blocked" (red, static) when: trainingStartedAt is set but isBlocked=true.
+ *    This means the scheduler started the sprint but cannot continue because
+ *    llm.txt, schema, or content URLs are missing.
  */
 
 export type StageStatus =
   | "complete"     // green — step is done AND all prior steps are done
   | "active"       // blue — step is currently running
   | "action"       // amber — step needs user action to proceed
+  | "blocked"      // red — step is stopped/blocked and cannot proceed
   | "pending"      // grey — step hasn't started yet (or prior steps not done)
-  | "sprint"       // yellow pulsing — training sprint in progress
+  | "sprint"       // yellow pulsing — training sprint in progress (not blocked)
   | "maintenance"; // teal — ongoing post-sprint maintenance
 
 export interface PipelineStage {
@@ -110,10 +116,12 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     isRunning: boolean,
     needsAction: boolean,
     isSprint = false,
-    isMaintenance = false
+    isMaintenance = false,
+    isBlocked = false
   ): StageStatus {
     if (isComplete) return "complete";
     if (stepNum !== currentStep) return "pending";
+    if (isBlocked) return "blocked";
     if (isMaintenance) return "maintenance";
     if (isSprint) return "sprint";
     if (needsAction) return "action";
@@ -125,6 +133,13 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
   const stage4NeedsAction = stage3Complete && !stage4Complete;
   // Stage 2 needs action when: stage 1 done but baseline hasn't run
   const stage2NeedsAction = stage1Complete && !stage2Complete;
+
+  // Stage 6 training sprint is "blocked" when:
+  // - We're currently on step 6 (stage 5 complete, stage 6 not done)
+  // - AND the campaign is blocked (missing llm.txt/schema/URLs)
+  // This covers both: sprint not yet started (blocked before start) and
+  // sprint started but can't proceed (blocked mid-sprint).
+  const stage6IsBlocked = currentStep === 6 && c.isBlocked;
 
   // Stage 5 description — show what's still pending
   function indexingDescription(): string {
@@ -144,6 +159,22 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     if (!done(c.publishingCompletedAt)) return "Add content to site and submit live URLs";
     if ((c.missingUrlCount ?? 0) > 0) return `${c.missingUrlCount} content URL${c.missingUrlCount === 1 ? "" : "s"} still missing`;
     return "Content published";
+  }
+
+  // Stage 6 description
+  function trainingDescription(): string {
+    if (stage6Complete) return "4-day training sprint complete";
+    if (stage6IsBlocked) {
+      const reasons: string[] = [];
+      if (c.llmTxtVerified !== true) reasons.push("llm.txt not verified");
+      if (c.schemaVerified !== true) reasons.push("schema not verified");
+      if ((c.missingUrlCount ?? 0) > 0) reasons.push(`${c.missingUrlCount} content URL${c.missingUrlCount === 1 ? "" : "s"} missing`);
+      return reasons.length > 0
+        ? `Training blocked — ${reasons.join(", ")}`
+        : "Training blocked — fix issues to resume";
+    }
+    if (s6_sprintStarted && stage5Complete) return "Training sprint in progress (Day 1–4)";
+    return "Awaiting training sprint start";
   }
 
   return [
@@ -196,19 +227,19 @@ export function computePipelineStages(c: CampaignPipelineFields): PipelineStage[
     },
     {
       id: "training",
-      label: s6_sprintDone ? "Sprint Complete" : "Training Sprint",
+      label: s6_sprintDone ? "Sprint Complete" : stage6IsBlocked ? "Training Blocked" : "Training Sprint",
       status: stageStatus(
         6,
         stage6Complete,
-        s6_sprintStarted && !s6_sprintDone && stage5Complete,
+        s6_sprintStarted && !s6_sprintDone && stage5Complete && !stage6IsBlocked,
         false,
-        s6_sprintStarted && !s6_sprintDone && stage5Complete
+        // isSprint: only pulse when actually running and NOT blocked
+        s6_sprintStarted && !s6_sprintDone && stage5Complete && !stage6IsBlocked,
+        false,
+        // isBlocked
+        stage6IsBlocked
       ),
-      description: stage6Complete
-        ? "4-day training sprint complete"
-        : s6_sprintStarted && stage5Complete
-        ? "Training sprint in progress (Day 1–4)"
-        : "Awaiting training sprint start",
+      description: trainingDescription(),
       isCurrent: currentStep === 6,
     },
     {
@@ -229,6 +260,7 @@ export function stageColor(status: StageStatus): string {
     case "complete":     return "bg-green-500";
     case "active":       return "bg-blue-500";
     case "action":       return "bg-amber-500";
+    case "blocked":      return "bg-red-500";
     case "sprint":       return "bg-yellow-400";
     case "maintenance":  return "bg-teal-500";
     case "pending":
@@ -241,6 +273,7 @@ export function stageBorderColor(status: StageStatus): string {
     case "complete":     return "border-green-500";
     case "active":       return "border-blue-500";
     case "action":       return "border-amber-500";
+    case "blocked":      return "border-red-500";
     case "sprint":       return "border-yellow-400";
     case "maintenance":  return "border-teal-500";
     case "pending":
@@ -253,6 +286,7 @@ export function stageTextColor(status: StageStatus): string {
     case "complete":     return "text-green-400";
     case "active":       return "text-blue-400";
     case "action":       return "text-amber-400";
+    case "blocked":      return "text-red-400";
     case "sprint":       return "text-yellow-300";
     case "maintenance":  return "text-teal-400";
     case "pending":
