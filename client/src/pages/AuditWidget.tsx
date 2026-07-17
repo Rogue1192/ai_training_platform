@@ -1427,7 +1427,7 @@ export default function AuditWidget() {
       const mappedScores = {
         ...scores,
         queriesMentioned: (scores as any).mentionedQueries ?? (scores as any).queriesMentioned ?? 0,
-        totalQueries: confirmedQueries.length,
+        totalQueries: snapshots.length || (scores as any).totalQueries || confirmedQueries.length,
       };
 
       setResults({ scores: mappedScores, snapshots, completedAt: new Date(), shareToken });

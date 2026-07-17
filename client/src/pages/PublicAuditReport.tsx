@@ -542,7 +542,7 @@ export default function PublicAuditReport() {
     gemini: audit.geminiScore ?? 0,
     aiOverview: audit.aiOverviewScore ?? 0,
     queriesMentioned: audit.queriesMentioned ?? 0,
-    totalTracked: snapshots.length / 3 || 15,
+    totalTracked: snapshots.length || 15,
     totalAISearches: (audit as any).totalAISearches ?? 0,
     visibleSearches: (audit as any).visibleSearches ?? 0,
     lostOpportunities: (audit as any).lostOpportunities ?? 0,

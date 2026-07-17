@@ -1148,7 +1148,13 @@ export default function ProspectAudit() {
       clearInterval(progressInterval);
       setProgress({ completed: confirmedQueries.length, total: confirmedQueries.length, latest: "" });
 
-      setResults({ scores, snapshots, completedAt: new Date() });
+      // Map engine field names → UI field names and use actual snapshot count
+      const mappedScores = {
+        ...scores,
+        queriesMentioned: (scores as any).mentionedQueries ?? (scores as any).queriesMentioned ?? 0,
+        totalQueries: snapshots.length || (scores as any).totalQueries || confirmedQueries.length,
+      };
+      setResults({ scores: mappedScores, snapshots, completedAt: new Date() });
       setStep("results");
     } catch (e: any) {
       setError(e.message || "Audit failed");
