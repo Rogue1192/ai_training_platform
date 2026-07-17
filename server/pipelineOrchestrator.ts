@@ -340,7 +340,7 @@ export async function runPipelineStep(
             ? `Indexing verified: ${verifyResult.accessibleUrls}/${verifyResult.totalUrls} URLs accessible.`
             : `Indexing not yet verified: ${verifyResult.accessibleUrls}/${verifyResult.totalUrls} URLs accessible. ${verifyResult.inaccessibleUrls.length} still pending.`,
           data: verifyResult,
-          nextStep: verifyResult.verified ? "baseline_check" : "indexing_verification",
+          nextStep: verifyResult.verified ? "training" : "indexing_verification",
         };
         break;
       }

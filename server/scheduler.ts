@@ -608,6 +608,14 @@ export function startScheduler(): void {
     });
   }, 24 * 60 * 60 * 1000);
 
+  // Auto-run baseline check for campaigns stuck in baseline_check status.
+  // Fires immediately on start and every 5 minutes — catches any campaign where
+  // the fire-and-forget runFullPipeline call from approveQueryReview failed.
+  checkPendingBaselineChecks().catch((err: Error) => console.error("[Scheduler] Baseline check failed:", err));
+  setInterval(() => {
+    checkPendingBaselineChecks().catch((err: Error) => console.error("[Scheduler] Baseline check failed:", err));
+  }, 5 * 60 * 1000); // every 5 minutes
+
   // Auto-advance previously-blocked publishing campaigns (llm.txt/schema now fixed)
   checkBlockedPublishingCampaigns().catch((err: Error) => console.error("[Scheduler] Blocked publishing check failed:", err));
   setInterval(() => {
@@ -685,6 +693,97 @@ export function startScheduler(): void {
   }, 24 * 60 * 60 * 1000); // once per day
 
   console.log("[Scheduler] Scheduler started successfully");
+}
+
+// ─── Baseline Check Auto-Runner ─────────────────────────────────────────────
+/**
+ * checkPendingBaselineChecks
+ *
+ * Finds any campaign in `baseline_check` status where `baselineCheckCompletedAt`
+ * is NULL and runs the baseline check pipeline step automatically.
+ *
+ * This is the safety net for the fire-and-forget `runFullPipeline` call that
+ * fires from `approveQueryReview`. If that call fails (API error, timeout, etc.)
+ * the campaign stays stuck in `baseline_check` forever without this poller.
+ *
+ * Runs every 5 minutes. Idempotent — the pipeline step itself guards against
+ * re-running if `baselineCheckCompletedAt` is already set.
+ */
+export async function checkPendingBaselineChecks(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    const { campaigns: cTable } = await import('../drizzle/schema');
+    const { eq, and, isNull, isNotNull } = await import('drizzle-orm');
+
+    // Case 1: Baseline hasn't run yet — run it now
+    const needsBaseline = await db
+      .select()
+      .from(cTable)
+      .where(
+        and(
+          eq(cTable.status, 'baseline_check'),
+          isNull(cTable.baselineCheckCompletedAt)
+        )
+      );
+
+    // Case 2: Baseline completed but pipeline stalled — advance to credibility_research
+    const baselineDoneStuck = await db
+      .select()
+      .from(cTable)
+      .where(
+        and(
+          eq(cTable.status, 'baseline_check'),
+          isNotNull(cTable.baselineCheckCompletedAt)
+        )
+      );
+
+    if (needsBaseline.length === 0 && baselineDoneStuck.length === 0) return;
+
+    const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
+    const ownerId = adminUsers[0]?.id ?? 0;
+
+    const { runPipelineStep, runFullPipeline } = await import('./pipelineOrchestrator');
+
+    // Run baseline for campaigns that haven't had it yet
+    if (needsBaseline.length > 0) {
+      console.log(`[Scheduler] Found ${needsBaseline.length} campaign(s) pending baseline check — running now`);
+      for (const campaign of needsBaseline) {
+        try {
+          console.log(`[Scheduler] Running baseline check for campaign ${campaign.id}`);
+          const result = await runPipelineStep(campaign.id, 'baseline_check', ownerId);
+          console.log(`[Scheduler] Baseline check for campaign ${campaign.id}: ${result.message}`);
+          // After baseline completes, continue the pipeline (credibility_research → content_generation → ...)
+          if (result.success) {
+            console.log(`[Scheduler] Baseline done for campaign ${campaign.id} — continuing pipeline`);
+            runFullPipeline(campaign.id, ownerId).catch((err: any) =>
+              console.error(`[Scheduler] Post-baseline pipeline error for campaign ${campaign.id}:`, err.message)
+            );
+          }
+        } catch (err: any) {
+          console.error(`[Scheduler] Baseline check failed for campaign ${campaign.id}:`, err.message);
+        }
+      }
+    }
+
+    // Advance campaigns where baseline is done but status hasn't moved
+    if (baselineDoneStuck.length > 0) {
+      console.log(`[Scheduler] Found ${baselineDoneStuck.length} campaign(s) with baseline complete but stuck in baseline_check — advancing pipeline`);
+      for (const campaign of baselineDoneStuck) {
+        try {
+          console.log(`[Scheduler] Advancing post-baseline pipeline for campaign ${campaign.id}`);
+          runFullPipeline(campaign.id, ownerId).catch((err: any) =>
+            console.error(`[Scheduler] Post-baseline pipeline error for campaign ${campaign.id}:`, err.message)
+          );
+        } catch (err: any) {
+          console.error(`[Scheduler] Post-baseline advance failed for campaign ${campaign.id}:`, err.message);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[Scheduler] checkPendingBaselineChecks error:', err.message);
+  }
 }
 
 /**

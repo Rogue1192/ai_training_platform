@@ -684,6 +684,70 @@ function ClientReportViewer({ campaignId, baseUrl }: { campaignId: number; baseU
   );
 }
 
+// ─── Baseline Score Summary ───────────────────────────────────────────────────
+// Shows Day 0 baseline visibility scores for a campaign once the baseline check
+// has completed. Reuses the same generateCampaignRankReport data source as the
+// super-admin Rankings tab and the client-facing /report/:token page.
+function BaselineScoreSummary({ campaignId }: { campaignId: number }) {
+  const { data: report, isLoading } = trpc.agency.getClientBaselineReport.useQuery(
+    { campaignId },
+    { retry: false }
+  );
+
+  if (isLoading || !report || !(report as any).baselineCheckAt) return null;
+  const baseline = (report as any).baselineScore;
+  const current = (report as any).currentScore;
+  if (!baseline) return null;
+
+  const change: number | null = current ? current.overall - baseline.overall : null;
+
+  return (
+    <div className="border-t pt-3">
+      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+        <TrendingUp className="h-3.5 w-3.5" />
+        AI Visibility Baseline
+        <span className="normal-case font-normal ml-1">
+          (Day 0 — {new Date((report as any).baselineCheckAt).toLocaleDateString()})
+        </span>
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="text-center p-2 rounded-md bg-muted/30">
+          <p className="text-xl font-bold text-amber-400">{baseline.overall}</p>
+          <p className="text-[10px] text-muted-foreground">Baseline Score</p>
+        </div>
+        <div className="text-center p-2 rounded-md bg-muted/30">
+          <p className="text-xl font-bold text-foreground">{current?.overall ?? '—'}</p>
+          <p className="text-[10px] text-muted-foreground">Current Score</p>
+        </div>
+        <div className="text-center p-2 rounded-md bg-muted/30">
+          <p className={`text-xl font-bold ${
+            change == null ? 'text-muted-foreground' :
+            change > 0 ? 'text-green-400' :
+            change < 0 ? 'text-red-400' : 'text-muted-foreground'
+          }`}>
+            {change != null ? (change > 0 ? '+' : '') + Math.round(change) : '—'}
+          </p>
+          <p className="text-[10px] text-muted-foreground">Change</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-1.5">
+        <div className="text-center p-1.5 rounded bg-muted/20">
+          <p className="text-xs font-medium">{baseline.chatgpt ?? 0}%</p>
+          <p className="text-[10px] text-muted-foreground">ChatGPT</p>
+        </div>
+        <div className="text-center p-1.5 rounded bg-muted/20">
+          <p className="text-xs font-medium">{baseline.gemini ?? 0}%</p>
+          <p className="text-[10px] text-muted-foreground">Gemini</p>
+        </div>
+        <div className="text-center p-1.5 rounded bg-muted/20">
+          <p className="text-xs font-medium">{baseline.aiOverview ?? 0}%</p>
+          <p className="text-[10px] text-muted-foreground">AI Overview</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Campaign Row ──────────────────────────────────────────────────────────────
 function CampaignRow({ campaign, businessId, clientEmail, clientName, businessName }: {
   campaign: any;
@@ -791,6 +855,9 @@ function CampaignRow({ campaign, businessId, clientEmail, clientName, businessNa
             <ContentPublishPanel campaignId={campaign.id} campaignStatus={campaign.status} />
           </div>
         )}
+
+        {/* Baseline visibility snapshot — shown once baseline_check has completed */}
+        <BaselineScoreSummary campaignId={campaign.id} />
 
         {/* Inline client report viewer — loads the first active report link in an iframe */}
         {showReport && (

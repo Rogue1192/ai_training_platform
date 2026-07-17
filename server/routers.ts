@@ -4767,6 +4767,33 @@ export const agencyRouter = router({
         agencyUserEmail: agencyUser.email,
       };
     }),
+
+  // Agency user or admin: get baseline report data for a specific campaign.
+  // Returns the same data shape as rankTracking.getReport but scoped to the
+  // agency's client — used to surface the baseline report in the partner portal.
+  getClientBaselineReport: protectedProcedure
+    .input(z.object({ campaignId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const { getAgencyByUserId } = await import('./dbAgencies');
+      const { businesses, campaigns } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const { getDb } = await import('./db');
+      const db = await getDb();
+      if (!db) throw new Error('Database not available');
+      // Authorization: verify this campaign belongs to the agency (or caller is admin)
+      if (ctx.user.role !== 'admin') {
+        const agency = await getAgencyByUserId(ctx.user.id);
+        if (!agency) throw new Error('Forbidden');
+        const [camp] = await db.select({ businessId: campaigns.businessId })
+          .from(campaigns).where(eq(campaigns.id, input.campaignId)).limit(1);
+        if (!camp) throw new Error('Campaign not found');
+        const [biz] = await db.select({ agencyId: businesses.agencyId })
+          .from(businesses).where(eq(businesses.id, camp.businessId)).limit(1);
+        if (!biz || biz.agencyId !== agency.id) throw new Error('Forbidden');
+      }
+      const { generateCampaignRankReport } = await import('./rankTrackingEngine');
+      return generateCampaignRankReport(input.campaignId);
+    }),
 });
 
 // ─── Prospect Audit Router ───────────────────────────────────────────────────
