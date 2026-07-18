@@ -954,14 +954,38 @@ export async function runTrainingDay(
     return;
   }
 
-  let totalSessions = 0;
+  // ── Build a flat shuffled pool of all (query, variation) pairs ──────────────
+  // Each entry in the pool is one "slot" the session can use for a set.
+  // We shuffle so the model sees different queries in unpredictable order,
+  // matching the original V1 behaviour that produced strong results.
+  type PhrasePair = {
+    query: typeof queries[0];
+    variationText: string;
+    variationIndex: number;
+  };
+
+  const phrasePool: PhrasePair[] = [];
   for (const q of queries) {
-    const variations: string[] = Array.isArray(q.phraseVariations)
-      ? (q.phraseVariations as string[])
-      : [];
-    const variationCount = Math.max(variations.length, 1);
-    totalSessions += variationCount * TARGET_PROVIDERS.length;
+    const variations: string[] =
+      Array.isArray(q.phraseVariations) &&
+      (q.phraseVariations as string[]).length > 0
+        ? (q.phraseVariations as string[])
+        : [q.phraseText];
+    for (let vi = 0; vi < variations.length; vi++) {
+      phrasePool.push({ query: q, variationText: variations[vi], variationIndex: vi });
+    }
   }
+
+  // Fisher-Yates shuffle
+  for (let i = phrasePool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [phrasePool[i], phrasePool[j]] = [phrasePool[j], phrasePool[i]];
+  }
+
+  // Total sessions = one combined session per provider (each session cycles through
+  // SETS_PER_SESSION sets, each set using the next phrase from the pool).
+  // We count one "session" per phrase slot per provider for progress tracking.
+  const totalSessions = phrasePool.length * TARGET_PROVIDERS.length;
 
   await db
     .update(trainingDayRuns)
@@ -971,89 +995,95 @@ export async function runTrainingDay(
   let sessionsCompleted = 0;
   let phrasesGraduated = 0;
 
-  for (const query of queries) {
-    const variations: string[] =
-      Array.isArray(query.phraseVariations) &&
-      (query.phraseVariations as string[]).length > 0
-        ? (query.phraseVariations as string[])
-        : [query.phraseText];
+  // ── One combined run per provider ────────────────────────────────────────────
+  // Each provider gets its own shuffled pool pass. We re-shuffle per provider
+  // so the order is different for ChatGPT vs Gemini.
+  for (const targetProvider of TARGET_PROVIDERS) {
+    // Re-shuffle for this provider
+    const providerPool = [...phrasePool];
+    for (let i = providerPool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [providerPool[i], providerPool[j]] = [providerPool[j], providerPool[i]];
+    }
 
-    for (let vi = 0; vi < variations.length; vi++) {
-      const variationText = variations[vi];
+    console.log(
+      `[TrainingV4] Starting combined run for ${targetProvider} — ${providerPool.length} phrase slots, ${SETS_PER_SESSION} sets each`
+    );
 
-      for (const targetProvider of TARGET_PROVIDERS) {
-        // Skip already graduated phrases
-        const statusCheck = await db
-          .select()
-          .from(trainingPhraseStatus)
-          .where(
-            and(
-              eq(trainingPhraseStatus.campaignId, campaignId),
-              eq(trainingPhraseStatus.queryId, query.id),
-              eq(trainingPhraseStatus.targetAiProvider, targetProvider),
-              eq(trainingPhraseStatus.isGraduated, true)
-            )
+    // Process each phrase slot as its own session (for per-phrase graduation tracking)
+    // but the model sees them in randomized order, one set at a time
+    for (let slotIndex = 0; slotIndex < providerPool.length; slotIndex++) {
+      const { query, variationText, variationIndex } = providerPool[slotIndex];
+
+      // Skip already graduated phrases
+      const statusCheck = await db
+        .select()
+        .from(trainingPhraseStatus)
+        .where(
+          and(
+            eq(trainingPhraseStatus.campaignId, campaignId),
+            eq(trainingPhraseStatus.queryId, query.id),
+            eq(trainingPhraseStatus.targetAiProvider, targetProvider),
+            eq(trainingPhraseStatus.isGraduated, true)
           )
-          .limit(1);
+        )
+        .limit(1);
 
-        if (statusCheck.length > 0) {
+      if (statusCheck.length > 0) {
+        console.log(
+          `[TrainingV4] Skipping graduated phrase "${query.phraseText}" on ${targetProvider}`
+        );
+        sessionsCompleted++;
+        continue;
+      }
+
+      try {
+        console.log(
+          `[TrainingV4] Slot ${slotIndex + 1}/${providerPool.length}: "${variationText}" on ${targetProvider}`
+        );
+
+        const result = await runTrainingSession({
+          campaignId,
+          businessId: campaign.businessId,
+          queryId: query.id,
+          dayRunId,
+          phraseText: query.phraseText,
+          variationText,
+          variationIndex,
+          targetProvider,
+          campaignCreatedAt: campaign.createdAt,
+        });
+
+        const { isGraduated } = await updatePhraseStatus(
+          campaignId,
+          query.id,
+          targetProvider,
+          result.sessionWin
+        );
+
+        if (isGraduated) {
+          phrasesGraduated++;
           console.log(
-            `[TrainingV4] Skipping graduated phrase "${query.phraseText}" on ${targetProvider}`
+            `[TrainingV4] GRADUATED: "${query.phraseText}" on ${targetProvider} (double endorsement confirmed)`
           );
-          sessionsCompleted++;
-          continue;
         }
 
-        try {
-          const label =
-            targetProvider;
-          console.log(
-            `[TrainingV4] Running session: "${variationText}" (var ${vi}) on ${label}`
-          );
+        sessionsCompleted++;
 
-          const result = await runTrainingSession({
-            campaignId,
-            businessId: campaign.businessId,
-            queryId: query.id,
-            dayRunId,
-            phraseText: query.phraseText,
-            variationText,
-            variationIndex: vi,
-            targetProvider,
-            campaignCreatedAt: campaign.createdAt,
-          });
-
-          const { isGraduated } = await updatePhraseStatus(
-            campaignId,
-            query.id,
-            targetProvider,
-            result.sessionWin
-          );
-
-          if (isGraduated) {
-            phrasesGraduated++;
-            console.log(
-              `[TrainingV4] GRADUATED: "${query.phraseText}" on ${label} (double endorsement confirmed)`
-            );
-          }
-
-          sessionsCompleted++;
-
-          await db
-            .update(trainingDayRuns)
-            .set({ sessionsCompleted, phrasesGraduated })
-            .where(eq(trainingDayRuns.id, dayRunId));
-        } catch (err: any) {
-          console.error(
-            `[TrainingV4] Session failed for query ${query.id} on ${targetProvider}:`,
-            err.message
-          );
-          sessionsCompleted++;
-          await db
-            .update(trainingDayRuns)
-            .set({ sessionsCompleted })
-            .where(eq(trainingDayRuns.id, dayRunId));
-        }
+        await db
+          .update(trainingDayRuns)
+          .set({ sessionsCompleted, phrasesGraduated })
+          .where(eq(trainingDayRuns.id, dayRunId));
+      } catch (err: any) {
+        console.error(
+          `[TrainingV4] Session failed for query ${query.id} on ${targetProvider}:`,
+          err.message
+        );
+        sessionsCompleted++;
+        await db
+          .update(trainingDayRuns)
+          .set({ sessionsCompleted })
+          .where(eq(trainingDayRuns.id, dayRunId));
       }
     }
   }
