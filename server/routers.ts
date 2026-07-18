@@ -5113,7 +5113,8 @@ const prospectAuditRouter = router({
         queries,
         undefined,
         audit.seedKeywords ?? undefined,
-        ((audit as any).campaignScope ?? 'local') as "local" | "national" | "ecommerce"
+        ((audit as any).campaignScope ?? 'local') as "local" | "national" | "ecommerce",
+        audit.location ?? null
       );
 
       return { snapshots, scores };

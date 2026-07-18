@@ -947,7 +947,8 @@ export async function checkLLMVisibilityDirect(
     businessId?: number | null;
     campaignCreatedAt: Date;
     operationType: string;
-  } | null
+  } | null,
+  businessLocation?: string | null
 ): Promise<DirectVisibilityResult> {
   const { callAI } = await import("./aiProviders");
   const { getApiKeyByProvider } = await import("./db");
@@ -985,32 +986,59 @@ export async function checkLLMVisibilityDirect(
   // ── Helper: detect mention in LLM response ──────────────────────────────────
   // Handles variants like "Titan" / "Titan Cleaning" / "Titan Cleaning Company"
   // when the registered name is "Titan Cleaning Company".
-  // When businessWebsite or businessPhone are provided, a partial name match is
-  // only accepted if the snippet also contains a corroborating signal (domain
-  // stem or phone digits) — this prevents a "Titan Roofing" in another city
-  // from being counted as a match for "Titan Cleaning Company".
+  //
+  // Match priority:
+  //   1. Exact full-name match                          — always trusted
+  //   2. Core-name match (suffix stripped)              — trusted if ≥4 chars
+  //   3. Multi-word prefix match (≥2 words)             — trusted directly
+  //   4. Single-word prefix / partial match             — requires corroboration
+  //      (website domain, phone, OR location city)
+  //
+  // Location corroboration: if businessLocation is provided (e.g. "Chino, CA"),
+  // we extract the city name and check that the response mentions the same city.
+  // This prevents "Eagle Air" in Dallas from matching "Eagle Air Co" in Chino.
   function detectMention(responseText: string, name: string): boolean {
     const lower = responseText.toLowerCase();
     const nameLower = name.toLowerCase();
 
+    // Strip common legal suffixes to get the core name
+    // e.g. "Eagle Air Co" → "Eagle Air", "Titan Cleaning Company" → "Titan Cleaning"
+    const SUFFIX_RE = /\s*\b(co\.?|llc\.?|inc\.?|ltd\.?|corp\.?|company|services|group|solutions|associates|partners|enterprises|& sons|and sons)\s*$/i;
+    const coreName = name.replace(SUFFIX_RE, "").trim();
+    const coreNameLower = coreName.toLowerCase();
+
     // 1. Exact full-name match — always trusted
     if (lower.includes(nameLower)) return true;
+
+    // 2. Core-name match (suffix stripped) — trusted if meaningful length
+    if (coreNameLower.length >= 4 && coreNameLower !== nameLower && lower.includes(coreNameLower)) return true;
 
     // Pre-compute corroborating signals from the business profile
     const domain = businessWebsite ? domainStem(businessWebsite) : "";
     const phone  = businessPhone   ? normalizePhone(businessPhone) : "";
-    // Strip non-digits from the response text for phone matching
     const lowerDigits = responseText.replace(/\D/g, "");
+
+    // Extract city from businessLocation for location corroboration
+    // businessLocation may be "Chino, CA" or "Chino, CA; Chino Hills, CA; Ontario, CA"
+    const locationCities: string[] = [];
+    if (businessLocation) {
+      const parts = businessLocation.split(/[;,]/).map(p => p.trim()).filter(Boolean);
+      for (const part of parts) {
+        // Take the first token of each part as the city name (before any state abbreviation)
+        const city = part.split(/[,\s]+/)[0].trim().toLowerCase();
+        if (city.length >= 3) locationCities.push(city);
+      }
+    }
 
     function hasCorroboration(): boolean {
       if (domain && domain.length > 4 && lower.includes(domain)) return true;
       if (phone  && phone.length  >= 7 && lowerDigits.includes(phone)) return true;
+      // Location city corroboration: response mentions the same city as the business
+      if (locationCities.length > 0 && locationCities.some(city => lower.includes(city))) return true;
       return false;
     }
 
-    // 2. Prefix match — require ≥2 words OR corroboration for single-word prefixes
-    //    e.g. "Titan Cleaning" always matches; bare "Titan" only matches if the
-    //    snippet also contains the website domain or phone number.
+    // 3. Prefix match — require ≥2 words OR corroboration for single-word prefixes
     const words = nameLower.split(/\s+/).filter(Boolean);
     for (let len = words.length - 1; len >= 1; len--) {
       const prefix = words.slice(0, len).join(" ");
@@ -1023,7 +1051,7 @@ export async function checkLLMVisibilityDirect(
       }
     }
 
-    // 3. Partial match: ≥60% of significant (non-stop) words present
+    // 4. Partial match: ≥60% of significant (non-stop) words present
     //    Always require corroboration here since it's the weakest signal.
     const stopWords = new Set(["the", "and", "inc", "llc", "corp", "company", "services", "group", "co"]);
     const sigWords = words.filter(w => w.length > 3 && !stopWords.has(w));

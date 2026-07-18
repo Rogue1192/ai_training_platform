@@ -705,7 +705,9 @@ export async function runEndOfDayWebSearch(campaignId: number, dayRunId: number)
         business.name,
         business.agencyId ?? null,
         business.website ?? null,
-        null
+        null,
+        null,
+        business.location ?? null
       );
 
       // For each provider, update phrase status:

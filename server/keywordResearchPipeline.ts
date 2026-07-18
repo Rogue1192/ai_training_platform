@@ -439,7 +439,8 @@ export async function runCampaignBaselineCheck(campaignId: number): Promise<{
           businessId: campaign.businessId,
           campaignCreatedAt: campaign.createdAt,
           operationType: 'baseline_check',
-        }
+        },
+        business.location ?? null
       );
 
       const chatgptMentioned = mention.llmResponses.chatgpt?.mentioned || false;

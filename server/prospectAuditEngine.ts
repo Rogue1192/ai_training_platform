@@ -773,7 +773,8 @@ export async function runProspectAudit(
   queries: ProspectQueryResult[],
   onProgress?: (completed: number, total: number, latest: ProspectSnapshotResult) => void,
   serviceType?: string,
-  campaignScope?: "local" | "national" | "ecommerce"
+  campaignScope?: "local" | "national" | "ecommerce",
+  businessLocation?: string | null
 ): Promise<{
   snapshots: ProspectSnapshotResult[];
   scores: ProspectAuditScores;
@@ -837,7 +838,9 @@ export async function runProspectAudit(
         businessName,
         agencyId ?? null,
         website ?? null,
-        phone ?? null
+        phone ?? null,
+        null,
+        businessLocation ?? null
       );
 
       const snapshot: ProspectSnapshotResult = {

@@ -236,7 +236,8 @@ export async function runScheduledRankCheck(campaignId: number): Promise<{
         businessId: (business as any).id,
         campaignCreatedAt: campaign.createdAt,
         operationType: 'rank_check',
-      }
+      },
+      (business as any).location ?? null
     );
     mentions.push(mention);
 

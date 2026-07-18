@@ -214,7 +214,8 @@ async function pollCombo(
         businessId,
         campaignCreatedAt,
         operationType: 'training_poll',
-      }
+      },
+      business.location ?? null
     );
     // Cost logging is now handled inside checkLLMVisibilityDirect via costContext (real per-provider token costs)
 

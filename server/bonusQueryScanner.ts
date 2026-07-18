@@ -221,7 +221,8 @@ export async function runBonusQueryScan(campaignId: number): Promise<{
             businessId: (business as any).id,
             campaignCreatedAt: (campaign as any).createdAt,
             operationType: 'bonus_query_scan',
-          }
+          },
+          (business as any).location ?? null
         );
         // Cost logging is now handled inside checkLLMVisibilityDirect via costContext (real per-provider token costs)
 
