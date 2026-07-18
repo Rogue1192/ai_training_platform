@@ -336,7 +336,11 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
     });
 
     // Check if target AI mentioned the business during training (not a win yet — just tracking)
-    const mentionedDuringTraining = targetResp.content.toLowerCase().includes(ctx.businessName.toLowerCase());
+    // Use same core-name matching as clean probe
+    const _respLower = targetResp.content.toLowerCase();
+    const _coreName = ctx.businessName.replace(/\b(co\.?|llc\.?|inc\.?|ltd\.?|corp\.?|company|services|group|solutions|associates|partners|enterprises|& sons|and sons)$/i, "").trim();
+    const mentionedDuringTraining = _respLower.includes(ctx.businessName.toLowerCase()) ||
+      (_coreName.length >= 4 && _respLower.includes(_coreName.toLowerCase()));
     if (mentionedDuringTraining) {
       console.log(`[TrainingV3] Business mentioned at turn ${turn} for query "${phraseText}" on ${targetProvider}`);
     }
@@ -355,8 +359,20 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
     { role: "user", content: cleanProbeText },
   ];
   const cleanProbeResp = await callAI(actualProvider, targetKey, targetModel, cleanProbeMessages);
-  const cleanProbeMentioned = cleanProbeResp.content.toLowerCase().includes(ctx.businessName.toLowerCase());
+
+  // ── Business name matching: strip common legal suffixes and match on core name ──
+  // e.g. "Eagle Air Co" → matches "Eagle Air", "Eagle Air Co.", "Eagle Air Company"
+  // This prevents zero-graduation scenarios where the AI writes the name slightly
+  // differently than the exact registered business name.
+  const SUFFIX_STRIP_RE = /\b(co\.?|llc\.?|inc\.?|ltd\.?|corp\.?|company|services|group|solutions|associates|partners|enterprises|& sons|and sons)$/i;
+  const coreBusinessName = ctx.businessName.replace(SUFFIX_STRIP_RE, "").trim();
+  const responseText = cleanProbeResp.content.toLowerCase();
+  const cleanProbeMentioned =
+    responseText.includes(ctx.businessName.toLowerCase()) ||
+    (coreBusinessName.length >= 4 && responseText.includes(coreBusinessName.toLowerCase()));
   sessionWin = cleanProbeMentioned;
+
+  console.log(`[TrainingV3] Clean probe for "${phraseText}" on ${targetProvider}: mentioned=${cleanProbeMentioned} (core="${coreBusinessName}", full="${ctx.businessName}")`);
 
   // Log clean probe cost
   await logLLMCost({
