@@ -253,4 +253,19 @@ ensureTrainingQueryTables().catch((err) =>
   console.warn("[Startup] ensureTrainingQueryTables failed (non-fatal):", err.message)
 );
 
+// One-time migration: set Eagle Air Co (campaign 3) to V4 training engine.
+// Safe to run on every startup — no-ops if already set.
+import("../db").then(({ getDb }) => {
+  getDb().then(async (db) => {
+    if (!db) return;
+    try {
+      const client = (db as any).$client as import("postgres").Sql;
+      await client`UPDATE "campaigns" SET "trainingVersion" = 'v4' WHERE id = 3 AND "trainingVersion" = 'v3'`;
+      console.log('[Startup] Eagle Air Co (campaign 3) set to V4 training engine');
+    } catch (err: any) {
+      console.warn('[Startup] Eagle Air V4 migration (non-fatal):', err.message);
+    }
+  });
+}).catch(() => {});
+
 startServer().catch(console.error);

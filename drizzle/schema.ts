@@ -448,6 +448,8 @@ export const campaigns = pgTable("campaigns", {
   // The pipeline reads this to know it should re-queue from the next incomplete stage.
   // Cleared automatically once the pipeline picks it up and starts running.
   resumeRequestedAt: timestamp("resumeRequestedAt"),
+  // Training engine version — 'v3' (default) | 'v4' (goal-assessment + double-endorsement graduation)
+  trainingVersion: varchar("trainingVersion", { length: 10 }).default("v3").notNull(),
   // Site verification — set to true when the scan confirms llm.txt / schema are live.
   // Checkbox in the publishing panel auto-triggers the scan; campaign stays blocked until both pass.
   llmTxtVerified: boolean("llmTxtVerified").default(false).notNull(),

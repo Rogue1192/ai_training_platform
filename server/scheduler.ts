@@ -1369,8 +1369,6 @@ export async function checkV3SprintRuns(): Promise<void> {
 
     const { trainingDayRuns: tdrTable, campaigns: cTable, contentPages: cpTable } = await import('../drizzle/schema');
     const { eq: eqV3, and: andV3, lte: lteV3, isNull: isNullV3 } = await import('drizzle-orm');
-    const { runTrainingDay, runEndOfDayWebSearch } = await import('./trainingWorkerV3');
-
     const today = new Date().toISOString().split('T')[0];
 
     const pendingRuns = await db
@@ -1434,9 +1432,26 @@ export async function checkV3SprintRuns(): Promise<void> {
       }
 
       try {
-        console.log(`[SchedulerV3] Executing training day run ${run.id} (campaign ${run.campaignId}, day ${run.runDay})`);
-        await runTrainingDay(run.campaignId, run.id);
-        await runEndOfDayWebSearch(run.campaignId, run.id);
+        // Determine which training engine to use for this campaign
+        const [runCampaign] = await db
+          .select({ trainingVersion: cTable.trainingVersion })
+          .from(cTable)
+          .where(eqV3(cTable.id, run.campaignId))
+          .limit(1);
+        const trainingVersion = runCampaign?.trainingVersion ?? 'v3';
+
+        console.log(`[SchedulerV3] Executing training day run ${run.id} (campaign ${run.campaignId}, day ${run.runDay}, engine ${trainingVersion})`);
+
+        if (trainingVersion === 'v4') {
+          const { runTrainingDay: runTrainingDayV4 } = await import('./trainingWorkerV4');
+          await runTrainingDayV4(run.campaignId, run.id);
+          // V4 determines graduation inside the session — no daily end-of-day web search needed.
+          // Post-sprint rank check fires at the end of Day 4 (handled below).
+        } else {
+          const { runTrainingDay, runEndOfDayWebSearch } = await import('./trainingWorkerV3');
+          await runTrainingDay(run.campaignId, run.id);
+          await runEndOfDayWebSearch(run.campaignId, run.id);
+        }
 
         // After each sprint run completes, check if all 4 sprint days are now done.
         // If so: stamp sprintCompletedAt (anchors 7-day rank tracking + 14-day bonus scan)
