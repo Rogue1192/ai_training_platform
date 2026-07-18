@@ -22,6 +22,7 @@ import {
   trainingQueries,
   trainingPhraseStatus,
   trainingDayRuns,
+  trainingSessionLogs,
   campaigns,
   businesses,
 } from "../drizzle/schema";
@@ -507,6 +508,49 @@ export const trainingQueryRouter = router({
       });
 
       return { success: true, dayRunId, runDay: nextRunDay };
+    }),
+
+  /**
+   * Get all session logs for a specific day run.
+   * Returns every trainer↔target exchange grouped by query.
+   */
+  getSessionLogsByDayRun: protectedProcedure
+    .input(z.object({ dayRunId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not initialized");
+
+      const logs = await db
+        .select()
+        .from(trainingSessionLogs)
+        .where(eq(trainingSessionLogs.dayRunId, input.dayRunId))
+        .orderBy(asc(trainingSessionLogs.queryId), asc(trainingSessionLogs.variationIndex), asc(trainingSessionLogs.createdAt));
+
+      return logs;
+    }),
+
+  /**
+   * Get all session logs for a specific query (across all day runs).
+   */
+  getSessionLogsByQuery: protectedProcedure
+    .input(z.object({ queryId: z.number(), campaignId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not initialized");
+
+      const logs = await db
+        .select()
+        .from(trainingSessionLogs)
+        .where(
+          and(
+            eq(trainingSessionLogs.queryId, input.queryId),
+            eq(trainingSessionLogs.campaignId, input.campaignId)
+          )
+        )
+        .orderBy(desc(trainingSessionLogs.createdAt))
+        .limit(50);
+
+      return logs;
     }),
 });
 

@@ -40,6 +40,7 @@ import {
   trainingQueries,
   trainingPhraseStatus,
   trainingDayRuns,
+  trainingSessionLogs,
   campaigns,
   businesses,
 } from "../drizzle/schema";
@@ -65,6 +66,7 @@ interface SessionParams {
   campaignId: number;
   businessId: number;
   queryId: number;
+  dayRunId: number;
   phraseText: string;
   variationText: string;
   variationIndex: number;
@@ -164,12 +166,21 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
     campaignId,
     businessId,
     queryId,
+    dayRunId,
     phraseText,
     variationText,
     variationIndex,
     targetProvider,
     campaignCreatedAt,
   } = params;
+
+  // Dialogue log — built up turn by turn, saved to trainingSessionLogs at the end
+  const dialogueLog: Array<{
+    role: "user" | "assistant" | "trainer";
+    content: string;
+    turn: number;
+    isTrainerMessage?: boolean;
+  }> = [];
 
   // Get API keys
   const minimaxKey = await getDecryptedKey("minimax");
@@ -222,6 +233,7 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
   // This is NOT a MiniMax call — it's just the seed query
   const initialQuery = sessionVariationText;
   conversationHistory.push({ role: "user", content: initialQuery });
+  dialogueLog.push({ role: "user", content: initialQuery, turn: 1 });
 
   // ── Turn 1: Target AI responds ───────────────────────────────────────────────
   const targetMessages1: AIMessage[] = [
@@ -230,6 +242,7 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
   ];
   const targetResp1 = await callAI(actualProvider, targetKey, targetModel, targetMessages1);
   conversationHistory.push({ role: "assistant", content: targetResp1.content });
+  dialogueLog.push({ role: "assistant", content: targetResp1.content, turn: 1 });
   targetInputTokens += targetResp1.inputTokens;
   targetOutputTokens += targetResp1.outputTokens;
   turns++;
@@ -293,6 +306,8 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
 
     // Add trainer response to conversation as user message
     conversationHistory.push({ role: "user", content: trainerResp.content });
+    // Log trainer message (role: 'trainer' so the UI can distinguish it from the seed query)
+    dialogueLog.push({ role: "trainer", content: trainerResp.content, turn, isTrainerMessage: true });
 
     // Target AI responds to trainer
     const targetMessages: AIMessage[] = [
@@ -301,6 +316,8 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
     ];
     const targetResp = await callAI(actualProvider, targetKey, targetModel, targetMessages);
     conversationHistory.push({ role: "assistant", content: targetResp.content });
+    // Log target AI response
+    dialogueLog.push({ role: "assistant", content: targetResp.content, turn });
     targetInputTokens += targetResp.inputTokens;
     targetOutputTokens += targetResp.outputTokens;
     turns++;
@@ -366,6 +383,31 @@ export async function runTrainingSession(params: SessionParams): Promise<Session
     campaignCreatedAt,
     metadata: { queryId, variationIndex, turns, sessionWin },
   });
+
+  // ── Save full dialogue log to trainingSessionLogs ────────────────────────────
+  try {
+    await db.insert(trainingSessionLogs).values({
+      campaignId,
+      dayRunId,
+      queryId,
+      phraseText,
+      variationText,
+      variationIndex,
+      targetProvider,
+      sessionWin,
+      cleanProbeMentioned,
+      cleanProbeQuery: cleanProbeText,
+      cleanProbeResponse: cleanProbeResp.content,
+      totalTurns: turns,
+      conversationHistory: dialogueLog as any,
+      trainerInputTokens,
+      trainerOutputTokens,
+      targetInputTokens,
+      targetOutputTokens,
+    });
+  } catch (logErr) {
+    console.error(`[TrainingV3] Failed to save session log for query ${queryId}:`, logErr);
+  }
 
   return {
     sessionWin,
@@ -553,6 +595,7 @@ export async function runTrainingDay(campaignId: number, dayRunId: number): Prom
             campaignId,
             businessId: campaign.businessId,
             queryId: query.id,
+            dayRunId,
             phraseText: query.phraseText,
             variationText,
             variationIndex: vi,

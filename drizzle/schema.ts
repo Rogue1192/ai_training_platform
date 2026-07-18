@@ -997,3 +997,45 @@ export const trainingDayRuns = pgTable("trainingDayRuns", {
 });
 export type TrainingDayRun = typeof trainingDayRuns.$inferSelect;
 export type InsertTrainingDayRun = typeof trainingDayRuns.$inferInsert;
+
+// ─── Training Session Logs (V3) ───────────────────────────────────────────────
+// Stores the full trainer/trainee dialogue for every session run by trainingWorkerV3.
+// One row per (dayRun × query × variation × targetProvider) combination.
+export const trainingSessionLogs = pgTable("trainingSessionLogs", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaignId").notNull(),
+  dayRunId: integer("dayRunId").notNull(),
+  queryId: integer("queryId").notNull(),
+  // The base phrase (e.g. "best HVAC company in Dallas TX")
+  phraseText: text("phraseText").notNull(),
+  // The specific variation used in this session
+  variationText: text("variationText").notNull(),
+  variationIndex: integer("variationIndex").notNull().default(0),
+  // 'openai' | 'google' | 'google_ai_overview'
+  targetProvider: varchar("targetProvider", { length: 30 }).notNull(),
+  // Whether the clean probe at the end of the session mentioned the business
+  sessionWin: boolean("sessionWin").notNull().default(false),
+  cleanProbeMentioned: boolean("cleanProbeMentioned").notNull().default(false),
+  // The exact clean probe query sent and the AI's response
+  cleanProbeQuery: text("cleanProbeQuery"),
+  cleanProbeResponse: text("cleanProbeResponse"),
+  // Total trainer↔target turns completed
+  totalTurns: integer("totalTurns").notNull().default(0),
+  // Full conversation: array of { role: 'user'|'assistant'|'trainer', content: string, turn: number }
+  conversationHistory: json("conversationHistory").$type<Array<{
+    role: "user" | "assistant" | "trainer";
+    content: string;
+    turn: number;
+    isTrainerMessage?: boolean;
+  }>>().notNull().default([]),
+  // Token counts for cost attribution
+  trainerInputTokens: integer("trainerInputTokens").notNull().default(0),
+  trainerOutputTokens: integer("trainerOutputTokens").notNull().default(0),
+  targetInputTokens: integer("targetInputTokens").notNull().default(0),
+  targetOutputTokens: integer("targetOutputTokens").notNull().default(0),
+  // Set if the session threw an error
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type TrainingSessionLog = typeof trainingSessionLogs.$inferSelect;
+export type InsertTrainingSessionLog = typeof trainingSessionLogs.$inferInsert;
