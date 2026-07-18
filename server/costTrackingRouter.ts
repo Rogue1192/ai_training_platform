@@ -499,6 +499,153 @@ export const costTrackingRouter = router({
     }),
 
   /**
+   * Get detailed cost breakdown by provider → model → operationType.
+   * Admin only.
+   */
+  getProviderBreakdown: protectedProcedure
+    .input(
+      z.object({
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        campaignId: z.number().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      if (ctx.user?.role !== "admin") throw new Error("Forbidden");
+
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      const now = new Date();
+      const rangeFrom = input?.dateFrom ? new Date(input.dateFrom) : (() => { const d = new Date(now); d.setDate(d.getDate() - 30); return d; })();
+      const rangeTo = input?.dateTo ? new Date(input.dateTo) : now;
+
+      const whereConditions = [
+        gte(costLogs.createdAt, rangeFrom),
+        lte(costLogs.createdAt, rangeTo),
+        ...(input?.campaignId ? [eq(costLogs.campaignId, input.campaignId)] : []),
+      ];
+
+      const rows = await db
+        .select({
+          provider: costLogs.provider,
+          model: costLogs.model,
+          trainerProvider: costLogs.trainerProvider,
+          trainerModel: costLogs.trainerModel,
+          operationType: costLogs.operationType,
+          totalCost: sql<string>`COALESCE(SUM(${costLogs.costUsd}::numeric), 0)`,
+          totalInputTokens: sql<string>`COALESCE(SUM(${costLogs.inputTokens}), 0)`,
+          totalOutputTokens: sql<string>`COALESCE(SUM(${costLogs.outputTokens}), 0)`,
+          callCount: sql<string>`COUNT(*)`,
+        })
+        .from(costLogs)
+        .where(and(...whereConditions))
+        .groupBy(
+          costLogs.provider,
+          costLogs.model,
+          costLogs.trainerProvider,
+          costLogs.trainerModel,
+          costLogs.operationType
+        )
+        .orderBy(sql`SUM(${costLogs.costUsd}::numeric) DESC`);
+
+      // Group by provider → model → operations
+      const providerMap = new Map<string, {
+        provider: string;
+        totalCost: number;
+        totalInputTokens: number;
+        totalOutputTokens: number;
+        callCount: number;
+        models: Map<string, {
+          model: string;
+          totalCost: number;
+          totalInputTokens: number;
+          totalOutputTokens: number;
+          callCount: number;
+          operations: Array<{
+            operationType: string;
+            totalCost: number;
+            totalInputTokens: number;
+            totalOutputTokens: number;
+            callCount: number;
+          }>;
+        }>;
+      }>();
+
+      for (const row of rows) {
+        const providerKey = row.provider ?? "unknown";
+        const modelKey = row.model ?? "unknown";
+        const opType = row.operationType ?? "unknown";
+        const cost = parseFloat(row.totalCost);
+        const inputTok = parseInt(row.totalInputTokens);
+        const outputTok = parseInt(row.totalOutputTokens);
+        const calls = parseInt(row.callCount);
+
+        if (!providerMap.has(providerKey)) {
+          providerMap.set(providerKey, {
+            provider: providerKey,
+            totalCost: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            callCount: 0,
+            models: new Map(),
+          });
+        }
+        const pEntry = providerMap.get(providerKey)!;
+        pEntry.totalCost += cost;
+        pEntry.totalInputTokens += inputTok;
+        pEntry.totalOutputTokens += outputTok;
+        pEntry.callCount += calls;
+
+        if (!pEntry.models.has(modelKey)) {
+          pEntry.models.set(modelKey, {
+            model: modelKey,
+            totalCost: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            callCount: 0,
+            operations: [],
+          });
+        }
+        const mEntry = pEntry.models.get(modelKey)!;
+        mEntry.totalCost += cost;
+        mEntry.totalInputTokens += inputTok;
+        mEntry.totalOutputTokens += outputTok;
+        mEntry.callCount += calls;
+        mEntry.operations.push({
+          operationType: opType,
+          totalCost: cost,
+          totalInputTokens: inputTok,
+          totalOutputTokens: outputTok,
+          callCount: calls,
+        });
+      }
+
+      // Convert maps to sorted arrays
+      const result = Array.from(providerMap.values())
+        .sort((a, b) => b.totalCost - a.totalCost)
+        .map((p) => ({
+          provider: p.provider,
+          totalCost: Math.round(p.totalCost * 10000) / 10000,
+          totalInputTokens: p.totalInputTokens,
+          totalOutputTokens: p.totalOutputTokens,
+          callCount: p.callCount,
+          models: Array.from(p.models.values())
+            .sort((a, b) => b.totalCost - a.totalCost)
+            .map((m) => ({
+              model: m.model,
+              totalCost: Math.round(m.totalCost * 10000) / 10000,
+              totalInputTokens: m.totalInputTokens,
+              totalOutputTokens: m.totalOutputTokens,
+              callCount: m.callCount,
+              operations: m.operations.sort((a, b) => b.totalCost - a.totalCost),
+            })),
+        }));
+
+      return { providers: result, dateFrom: rangeFrom.toISOString(), dateTo: rangeTo.toISOString() };
+    }),
+
+  /**
    * Backfill billingType for all campaigns that have NULL billingType.
    * Sets white_label if the business has an agencyId, otherwise legacy.
    * Admin only — run once after deploy to fix pre-existing campaigns.

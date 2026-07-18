@@ -47,6 +47,8 @@ import {
   Info,
   ArrowUpDown,
   CalendarDays,
+  ChevronDown,
+  Zap,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -696,10 +698,228 @@ function CampaignCostTable({ dateRange }: { dateRange: DateRange }) {
   );
 }
 
+// ─── Provider Breakdown ──────────────────────────────────────────────────────
+
+const PROVIDER_COLORS: Record<string, string> = {
+  openai: "text-emerald-400",
+  google: "text-blue-400",
+  minimax: "text-purple-400",
+  dataforseo: "text-orange-400",
+  anthropic: "text-yellow-400",
+  unknown: "text-zinc-400",
+};
+
+const PROVIDER_ICONS: Record<string, string> = {
+  openai: "OpenAI",
+  google: "Google",
+  minimax: "MiniMax",
+  dataforseo: "DataForSEO",
+  anthropic: "Anthropic",
+  unknown: "Unknown",
+};
+
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+function ProviderBreakdown({ dateRange }: { dateRange: DateRange }) {
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
+  const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
+
+  const { data, isLoading, isError, refetch, isFetching } = trpc.costTracking.getProviderBreakdown.useQuery({
+    dateFrom: dateRange.from?.toISOString(),
+    dateTo: dateRange.to?.toISOString(),
+  });
+
+  const toggleProvider = (provider: string) => {
+    setExpandedProviders((prev) => {
+      const next = new Set(prev);
+      if (next.has(provider)) next.delete(provider);
+      else next.add(provider);
+      return next;
+    });
+  };
+
+  const toggleModel = (key: string) => {
+    setExpandedModels((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="flex items-center justify-center h-32 gap-3">
+        <p className="text-sm text-muted-foreground">Failed to load provider breakdown.</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="w-3 h-3 mr-1" /> Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const totalCost = data.providers.reduce((s, p) => s + p.totalCost, 0);
+
+  return (
+    <div className="space-y-4">
+      {/* Summary bar */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="bg-card border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-card-foreground">Total Cost</CardTitle>
+            <DollarSign className="h-4 w-4 text-red-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-400">{fmt$(totalCost, 4)}</div>
+            <p className="text-xs text-muted-foreground">{fmtRangeLabel(dateRange)}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-card-foreground">Providers</CardTitle>
+            <Globe className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">{data.providers.length}</div>
+            <p className="text-xs text-muted-foreground">Active API providers</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-card-foreground">Total API Calls</CardTitle>
+            <Zap className="h-4 w-4 text-yellow-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">
+              {data.providers.reduce((s, p) => s + p.callCount, 0).toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground">Across all providers</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Provider accordion */}
+      <div className="space-y-2">
+        {data.providers.map((provider) => {
+          const pColor = PROVIDER_COLORS[provider.provider] ?? "text-zinc-400";
+          const pLabel = PROVIDER_ICONS[provider.provider] ?? provider.provider;
+          const pct = totalCost > 0 ? Math.round((provider.totalCost / totalCost) * 100) : 0;
+          const isExpanded = expandedProviders.has(provider.provider);
+
+          return (
+            <Card key={provider.provider} className="bg-card border-border overflow-hidden">
+              {/* Provider header row */}
+              <button
+                onClick={() => toggleProvider(provider.provider)}
+                className="w-full flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
+                  <span className={`font-semibold text-base ${pColor}`}>{pLabel}</span>
+                  <Badge variant="outline" className="text-xs">{provider.models.length} model{provider.models.length !== 1 ? "s" : ""}</Badge>
+                  <Badge variant="outline" className="text-xs">{provider.callCount.toLocaleString()} calls</Badge>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="text-sm text-muted-foreground">{pct}% of total</div>
+                    <div className="w-24 h-1.5 bg-muted rounded-full mt-1">
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                  <span className={`font-bold text-lg ${pColor}`}>{fmt$(provider.totalCost, 4)}</span>
+                </div>
+              </button>
+
+              {/* Models */}
+              {isExpanded && (
+                <div className="border-t border-border">
+                  {provider.models.map((model) => {
+                    const modelKey = `${provider.provider}::${model.model}`;
+                    const isModelExpanded = expandedModels.has(modelKey);
+
+                    return (
+                      <div key={model.model} className="border-b border-border last:border-b-0">
+                        {/* Model header */}
+                        <button
+                          onClick={() => toggleModel(modelKey)}
+                          className="w-full flex items-center justify-between px-8 py-3 hover:bg-muted/20 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <ChevronDown className={`w-3 h-3 text-muted-foreground transition-transform ${isModelExpanded ? "" : "-rotate-90"}`} />
+                            <span className="font-mono text-sm text-foreground">{model.model}</span>
+                            <span className="text-xs text-muted-foreground">{model.callCount.toLocaleString()} calls</span>
+                          </div>
+                          <div className="flex items-center gap-6 text-sm">
+                            <span className="text-muted-foreground">
+                              {fmtTokens(model.totalInputTokens)} in / {fmtTokens(model.totalOutputTokens)} out
+                            </span>
+                            <span className="font-semibold text-foreground">{fmt$(model.totalCost, 4)}</span>
+                          </div>
+                        </button>
+
+                        {/* Operations */}
+                        {isModelExpanded && (
+                          <div className="bg-muted/10 border-t border-border">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-border">
+                                  <th className="text-left px-12 py-2 text-muted-foreground font-medium">Operation</th>
+                                  <th className="text-right px-4 py-2 text-muted-foreground font-medium">Calls</th>
+                                  <th className="text-right px-4 py-2 text-muted-foreground font-medium">Input Tokens</th>
+                                  <th className="text-right px-4 py-2 text-muted-foreground font-medium">Output Tokens</th>
+                                  <th className="text-right px-4 py-2 text-muted-foreground font-medium">Cost</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {model.operations.map((op) => (
+                                  <tr key={op.operationType} className="border-b border-border/50 last:border-b-0 hover:bg-muted/20">
+                                    <td className="px-12 py-2 text-muted-foreground font-mono">{op.operationType.replace(/_/g, " ")}</td>
+                                    <td className="text-right px-4 py-2 text-foreground">{op.callCount.toLocaleString()}</td>
+                                    <td className="text-right px-4 py-2 text-foreground">{fmtTokens(op.totalInputTokens)}</td>
+                                    <td className="text-right px-4 py-2 text-foreground">{fmtTokens(op.totalOutputTokens)}</td>
+                                    <td className="text-right px-4 py-2 font-semibold text-foreground">{fmt$(op.totalCost, 4)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="text-xs">
+          {isFetching ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+          Refresh
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function CostTracking() {
-  const [activeTab, setActiveTab] = useState<"overview" | "campaigns">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "campaigns" | "providers">("overview");
   const [dateRange, setDateRange] = useState<DateRange>(defaultLast30);
   const utils = trpc.useUtils();
   const backfill = trpc.costTracking.backfillBillingTypes.useMutation({
@@ -770,10 +990,21 @@ export default function CostTracking() {
         >
           Per-Client Breakdown
         </button>
+        <button
+          onClick={() => setActiveTab("providers")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "providers"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Provider Breakdown
+        </button>
       </div>
 
       {activeTab === "overview" && <AggregateSummary dateRange={dateRange} />}
       {activeTab === "campaigns" && <CampaignCostTable dateRange={dateRange} />}
+      {activeTab === "providers" && <ProviderBreakdown dateRange={dateRange} />}
     </div>
   );
 }
