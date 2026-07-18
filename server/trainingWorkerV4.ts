@@ -51,6 +51,21 @@ import {
 } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 
+// ─── Delay helpers ───────────────────────────────────────────────────────────
+
+/** Pause execution for `ms` milliseconds. */
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Return a random integer between `minMs` and `maxMs` (inclusive),
+ * then sleep for that duration.
+ */
+async function randomDelay(minMs: number, maxMs: number): Promise<void> {
+  const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+  await sleep(ms);
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TURNS_PER_SET = 10;
@@ -396,6 +411,10 @@ async function runTrainingSet(params: {
 
   // Turns 2–TURNS_PER_SET: trainer (context integration) → target → goal assessment
   for (let turn = 2; turn <= TURNS_PER_SET; turn++) {
+    // Human-mimicking pause between turns (15–35 seconds).
+    // Simulates the natural pacing of a real person reading a response and typing.
+    await randomDelay(15_000, 35_000);
+
     // Context integration: trainer reads the AI's last response and generates a natural reply
     const contextIntegrationPrompt = buildContextIntegrationPrompt(
       businessName,
@@ -737,6 +756,12 @@ export async function runTrainingSession(
 
   // Run up to SETS_PER_SESSION sets of TURNS_PER_SET turns
   for (let setIndex = 1; setIndex <= SETS_PER_SESSION; setIndex++) {
+    // Between sets: 30–60 second pause (simulates user stepping away and returning
+    // before opening a fresh context window with the same topic).
+    if (setIndex > 1) {
+      await randomDelay(30_000, 60_000);
+    }
+
     console.log(
       `[TrainingV4] Set ${setIndex}/${SETS_PER_SESSION} for "${phraseText}" on ${targetProvider}`
     );
@@ -1038,6 +1063,12 @@ export async function runTrainingDay(
       }
 
       try {
+        // Between sessions: 10–20 second pause before starting the next phrase/session.
+        // Simulates a user switching topics or coming back to a new search.
+        if (slotIndex > 0) {
+          await randomDelay(10_000, 20_000);
+        }
+
         console.log(
           `[TrainingV4] Slot ${slotIndex + 1}/${providerPool.length}: "${variationText}" on ${targetProvider}`
         );
