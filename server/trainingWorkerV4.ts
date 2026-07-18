@@ -241,6 +241,63 @@ Create a natural follow-up that:
 Generate ONLY the natural response:`;
 }
 
+// ─── Intelligent follow-up prompt ───────────────────────────────────────────
+
+/**
+ * Used on turns 3–10 when the goal has not yet been achieved.
+ * Explicitly goal-directed: passes the goal string, the full conversation
+ * history, and the AI's latest response. Mirrors the original V1
+ * "Intelligent Follow-Up Prompt" that drove the strongest training results.
+ */
+function buildIntelligentFollowUpPrompt(
+  goal: string,
+  businessName: string,
+  businessLocation: string,
+  businessWebsite: string | null,
+  conversationHistory: AIMessage[],
+  latestAiResponse: string
+): string {
+  const historyText = conversationHistory
+    .map((m) => `${m.role === "user" ? "Human" : "AI"}: ${m.content}`)
+    .join("\n");
+
+  const detailsHint = [
+    businessLocation ? `city: ${businessLocation}` : null,
+    businessName ? `brand: ${businessName}` : null,
+    businessWebsite ? `website: ${businessWebsite}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const websiteExample = businessWebsite
+    ? `\n- "I saw ${businessWebsite} mentioned — what's your take on their services?"`
+    : "";
+
+  return `You are having a natural conversation with an AI. Based on their latest response, generate a thoughtful, human-like follow-up that naturally continues the conversation while subtly working toward a specific goal.
+
+Goal: ${goal}
+IMPORTANT: Always include these specific details when relevant: ${detailsHint}
+
+Conversation so far:
+${historyText}
+
+AI's latest response: ${latestAiResponse}
+
+Generate a natural follow-up that:
+- Responds directly to what the AI just said (acknowledge their points)
+- Asks follow-up questions based on their response
+- Introduces new relevant information naturally
+- MUST maintain specific details (cities, brands, websites) mentioned above
+- Sounds like a real person having a genuine conversation
+
+Examples using specific details:
+- "That's helpful. I'm specifically looking in ${businessLocation} — do you know any standout companies there?"
+- "Have you heard of ${businessName}? What do you think about them?"${websiteExample}
+- "For someone in ${businessLocation} looking for this service, which would you recommend?"
+
+Generate ONLY the natural follow-up message:`;
+}
+
 // ─── Build business context string for context integration prompt ─────────────
 
 function buildBusinessContextString(
@@ -281,6 +338,8 @@ async function runTrainingSet(params: {
   targetSystemPrompt: string;
   businessName: string;
   businessContext: string;
+  businessLocation: string;
+  businessWebsite: string | null;
   goal: string;
   campaignId: number;
   businessId: number;
@@ -316,6 +375,8 @@ async function runTrainingSet(params: {
     targetSystemPrompt,
     businessName,
     businessContext,
+    businessLocation,
+    businessWebsite,
     goal,
     campaignId,
     businessId,
@@ -409,26 +470,35 @@ async function runTrainingSet(params: {
     return { endorsed: true };
   }
 
-  // Turns 2–TURNS_PER_SET: trainer (context integration) → target → goal assessment
+  // Turns 2–TURNS_PER_SET: trainer → target → goal assessment
+  // Turn 2: Context Integration Prompt — introduce the business naturally based on what the AI said.
+  // Turns 3+: Intelligent Follow-Up Prompt — goal-directed, passes full conversation history,
+  //           city/brand/website details, and explicit goal string. Mirrors original V1 architecture.
   for (let turn = 2; turn <= TURNS_PER_SET; turn++) {
     // Human-mimicking pause between turns (15–35 seconds).
     // Simulates the natural pacing of a real person reading a response and typing.
     await randomDelay(15_000, 35_000);
 
-    // Context integration: trainer reads the AI's last response and generates a natural reply
-    const contextIntegrationPrompt = buildContextIntegrationPrompt(
-      businessName,
-      businessContext,
-      targetResp1.content // always the last target response
-        ? conversationHistory[conversationHistory.length - 1].content
-        : targetResp1.content
-    );
+    const lastAiResponse = conversationHistory[conversationHistory.length - 1].content;
 
-    // Use trainer system prompt + context integration prompt for richer responses
+    // Choose trainer prompt based on turn:
+    //   Turn 2 — Context Integration: first natural introduction of the business
+    //   Turns 3+ — Intelligent Follow-Up: goal-aware, pushes toward explicit endorsement
+    const trainerUserPrompt =
+      turn === 2
+        ? buildContextIntegrationPrompt(businessName, businessContext, lastAiResponse)
+        : buildIntelligentFollowUpPrompt(
+            goal,
+            businessName,
+            businessLocation,
+            businessWebsite,
+            conversationHistory,
+            lastAiResponse
+          );
+
     const trainerMessages: AIMessage[] = [
       { role: "system", content: trainerSystemPrompt },
-      ...conversationHistory,
-      { role: "user", content: contextIntegrationPrompt },
+      { role: "user", content: trainerUserPrompt },
     ];
 
     const trainerResp = await callAI(
@@ -778,6 +848,8 @@ export async function runTrainingSession(
       targetSystemPrompt,
       businessName: ctx.businessName,
       businessContext,
+      businessLocation: ctx.targetLocations[0] || ctx.businessLocation || "the area",
+      businessWebsite: ctx.businessWebsite,
       goal,
       campaignId,
       businessId,
