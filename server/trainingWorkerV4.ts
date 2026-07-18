@@ -57,15 +57,17 @@ const TURNS_PER_SET = 10;
 const SETS_PER_SESSION = 5;
 const TRAINER_MODEL = "MiniMax-M2.7";
 const GOAL_ASSESSOR_MODEL = "MiniMax-M2.7"; // same model, different role
-const TARGET_PROVIDERS: Array<"openai" | "google" | "google_ai_overview"> = [
+// AI Overview / AI Mode runs on the same Gemini model as "google".
+// Training Gemini IS training AI Overview — no separate provider needed.
+// We still TRACK AI Overview visibility in rank snapshots, but we don't
+// run separate training sessions for it.
+const TARGET_PROVIDERS: Array<"openai" | "google"> = [
   "openai",
   "google",
-  "google_ai_overview",
 ];
-const TARGET_MODELS: Record<"openai" | "google" | "google_ai_overview", string> = {
+const TARGET_MODELS: Record<"openai" | "google", string> = {
   openai: "gpt-4.1",
   google: "gemini-2.5-flash",
-  google_ai_overview: "gemini-2.5-flash",
 };
 const CONSECUTIVE_WINS_NEEDED = 2;
 const SUFFIX_STRIP_RE =
@@ -81,7 +83,7 @@ interface SessionParams {
   phraseText: string;
   variationText: string;
   variationIndex: number;
-  targetProvider: "openai" | "google" | "google_ai_overview";
+  targetProvider: "openai" | "google";
   campaignCreatedAt: Date;
 }
 
@@ -101,13 +103,11 @@ interface SessionResult {
 // ─── API Key helpers ──────────────────────────────────────────────────────────
 
 async function getDecryptedKey(
-  provider: "openai" | "google" | "google_ai_overview" | "minimax"
+  provider: "openai" | "google" | "minimax"
 ): Promise<string> {
-  const lookupProvider =
-    provider === "google_ai_overview" ? "google" : provider;
-  const record = await getApiKeyByProvider(lookupProvider);
+  const record = await getApiKeyByProvider(provider);
   if (!record)
-    throw new Error(`No API key configured for provider: ${lookupProvider}`);
+    throw new Error(`No API key configured for provider: ${provider}`);
   return decrypt(record.encryptedKey);
 }
 
@@ -257,7 +257,7 @@ function buildBusinessContextString(
 async function runTrainingSet(params: {
   setIndex: number;
   seedQuery: string;
-  targetProvider: "openai" | "google" | "google_ai_overview";
+  targetProvider: "openai" | "google";
   actualProvider: "openai" | "google";
   targetKey: string;
   targetModel: string;
@@ -521,7 +521,7 @@ async function runTrainingSet(params: {
  */
 async function runConfirmationProbe(params: {
   phraseText: string;
-  targetProvider: "openai" | "google" | "google_ai_overview";
+  targetProvider: "openai" | "google";
   actualProvider: "openai" | "google";
   targetKey: string;
   targetModel: string;
@@ -670,10 +670,9 @@ export async function runTrainingSession(
 
   const minimaxKey = await getDecryptedKey("minimax");
   const targetKey = await getDecryptedKey(targetProvider);
-  const actualProvider: "openai" | "google" =
-    targetProvider === "google_ai_overview" ? "google" : targetProvider;
+  const actualProvider: "openai" | "google" = targetProvider;
   const targetModel = TARGET_MODELS[targetProvider];
-  const isAiOverview = targetProvider === "google_ai_overview";
+  const isAiOverview = false; // AI Overview not a separate training target in V4
 
   const ctx = await buildTrainingContext(businessId);
   if (!ctx) {
@@ -860,7 +859,7 @@ export async function runTrainingSession(
 async function updatePhraseStatus(
   campaignId: number,
   queryId: number,
-  targetProvider: "openai" | "google" | "google_ai_overview",
+  targetProvider: "openai" | "google",
   sessionWin: boolean
 ): Promise<{ consecutiveWins: number; isGraduated: boolean }> {
   const db = await getDb();
@@ -1007,9 +1006,7 @@ export async function runTrainingDay(
 
         try {
           const label =
-            targetProvider === "google_ai_overview"
-              ? "AI Overview"
-              : targetProvider;
+            targetProvider;
           console.log(
             `[TrainingV4] Running session: "${variationText}" (var ${vi}) on ${label}`
           );
