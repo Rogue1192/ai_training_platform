@@ -2710,8 +2710,16 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
     runCheck: protectedProcedure
       .input(z.object({ campaignId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { runScheduledRankCheck } = await import("./rankTrackingEngine");
-        return runScheduledRankCheck(input.campaignId);
+        // Fire-and-forget: kick off the check in the background and return immediately.
+        // The frontend polls getCheckStatus to track progress and show results.
+        const { startManualRankCheck } = await import("./rankTrackingEngine");
+        return startManualRankCheck(input.campaignId);
+      }),
+    getCheckStatus: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const { getManualCheckStatus } = await import("./rankTrackingEngine");
+        return getManualCheckStatus(input.campaignId);
       }),
     getReport: protectedProcedure
       .input(z.object({ campaignId: z.number() }))

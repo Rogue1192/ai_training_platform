@@ -30,6 +30,55 @@ import {
   updateCampaign,
 } from "./dbCampaigns";
 
+// ─── In-memory tracker for manual rank check runs ────────────────────────────
+// Keyed by campaignId. Status is cleared/overwritten on each new manual run.
+export type ManualCheckStatus = {
+  status: "running" | "done" | "error";
+  startedAt: string;
+  completedAt?: string;
+  snapshotsCreated?: number;
+  winsDetected?: number;
+  error?: string;
+};
+const _manualCheckRuns = new Map<number, ManualCheckStatus>();
+
+export function getManualCheckStatus(campaignId: number): ManualCheckStatus | null {
+  return _manualCheckRuns.get(campaignId) ?? null;
+}
+
+/**
+ * Fire-and-forget wrapper for manual rank checks.
+ * Returns immediately and runs the check in the background.
+ * Poll getManualCheckStatus(campaignId) to track progress.
+ */
+export function startManualRankCheck(campaignId: number): { started: boolean; alreadyRunning: boolean } {
+  const existing = _manualCheckRuns.get(campaignId);
+  if (existing?.status === "running") {
+    return { started: false, alreadyRunning: true };
+  }
+  const startedAt = new Date().toISOString();
+  _manualCheckRuns.set(campaignId, { status: "running", startedAt });
+  runScheduledRankCheck(campaignId)
+    .then((result) => {
+      _manualCheckRuns.set(campaignId, {
+        status: "done",
+        startedAt,
+        completedAt: new Date().toISOString(),
+        snapshotsCreated: result.snapshotsCreated,
+        winsDetected: result.winsDetected.length,
+      });
+    })
+    .catch((err: any) => {
+      _manualCheckRuns.set(campaignId, {
+        status: "error",
+        startedAt,
+        completedAt: new Date().toISOString(),
+        error: err?.message ?? "Unknown error",
+      });
+    });
+  return { started: true, alreadyRunning: false };
+}
+
 // ============= Types =============
 
 export interface VisibilityScore {

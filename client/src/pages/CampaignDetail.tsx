@@ -244,16 +244,39 @@ export default function CampaignDetail() {
   const [isRunningRankCheck, setIsRunningRankCheck] = useState(false);
   const rankCheckMutation = trpc.rankTracking.runCheck.useMutation({
     onSuccess: (result) => {
-      toast.success(`Rank check complete — ${result.snapshotsCreated} snapshot(s) recorded`);
-      setIsRunningRankCheck(false);
-      refetchRankReport();
-      refetchCampaign();
+      if (result.alreadyRunning) {
+        toast.info("A rank check is already running for this campaign.");
+        setIsRunningRankCheck(false);
+        return;
+      }
+      // Check started in background — polling will detect completion
+      toast.info("Rank check started — checking all queries in the background...");
     },
     onError: (error) => {
-      toast.error(`Rank check failed: ${error.message}`);
+      toast.error(`Rank check failed to start: ${error.message}`);
       setIsRunningRankCheck(false);
     },
   });
+  // Poll for rank check completion every 5 seconds while running
+  const { data: rankCheckStatus } = trpc.rankTracking.getCheckStatus.useQuery(
+    { campaignId },
+    {
+      enabled: isRunningRankCheck && !!campaignId,
+      refetchInterval: isRunningRankCheck ? 5000 : false,
+    }
+  );
+  useEffect(() => {
+    if (!isRunningRankCheck || !rankCheckStatus) return;
+    if (rankCheckStatus.status === "done") {
+      toast.success(`Rank check complete — ${rankCheckStatus.snapshotsCreated ?? 0} snapshot(s) recorded`);
+      setIsRunningRankCheck(false);
+      refetchRankReport();
+      refetchCampaign();
+    } else if (rankCheckStatus.status === "error") {
+      toast.error(`Rank check failed: ${rankCheckStatus.error ?? "Unknown error"}`);
+      setIsRunningRankCheck(false);
+    }
+  }, [rankCheckStatus, isRunningRankCheck]);
 
   const { data: checkRunHistory, refetch: refetchCheckRunHistory } = trpc.rankTracking.getCheckRunHistory.useQuery(
     { campaignId },
