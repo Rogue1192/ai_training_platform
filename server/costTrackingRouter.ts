@@ -213,12 +213,14 @@ export const costTrackingRouter = router({
           for (const agg of cycleAgg) {
             const cost = parseFloat(agg.totalCost);
             switch (agg.operationType) {
-              // Training — V2 legacy and V3 sprint turn types
+              // Training — V2 legacy, V3 sprint, and V4 goal-assessment turn types
               case "training":
               case "training_target_turn":
               case "training_trainer_turn":
               case "training_clean_probe":
               case "training_trainer_session_total":
+              case "training_goal_assessment":    // V4: goal assessment after each turn
+              case "training_confirmation_probe": // V4: fresh-context confirmation probe
                 trainingCost += cost;
                 break;
               // Rank checks — scheduled, baseline, training polls, bonus scans
