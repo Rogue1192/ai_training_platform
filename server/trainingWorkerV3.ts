@@ -804,11 +804,9 @@ export async function createSprintSchedule(campaignId: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const today = new Date();
+  const { getFutureDateCentral } = await import('./dateUtils');
   for (let day = 1; day <= 4; day++) {
-    const scheduledDate = new Date(today);
-    scheduledDate.setDate(today.getDate() + (day - 1));
-    const dateStr = scheduledDate.toISOString().split("T")[0];
+    const dateStr = getFutureDateCentral(day - 1); // Central Time date — day 1=today, 2=tomorrow, etc.
 
     await db.insert(trainingDayRuns).values({
       campaignId,
@@ -830,8 +828,8 @@ export async function createWeeklyMaintenanceRun(campaignId: number): Promise<vo
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const today = new Date();
-  const dateStr = today.toISOString().split("T")[0];
+  const { getTodayCentral } = await import('./dateUtils');
+  const dateStr = getTodayCentral(); // Central Time date
 
   // Get the next run day number
   const lastRun = await db

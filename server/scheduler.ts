@@ -1369,7 +1369,8 @@ export async function checkV3SprintRuns(): Promise<void> {
 
     const { trainingDayRuns: tdrTable, campaigns: cTable, contentPages: cpTable } = await import('../drizzle/schema');
     const { eq: eqV3, and: andV3, lte: lteV3, isNull: isNullV3 } = await import('drizzle-orm');
-    const today = new Date().toISOString().split('T')[0];
+    const { getTodayCentral } = await import('./dateUtils');
+    const today = getTodayCentral(); // Central Time (America/Chicago) — keeps scheduler and dashboard congruent
 
     const pendingRuns = await db
       .select()

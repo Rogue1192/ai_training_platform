@@ -601,7 +601,7 @@ export function TrainingDashboard({ campaignId, isAdmin = false }: Props) {
                         </div>
                         {run.scheduledDate && (
                           <div className="text-xs text-muted-foreground">
-                            {new Date(run.scheduledDate).toLocaleDateString()}
+                            {new Date(run.scheduledDate + 'T12:00:00').toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}
                           </div>
                         )}
                         {/* Web search status */}
@@ -651,7 +651,7 @@ export function TrainingDashboard({ campaignId, isAdmin = false }: Props) {
                             Test Run {run.runDay}
                             {run.scheduledDate && (
                               <span className="text-xs text-muted-foreground ml-2">
-                                {new Date(run.scheduledDate).toLocaleDateString()}
+                                {new Date(run.scheduledDate + 'T12:00:00').toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}
                               </span>
                             )}
                           </p>
@@ -706,7 +706,7 @@ export function TrainingDashboard({ campaignId, isAdmin = false }: Props) {
                           Week {run.runDay}
                           {run.scheduledDate && (
                             <span className="text-xs text-muted-foreground ml-2">
-                              {new Date(run.scheduledDate).toLocaleDateString()}
+                              {new Date(run.scheduledDate + 'T12:00:00').toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}
                             </span>
                           )}
                         </p>
