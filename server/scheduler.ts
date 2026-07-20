@@ -1443,7 +1443,11 @@ export async function checkV3SprintRuns(): Promise<void> {
 
         console.log(`[SchedulerV3] Executing training day run ${run.id} (campaign ${run.campaignId}, day ${run.runDay}, engine ${trainingVersion})`);
 
-        if (trainingVersion === 'v4') {
+        if (trainingVersion === 'v5') {
+          const { runTrainingDay: runTrainingDayV5 } = await import('./trainingWorkerV5');
+          await runTrainingDayV5(run.campaignId, run.id);
+          // V5: no trainer AI, no end-of-day web search needed.
+        } else if (trainingVersion === 'v4') {
           const { runTrainingDay: runTrainingDayV4 } = await import('./trainingWorkerV4');
           await runTrainingDayV4(run.campaignId, run.id);
           // V4 determines graduation inside the session — no daily end-of-day web search needed.

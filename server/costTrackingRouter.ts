@@ -221,6 +221,9 @@ export const costTrackingRouter = router({
               case "training_trainer_session_total":
               case "training_goal_assessment":    // V4: goal assessment after each turn
               case "training_confirmation_probe": // V4: fresh-context confirmation probe
+              case "training_v5_iteration_turn":  // V5: fresh-context social proof iteration
+              case "training_v5_followup_turn":   // V5: conditional follow-up turn
+              case "training_v5_clean_probe":     // V5: end-of-session clean probe
                 trainingCost += cost;
                 break;
               // Rank checks — scheduled, baseline, training polls, bonus scans
