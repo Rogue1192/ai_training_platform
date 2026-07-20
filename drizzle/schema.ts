@@ -450,6 +450,10 @@ export const campaigns = pgTable("campaigns", {
   resumeRequestedAt: timestamp("resumeRequestedAt"),
   // Training engine version — 'v3' (default) | 'v4' (goal-assessment + double-endorsement graduation)
   trainingVersion: varchar("trainingVersion", { length: 10 }).default("v3").notNull(),
+  // Training hold — when true the scheduler will NOT fire the sprint even if llm.txt/schema are verified.
+  // Defaults to true (held) for all new campaigns so admins can assign the training version before launch.
+  // Set to false manually via the campaign admin panel when ready to start training.
+  trainingHeld: boolean("trainingHeld").default(true).notNull(),
   // Site verification — set to true when the scan confirms llm.txt / schema are live.
   // Checkbox in the publishing panel auto-triggers the scan; campaign stays blocked until both pass.
   llmTxtVerified: boolean("llmTxtVerified").default(false).notNull(),

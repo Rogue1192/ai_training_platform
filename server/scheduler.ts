@@ -1395,6 +1395,19 @@ export async function checkV3SprintRuns(): Promise<void> {
       // Day 1 only: verify llm.txt and schema are verified before starting the sprint.
       // Days 2-4: these were already verified on Day 1 — skip the gate to avoid
       // blocking training if a flag was accidentally cleared.
+      // Training hold gate — applies to ALL days. Admin must explicitly release the hold
+      // via the campaign panel before the sprint fires (even if llm.txt/schema are verified).
+      const [holdCheck] = await db
+        .select({ trainingHeld: cTable.trainingHeld })
+        .from(cTable)
+        .where(eqV3(cTable.id, run.campaignId))
+        .limit(1);
+
+      if (holdCheck?.trainingHeld === true) {
+        console.log(`[SchedulerV3] Campaign ${run.campaignId} is on training hold — skipping run ${run.id}`);
+        continue;
+      }
+
       if (run.runDay === 1) {
         const [campaign] = await db
           .select()

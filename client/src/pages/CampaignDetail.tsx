@@ -402,7 +402,45 @@ export default function CampaignDetail() {
             {(campaign as any).businessName || "Unknown Business"} — Created {new Date(campaign.createdAt).toLocaleDateString()}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* ── Training Hold Toggle (admin only) ── */}
+          {isAdmin && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-card">
+              <span className="text-xs text-muted-foreground font-medium">Training Hold</span>
+              <Switch
+                checked={(campaign as any).trainingHeld ?? true}
+                onCheckedChange={(held) => {
+                  updateCampaignMutation.mutate({ id: campaignId, trainingHeld: held });
+                  toast.info(held ? "Training sprint held — scheduler will skip this campaign" : "Training hold released — sprint will fire on next scheduler tick");
+                }}
+                className={(campaign as any).trainingHeld ? "data-[state=checked]:bg-orange-500" : "data-[state=checked]:bg-green-500"}
+              />
+              <span className={`text-xs font-semibold ${ (campaign as any).trainingHeld ? 'text-orange-400' : 'text-green-400' }`}>
+                {(campaign as any).trainingHeld ? 'HELD' : 'LIVE'}
+              </span>
+            </div>
+          )}
+          {/* ── Training Version Selector (admin only) ── */}
+          {isAdmin && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-card">
+              <span className="text-xs text-muted-foreground font-medium">Engine</span>
+              <Select
+                value={(campaign as any).trainingVersion ?? 'v3'}
+                onValueChange={(v) => {
+                  updateCampaignMutation.mutate({ id: campaignId, trainingVersion: v as 'v3' | 'v4' | 'v5' });
+                }}
+              >
+                <SelectTrigger className="h-7 w-16 text-xs border-0 bg-transparent p-0 focus:ring-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="v3">V3</SelectItem>
+                  <SelectItem value="v4">V4</SelectItem>
+                  <SelectItem value="v5">V5</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <Button
             variant="outline"
             onClick={() => {

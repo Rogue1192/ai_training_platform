@@ -1724,6 +1724,10 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
             "pending", "keyword_research", "query_review", "credibility_research", "content_generation",
             "publishing", "indexing", "baseline_check", "training", "monitoring", "paused", "error"
           ]).optional(),
+          // Training hold — when true the scheduler will not fire the sprint
+          trainingHeld: z.boolean().optional(),
+          // Training engine version — 'v3' | 'v4' | 'v5'
+          trainingVersion: z.enum(["v3", "v4", "v5"]).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
