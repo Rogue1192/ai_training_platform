@@ -746,6 +746,9 @@ export const costLogs = pgTable("costLogs", {
   billingCycleStart: timestamp("billingCycleStart").notNull(),
   // Optional extra context (e.g. { queryCount: 5, endpoint: '/llm_mentions/search/live' })
   metadata: json("metadata"),
+  // For V4/V5 training: the provider/model used as the trainer AI (separate from the trainee)
+  trainerProvider: varchar("trainerProvider", { length: 30 }),
+  trainerModel: varchar("trainerModel", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type CostLog = typeof costLogs.$inferSelect;
