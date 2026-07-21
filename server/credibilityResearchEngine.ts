@@ -322,26 +322,39 @@ export async function runCredibilityResearch(params: {
     campaignCreatedAt: costCampaign?.createdAt ?? new Date(),
   }).catch(() => {});
 
-  // Parse the JSON response
+  // Parse the JSON response — with robust extraction and auto-retry
   let researchData: any;
+  const extractJson = (raw: string): string => {
+    let s = raw.trim();
+    // Strip markdown code fences
+    if (s.startsWith("```json")) s = s.slice(7);
+    else if (s.startsWith("```")) s = s.slice(3);
+    if (s.endsWith("```")) s = s.slice(0, -3);
+    s = s.trim();
+    // If still not starting with { try to extract the first {...} block
+    if (!s.startsWith("{")) {
+      const match = s.match(/\{[\s\S]*\}/);
+      if (match) s = match[0];
+    }
+    return s;
+  };
+
   try {
-    // Try to extract JSON from the response (sometimes LLMs wrap it in markdown code blocks)
-    let jsonStr = response.content.trim();
-    if (jsonStr.startsWith("```json")) {
-      jsonStr = jsonStr.slice(7);
+    researchData = JSON.parse(extractJson(response.content));
+  } catch (firstParseError) {
+    // Auto-retry once with an explicit "JSON only" correction prompt
+    console.warn(`[Credibility Research] First parse failed for campaign ${campaignId} — retrying with correction prompt`);
+    try {
+      const correctionMessages: AIMessage[] = [
+        { role: "system", content: "You are a JSON formatter. Return ONLY the raw JSON object with no markdown, no explanation, no code fences. Nothing before or after the JSON." },
+        { role: "user", content: `The following text should be a JSON object but failed to parse. Extract and return ONLY the valid JSON object:\n\n${response.content.substring(0, 4000)}` },
+      ];
+      const retryResponse = await callAI("anthropic", apiKey, model, correctionMessages);
+      researchData = JSON.parse(extractJson(retryResponse.content));
+    } catch (retryParseError) {
+      console.error(`[Credibility Research] Retry parse also failed for campaign ${campaignId}:`, response.content.substring(0, 200));
+      throw new Error("Failed to parse credibility research results. The AI response was not valid JSON.");
     }
-    if (jsonStr.startsWith("```")) {
-      jsonStr = jsonStr.slice(3);
-    }
-    if (jsonStr.endsWith("```")) {
-      jsonStr = jsonStr.slice(0, -3);
-    }
-    jsonStr = jsonStr.trim();
-    
-    researchData = JSON.parse(jsonStr);
-  } catch (parseError) {
-    console.error(`[Credibility Research] Failed to parse LLM response as JSON:`, response.content.substring(0, 200));
-    throw new Error("Failed to parse credibility research results. The AI response was not valid JSON.");
   }
   
   // Generate llm.txt content
