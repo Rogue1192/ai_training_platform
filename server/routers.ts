@@ -190,7 +190,7 @@ export const appRouter = router({
         differentiators: z.string().optional(),
         specialties: z.string().optional(),
         credibilityUrls: z.string().optional(), // JSON string: [{label,url}]
-        internalSource: z.enum(["rogue", "ranklocal"]).optional(),
+        internalSource: z.string().optional(), // "rogue" | "ranklocal" | "answerforge" | any future agency tag
         packageTier: z.enum(["starter", "growth", "pro"]),
         noCharge: z.boolean().default(false),
       }))
@@ -1268,7 +1268,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         selectedPackage: z.string().optional(),
         agencyId: z.number().int().positive().optional(),
         agencyPackageTier: z.enum(['starter', 'growth', 'pro']).optional(),
-        source: z.enum(["rogue", "ranklocal"]).optional(),
+        source: z.string().optional(), // "rogue" | "ranklocal" | "answerforge" | any future agency tag
         specialties: z.string().optional(),
         campaignScope: z.enum(["local", "national", "ecommerce"]).default("local"),
         noCharge: z.boolean().default(false),

@@ -83,9 +83,12 @@ const onboardingPayloadSchema = z.object({
   // Accepts 'starter' | 'growth' | 'pro'. Falls back to packageTierSlug if omitted.
   agencyPackageTier: z.enum(['starter', 'growth', 'pro']).optional(),
 
-  // Optional: internal source tag — "rogue" for Rogue Business Marketing, "ranklocal" for Rank Local
-  // Omit for white-label agency clients
-  source: z.enum(["rogue", "ranklocal"]).optional(),
+  // Optional: internal source tag.
+  //   "rogue"       = Rogue Business Marketing internal/test campaigns (noCharge=true)
+  //   "ranklocal"   = Rank Local clients billed through Rank Local (noCharge=true)
+  //   "answerforge" = Direct AI AnswerForge clients billed separately (noCharge=false, tracked in cost reporting)
+  //   Any other string = future agency or partner tags (accepted without code changes)
+  source: z.string().optional(),
 
   // Optional: specialties / unique expertise — hammered into every MiniMax training iteration
   specialties: z.string().optional(),
@@ -441,7 +444,9 @@ export function createWebhookRouter(): Router {
         maxQuerySlots: resolvedMaxQuerySlots,
         selectedPackage: payload.selectedPackage || null,
         billingType: payload.billingType || (payload.agencyId ? "white_label" : "direct"),
-        // Rogue and Rank Local campaigns are billed outside this platform — noCharge is set automatically.
+        // noCharge logic:
+        //   rogue / ranklocal = billed outside this platform — do not track as billable cost here
+        //   answerforge / no source / anything else = direct client, costs tracked in AI AnswerForge billing
         noCharge: (payload.source === "rogue" || payload.source === "ranklocal") ? true : false,
       });
 
