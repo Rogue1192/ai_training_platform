@@ -307,7 +307,7 @@ export async function runCredibilityResearch(params: {
   
   console.log(`[Credibility Research] Starting research for ${businessName} (campaign ${campaignId})`);
   
-  const response = await callAI("anthropic", apiKey, model, messages);
+  const response = await callAI("anthropic", apiKey, model, messages, { maxTokens: 8192 });
 
   // Log cost — fire-and-forget (never block the pipeline on cost logging)
   const [costCampaign] = await (await getDb())!.select({ createdAt: campaigns.createdAt, businessId: campaigns.businessId }).from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);

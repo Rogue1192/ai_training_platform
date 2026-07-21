@@ -21,12 +21,12 @@ export interface AIResponse {
 /**
  * Call OpenAI API
  */
-async function callOpenAI(apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
+async function callOpenAI(apiKey: string, model: string, messages: AIMessage[], maxTokens?: number): Promise<AIResponse> {
   const startTime = Date.now();
   try {
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
-      { model, messages },
+      { model, messages, ...(maxTokens ? { max_tokens: maxTokens } : {}) },
       {
         headers: {
           "Content-Type": "application/json",
@@ -47,7 +47,7 @@ async function callOpenAI(apiKey: string, model: string, messages: AIMessage[]):
 /**
  * Call Anthropic API
  */
-async function callAnthropic(apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
+async function callAnthropic(apiKey: string, model: string, messages: AIMessage[], maxTokens?: number): Promise<AIResponse> {
   const startTime = Date.now();
   try {
     const systemMessage = messages.find((m) => m.role === "system");
@@ -57,7 +57,7 @@ async function callAnthropic(apiKey: string, model: string, messages: AIMessage[
       "https://api.anthropic.com/v1/messages",
       {
         model,
-        max_tokens: 4096,
+        max_tokens: maxTokens ?? 4096,
         system: systemMessage?.content,
         messages: conversationMessages.map((m) => ({
           role: m.role === "assistant" ? "assistant" : "user",
@@ -86,7 +86,7 @@ async function callAnthropic(apiKey: string, model: string, messages: AIMessage[
  * Call MiniMax API (Anthropic-compatible format)
  * Base URL: https://api.minimax.io/anthropic
  */
-async function callMiniMax(apiKey: string, model: string, messages: AIMessage[]): Promise<AIResponse> {
+async function callMiniMax(apiKey: string, model: string, messages: AIMessage[], maxTokens?: number): Promise<AIResponse> {
   const startTime = Date.now();
   try {
     const systemMessage = messages.find((m) => m.role === "system");
@@ -96,7 +96,7 @@ async function callMiniMax(apiKey: string, model: string, messages: AIMessage[])
       "https://api.minimax.io/anthropic/v1/messages",
       {
         model,
-        max_tokens: 4096,
+        max_tokens: maxTokens ?? 4096,
         system: systemMessage?.content,
         messages: conversationMessages.map((m) => ({
           role: m.role === "assistant" ? "assistant" : "user",
@@ -226,18 +226,18 @@ export async function callAI(
   apiKey: string,
   model: string,
   messages: AIMessage[],
-  options?: { webSearch?: boolean }
+  options?: { webSearch?: boolean; maxTokens?: number }
 ): Promise<AIResponse> {
   const resolvedModel = resolveModel(model);
   switch (provider) {
     case "openai":
-      return callOpenAI(apiKey, resolvedModel, messages);
+      return callOpenAI(apiKey, resolvedModel, messages, options?.maxTokens);
     case "anthropic":
-      return callAnthropic(apiKey, resolvedModel, messages);
+      return callAnthropic(apiKey, resolvedModel, messages, options?.maxTokens);
     case "google":
       return callGoogle(apiKey, resolvedModel, messages, options);
     case "minimax":
-      return callMiniMax(apiKey, resolvedModel, messages);
+      return callMiniMax(apiKey, resolvedModel, messages, options?.maxTokens);
     default:
       throw new Error(`Unsupported AI provider: ${provider}`);
   }
