@@ -5175,12 +5175,14 @@ const prospectAuditRouter = router({
 // Merge llmInsights and costTracking into appRouter
 import { costTrackingRouter } from "./costTrackingRouter";
 import { trainingQueryRouter } from "./trainingQueryRouter";
+import { promoCodeRouter } from "./promoCodeRouter";
 export const appRouterWithInsights = router({
   ...appRouter._def.procedures,
   llmInsights: llmInsightsRouter,
   costTracking: costTrackingRouter,
   prospectAudit: prospectAuditRouter,
   trainingQuery: trainingQueryRouter,
+  promoCode: promoCodeRouter,
 });
 export type AppRouter = typeof appRouter;
 // Re-export the extended router for use in server setup

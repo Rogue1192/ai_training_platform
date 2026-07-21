@@ -149,11 +149,13 @@ export async function updateCampaign(id: number, updates: Partial<InsertCampaign
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db
+  // Use update + separate select instead of .returning() to prevent errors
+  // when new DB columns are added before the schema is updated.
+  await db
     .update(campaigns)
     .set({ ...updates, updatedAt: new Date() })
-    .where(eq(campaigns.id, id))
-    .returning();
+    .where(eq(campaigns.id, id));
+  const result = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
   return result[0];
 }
 

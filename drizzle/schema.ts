@@ -460,6 +460,9 @@ export const campaigns = pgTable("campaigns", {
   // Checkbox in the publishing panel auto-triggers the scan; campaign stays blocked until both pass.
   llmTxtVerified: boolean("llmTxtVerified").default(false).notNull(),
   schemaVerified: boolean("schemaVerified").default(false).notNull(),
+  // Promo code applied at campaign creation
+  promoCodeId: integer("promoCodeId"),
+  promoCodeUsed: varchar("promoCodeUsed", { length: 50 }),
   // Metadata
   sourceWebhookId: integer("sourceWebhookId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -468,6 +471,28 @@ export const campaigns = pgTable("campaigns", {
 
 export type Campaign = typeof campaigns.$inferSelect;
 export type InsertCampaign = typeof campaigns.$inferInsert;
+
+// Promo Codes — one-time or limited-use codes for free trials, discounts, or noCharge campaigns
+export const promoCodes = pgTable("promoCodes", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  description: text("description"),
+  // 'free_trial' = noCharge for trialDays, 'percent_off' = % discount, 'fixed_off' = fixed $ off
+  discountType: varchar("discountType", { length: 20 }).default("free_trial").notNull(),
+  discountValue: integer("discountValue").default(0), // percent or cents depending on discountType
+  packageTierSlug: varchar("packageTierSlug", { length: 50 }), // if set, locks code to a specific package
+  maxUses: integer("maxUses").default(1), // null = unlimited
+  usedCount: integer("usedCount").default(0).notNull(),
+  expiresAt: timestamp("expiresAt"), // null = never expires
+  noCharge: boolean("noCharge").default(true).notNull(), // if true, campaign gets noCharge=true
+  trialDays: integer("trialDays").default(30), // days of free access for free_trial type
+  createdBy: integer("createdBy"), // userId of admin who created it
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type PromoCode = typeof promoCodes.$inferSelect;
+export type InsertPromoCode = typeof promoCodes.$inferInsert;
 
 // Campaign Query-Location Matrix — each row is one query+location combo in a campaign
 export const campaignQueryLocations = pgTable("campaignQueryLocations", {

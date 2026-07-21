@@ -475,15 +475,16 @@ export default function CampaignDetail() {
               setIsRunningBaseline(true);
               runBaselineMutation.mutate({ campaignId });
             }}
-            disabled={isRunningBaseline || runBaselineMutation.isPending}
-            title="Run baseline rank check across all queries — records Day 0 positions before training"
+            disabled={isRunningBaseline || runBaselineMutation.isPending || keywordResearchInProgress}
+            title={keywordResearchInProgress ? "Queries are still being generated — please wait" : "Run baseline rank check across all queries — records Day 0 positions before training"}
           >
-            {isRunningBaseline || runBaselineMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            {keywordResearchInProgress ? (
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating Queries…</>
+            ) : isRunningBaseline || runBaselineMutation.isPending ? (
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Running…</>
             ) : (
-              <Eye className="w-4 h-4 mr-2" />
+              <><Eye className="w-4 h-4 mr-2" />Run Baseline</>
             )}
-            Run Baseline
           </Button>
           <Button onClick={handleRunFull} disabled={runFullMutation.isPending}>
             {runFullMutation.isPending ? (
@@ -712,6 +713,7 @@ export default function CampaignDetail() {
         });
         const baselineStage = stages.find((s) => s.id === "baseline");
         const needsBaselinePrompt = baselineStage?.status === "action";
+        const keywordResearchInProgress = campaign.status === "keyword_research";
         return (
           <>
             <Card className="bg-card border-border">
@@ -786,7 +788,22 @@ export default function CampaignDetail() {
             })()}
 
             {/* ── Baseline Prompt Banner ── */}
-            {needsBaselinePrompt && (
+            {keywordResearchInProgress && (
+              <Card className="border-blue-500/50 bg-blue-500/5">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="w-5 h-5 text-blue-400 shrink-0 animate-spin" />
+                    <div>
+                      <p className="font-medium text-blue-300 text-sm">Generating queries — please wait</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Keyword research is running. The baseline check will become available once queries are ready.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {needsBaselinePrompt && !keywordResearchInProgress && (
               <Card className="border-amber-500/50 bg-amber-500/5">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between gap-4">

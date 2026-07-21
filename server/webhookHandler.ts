@@ -107,6 +107,9 @@ const onboardingPayloadSchema = z.object({
     z.array(z.object({ label: z.string(), url: z.string().url() })),
   ]).optional(),
 
+  // Optional: promo code — applied at campaign creation for free trials or discounts
+  promoCode: z.string().optional(),
+
   // Optional: webhook secret for authentication
   webhookSecret: z.string().optional(),
 });
@@ -445,6 +448,21 @@ export function createWebhookRouter(): Router {
       // Resolve the query-slot budget from the package tier
       const resolvedMaxQuerySlots = packageTier.maxQuerySlots || (packageTier.maxQueries * packageTier.maxLocations);
 
+      // Validate and apply promo code if provided
+      let appliedPromo: { id: number; code: string; noCharge: boolean; trialDays: number } | null = null;
+      if (payload.promoCode) {
+        const { promoCodes } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const [promo] = await db.select().from(promoCodes)
+          .where(eq(promoCodes.code, payload.promoCode.toUpperCase().trim()))
+          .limit(1);
+        if (promo && (!promo.expiresAt || new Date() <= promo.expiresAt) && (promo.maxUses === null || promo.usedCount < promo.maxUses)) {
+          appliedPromo = { id: promo.id, code: promo.code, noCharge: promo.noCharge, trialDays: promo.trialDays || 30 };
+          // Increment usedCount
+          await db.update(promoCodes).set({ usedCount: promo.usedCount + 1, updatedAt: new Date() }).where(eq(promoCodes.id, promo.id));
+        }
+      }
+
       // Create the campaign
       const campaign = await createCampaign({
         userId: ownerId,
@@ -466,7 +484,10 @@ export function createWebhookRouter(): Router {
         // noCharge logic:
         //   rogue / ranklocal = billed outside this platform — do not track as billable cost here
         //   answerforge / no source / anything else = direct client, costs tracked in AI AnswerForge billing
-        noCharge: (payload.source === "rogue" || payload.source === "ranklocal") ? true : false,
+        //   promo code with noCharge=true overrides to noCharge regardless of source
+        noCharge: (payload.source === "rogue" || payload.source === "ranklocal" || appliedPromo?.noCharge) ? true : false,
+        promoCodeId: appliedPromo?.id || null,
+        promoCodeUsed: appliedPromo?.code || null,
       });
 
       // Initialize 14-day trial
