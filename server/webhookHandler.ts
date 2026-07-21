@@ -441,6 +441,8 @@ export function createWebhookRouter(): Router {
         maxQuerySlots: resolvedMaxQuerySlots,
         selectedPackage: payload.selectedPackage || null,
         billingType: payload.billingType || (payload.agencyId ? "white_label" : "direct"),
+        // Rogue Business Marketing campaigns are never billed — noCharge is set automatically.
+        noCharge: payload.source === "rogue" ? true : false,
       });
 
       // Initialize 14-day trial
