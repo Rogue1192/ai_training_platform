@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +41,7 @@ export default function AgencyManagement() {
   const { data: agencies, isLoading } = trpc.agency.list.useQuery();
   const utils = trpc.useUtils();
   const [logoUploading, setLogoUploading] = useState(false);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
 
   const uploadLogoMutation = trpc.agency.uploadLogo.useMutation({
     onError: (err) => toast.error(err.message),
@@ -348,25 +349,24 @@ export default function AgencyManagement() {
               <div className="space-y-1.5">
                 <Label>Logo</Label>
                 <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="pointer-events-none"
-                      disabled={logoUploading}
-                    >
-                      {logoUploading
-                        ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Uploading…</>
-                        : <><Upload className="h-3.5 w-3.5 mr-1.5" />Upload Logo</>}
-                    </Button>
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml"
-                      className="hidden"
-                      onChange={handleLogoFileChange}
-                    />
-                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => logoFileInputRef.current?.click()}
+                    disabled={logoUploading}
+                  >
+                    {logoUploading
+                      ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Uploading…</>
+                      : <><Upload className="h-3.5 w-3.5 mr-1.5" />Upload Logo</>}
+                  </Button>
+                  <input
+                    ref={logoFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml"
+                    className="hidden"
+                    onChange={handleLogoFileChange}
+                  />
                   <span className="text-xs text-muted-foreground">or paste URL:</span>
                 </div>
                 <Input
