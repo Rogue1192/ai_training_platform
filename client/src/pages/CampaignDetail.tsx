@@ -229,6 +229,7 @@ export default function CampaignDetail() {
   });
 
   const [isRunningBaseline, setIsRunningBaseline] = useState(false);
+  const keywordResearchInProgress = campaign?.status === "keyword_research";
   const runBaselineMutation = trpc.campaign.runBaselineCheck.useMutation({
     onSuccess: (result) => {
       toast.success(`Baseline complete — ${(result as any).snapshotsCreated ?? 0} snapshot(s) recorded`);
@@ -713,7 +714,6 @@ export default function CampaignDetail() {
         });
         const baselineStage = stages.find((s) => s.id === "baseline");
         const needsBaselinePrompt = baselineStage?.status === "action";
-        const keywordResearchInProgress = campaign.status === "keyword_research";
         return (
           <>
             <Card className="bg-card border-border">
