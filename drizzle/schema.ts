@@ -431,6 +431,8 @@ export const campaigns = pgTable("campaigns", {
   maxQuerySlots: integer("maxQuerySlots").default(15).notNull(), // Total query-location pairs budget (new model)
   // Stripe
   stripePaymentLinkSentAt: timestamp("stripePaymentLinkSentAt"),
+  stripePaymentLinkUrl: varchar("stripePaymentLinkUrl", { length: 512 }),
+  stripePaymentLinkId: varchar("stripePaymentLinkId", { length: 255 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
   stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
   // Billing type — determines revenue rate for P&L calculation
