@@ -70,6 +70,12 @@ const onboardingPayloadSchema = z.object({
   bbbRating: z.string().optional(),
   googleReviewCount: z.number().optional(),
   googleRating: z.number().optional(),
+  licenses: z.string().optional(),
+  warranties: z.string().optional(),
+  differentiators: z.string().optional(),
+  address: z.string().optional(),
+  notes: z.string().optional(),
+  description: z.string().optional(),
 
   // Package selected during onboarding (from GHL form)
   // e.g., 'starter_5loc' | 'growth_5loc' | 'pro_5loc' | 'starter_10loc' | 'growth_10loc' | 'pro_10loc'
@@ -347,8 +353,15 @@ export function createWebhookRouter(): Router {
         }
         // Internal source tag for filtering
         if (payload.source) updateFields.internalSource = payload.source;
-        // Specialties — hammered into every MiniMax training iteration
         if (payload.specialties) updateFields.specialties = payload.specialties;
+        if (payload.licenses) updateFields.licenses = payload.licenses;
+        if (payload.warranties) updateFields.warranties = payload.warranties;
+        if (payload.differentiators) updateFields.differentiators = payload.differentiators;
+        if (payload.address) updateFields.address = payload.address;
+        if (payload.notes) updateFields.notes = payload.notes;
+        if (payload.description) updateFields.description = payload.description;
+        if (payload.googleReviewCount) updateFields.googleReviewCount = payload.googleReviewCount;
+        if (payload.googleRating) updateFields.googleRating = payload.googleRating;
 
         await db.update(businesses).set(updateFields).where(eq(businesses.id, businessId));
       } else {
@@ -375,10 +388,16 @@ export function createWebhookRouter(): Router {
             credibilityUrls: payload.credibilityUrls !== undefined
               ? (typeof payload.credibilityUrls === 'string' ? payload.credibilityUrls : JSON.stringify(payload.credibilityUrls))
               : null,
-            // Internal source tag for filtering ("rogue", "ranklocal", or null)
             internalSource: payload.source || null,
-            // Specialties — hammered into every MiniMax training iteration
             specialties: payload.specialties || null,
+            licenses: payload.licenses || null,
+            warranties: payload.warranties || null,
+            differentiators: payload.differentiators || null,
+            address: payload.address || null,
+            notes: payload.notes || null,
+            description: payload.description || null,
+            googleReviewCount: payload.googleReviewCount || null,
+            googleRating: payload.googleRating || null,
             createdAt: new Date(),
             updatedAt: new Date(),
           })
