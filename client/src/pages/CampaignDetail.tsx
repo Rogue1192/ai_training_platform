@@ -23,6 +23,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   ArrowLeft,
   Play,
   Pause,
@@ -495,6 +503,40 @@ export default function CampaignDetail() {
             )}
             Run Full Pipeline
           </Button>
+          {isAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Re-run Step
+                  <ChevronDown className="w-3.5 h-3.5 ml-1.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">Force-run a specific step</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {PIPELINE_STEPS.map((step) => {
+                  const Icon = step.icon;
+                  const isRunning = runStepMutation.isPending && runningStep === step.key;
+                  return (
+                    <DropdownMenuItem
+                      key={step.key}
+                      disabled={isRunning || runStepMutation.isPending}
+                      onClick={() => handleRunStep(step.key as StepKey)}
+                      className="cursor-pointer"
+                    >
+                      {isRunning ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Icon className={`w-4 h-4 mr-2 ${step.color}`} />
+                      )}
+                      {step.label}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
