@@ -239,13 +239,13 @@ export default function ClientDashboard() {
           </motion.section>
         )}
 
-        {/* Wins Section — only show after sprint completes */}
-        {!report.isBaselineOnly && report.recentWins.length > 0 && (
+        {/* Wins Section — show whenever new mentions exist */}
+        {report.recentWins.length > 0 && (
           <WinsSection wins={report.recentWins} />
         )}
 
-        {/* Bonus Wins Banner — only show after sprint completes */}
-        {!report.isBaselineOnly && <BonusWinsBanner bonusResults={bonusResults} />}
+        {/* Bonus Wins Banner — show whenever bonus results exist */}
+        <BonusWinsBanner bonusResults={bonusResults} />
 
         {/* Visibility Trend */}
         <motion.section

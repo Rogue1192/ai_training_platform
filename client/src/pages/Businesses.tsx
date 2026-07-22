@@ -18,11 +18,12 @@ import {
   Copy, BarChart2, ExternalLink,
 } from "lucide-react";
 
-// ─── Baseline Report Share Button (Business Card) ──────────────────────────
+// ─── Baseline Report Buttons (Business Card) ──────────────────────────────
 // Looks up the most recent campaign for this business, then gets/creates a
-// shareable /report/:token link. Shown on every business card in Super Admin.
-function BusinessBaselineButton({ businessId }: { businessId: number }) {
+// shareable /report/:token link. Shows Copy, Open, and View In-App buttons.
+function BusinessBaselineButton({ businessId, onViewReport }: { businessId: number; onViewReport: (token: string) => void }) {
   const [link, setLink] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Lazy-load campaigns for this business only when the button is clicked
@@ -35,11 +36,7 @@ function BusinessBaselineButton({ businessId }: { businessId: number }) {
     onSuccess: (data) => {
       const url = `${window.location.origin}/report/${data.token}`;
       setLink(url);
-      navigator.clipboard.writeText(url).then(() => {
-        setCopied(true);
-        toast.success("Baseline report link copied!");
-        setTimeout(() => setCopied(false), 2500);
-      });
+      setToken(data.token);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -49,56 +46,80 @@ function BusinessBaselineButton({ businessId }: { businessId: number }) {
 
   if (!baselineCampaign && !loadingCampaigns) return null;
 
+  function ensureLink(callback: (url: string, tok: string) => void) {
+    if (link && token) { callback(link, token); return; }
+    if (baselineCampaign) {
+      getLink.mutate({ campaignId: baselineCampaign.id }, {
+        onSuccess: (data) => {
+          const url = `${window.location.origin}/report/${data.token}`;
+          callback(url, data.token);
+        },
+      });
+    }
+  }
+
   function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
-    if (link) {
-      navigator.clipboard.writeText(link).then(() => {
+    ensureLink((url) => {
+      navigator.clipboard.writeText(url).then(() => {
         setCopied(true);
         toast.success("Baseline report link copied!");
         setTimeout(() => setCopied(false), 2500);
       });
-    } else if (baselineCampaign) {
-      getLink.mutate({ campaignId: baselineCampaign.id });
-    }
+    });
   }
 
   function handleOpen(e: React.MouseEvent) {
     e.stopPropagation();
-    if (link) window.open(link, "_blank");
-    else if (baselineCampaign) getLink.mutate({ campaignId: baselineCampaign.id });
+    ensureLink((url) => window.open(url, "_blank"));
+  }
+
+  function handleView(e: React.MouseEvent) {
+    e.stopPropagation();
+    ensureLink((_url, tok) => onViewReport(tok));
   }
 
   return (
     <div className="flex gap-1 pt-1">
       <Button
-        variant="outline"
+        variant="default"
         size="sm"
-        className="flex-1 gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
-        onClick={handleCopy}
+        className="flex-1 gap-1.5 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30"
+        onClick={handleView}
         disabled={getLink.isPending || loadingCampaigns || !baselineCampaign}
-        title="Copy shareable baseline report link"
+        title="View client report in-app"
       >
         {getLink.isPending ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        ) : copied ? (
+        ) : (
+          <BarChart2 className="w-3.5 h-3.5" />
+        )}
+        View Report
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="px-2 text-muted-foreground hover:text-primary"
+        onClick={handleCopy}
+        disabled={getLink.isPending || loadingCampaigns || !baselineCampaign}
+        title={copied ? "Copied!" : "Copy shareable report link"}
+      >
+        {copied ? (
           <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
         ) : (
           <Copy className="w-3.5 h-3.5" />
         )}
-        <BarChart2 className="w-3.5 h-3.5" />
-        {copied ? "Copied!" : "Baseline Report"}
       </Button>
-      {link && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="px-2 text-muted-foreground hover:text-primary"
-          onClick={handleOpen}
-          title="Open baseline report in new tab"
-        >
-          <ExternalLink className="w-3.5 h-3.5" />
-        </Button>
-      )}
+      <Button
+        variant="outline"
+        size="sm"
+        className="px-2 text-muted-foreground hover:text-primary"
+        onClick={handleOpen}
+        disabled={getLink.isPending || loadingCampaigns || !baselineCampaign}
+        title="Open report in new tab"
+      >
+        <ExternalLink className="w-3.5 h-3.5" />
+      </Button>
     </div>
   );
 }
@@ -333,6 +354,9 @@ export default function Businesses() {
 
   // Completeness modal state — holds the business whose missing fields are being shown
   const [completenessTarget, setCompletenessTarget] = useState<any | null>(null);
+
+  // In-app report viewer state — holds the token for the report being viewed
+  const [reportToken, setReportToken] = useState<string | null>(null);
 
   // Search & selection state
   const [searchQuery, setSearchQuery] = useState("");
@@ -1215,8 +1239,8 @@ export default function Businesses() {
                       <span>Credibility data available</span>
                     </div>
                   )}
-                  {/* Baseline Report share button — only shown when a campaign has a completed baseline */}
-                  <BusinessBaselineButton businessId={business.id} />
+                  {/* Baseline Report buttons — View in-app, Copy link, Open in new tab */}
+                  <BusinessBaselineButton businessId={business.id} onViewReport={(tok) => setReportToken(tok)} />
 
                   <div className="flex gap-2 pt-2">
                     {(business as any).isArchived && (
@@ -1259,6 +1283,53 @@ export default function Businesses() {
           onSaved={() => { refetch(); setCompletenessTarget(null); }}
         />
       )}
+
+      {/* In-app report viewer modal */}
+      <Dialog open={!!reportToken} onOpenChange={(open) => { if (!open) setReportToken(null); }}>
+        <DialogContent className="max-w-6xl w-full h-[90vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-4 py-3 border-b border-border flex-row items-center justify-between shrink-0">
+            <DialogTitle className="text-sm font-medium">Client Visibility Report</DialogTitle>
+            <div className="flex items-center gap-2">
+              {reportToken && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      const url = `${window.location.origin}/report/${reportToken}`;
+                      navigator.clipboard.writeText(url);
+                      toast.success("Report link copied!");
+                    }}
+                  >
+                    <Copy className="w-3.5 h-3.5 mr-1.5" />
+                    Copy Link
+                  </Button>
+                  <a
+                    href={`${window.location.origin}/report/${reportToken}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button variant="ghost" size="sm" className="h-7 text-xs">
+                      <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                      New Tab
+                    </Button>
+                  </a>
+                </>
+              )}
+            </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            {reportToken && (
+              <iframe
+                src={`${window.location.origin}/report/${reportToken}`}
+                title="Client Visibility Report"
+                className="w-full h-full border-none"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
