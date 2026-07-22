@@ -442,6 +442,12 @@ export async function runPipelineStep(
     }
     
     result.duration = Date.now() - startTime;
+    // Clear any stale error from previous failed attempts on this step
+    await db.update(campaigns).set({
+      lastError: null,
+      errorCount: 0,
+      updatedAt: new Date(),
+    }).where(eq(campaigns.id, campaignId));
     console.log(`[Pipeline] ✓ Step "${step}" completed in ${result.duration}ms: ${result.message}`);
     return result;
     
