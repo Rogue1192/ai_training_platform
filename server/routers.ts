@@ -2003,7 +2003,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         // Check if ALL publishable pages for this campaign now have a publishedUrl.
         // Exclude llm_txt, schema_package, schema_audit, schema_delivery — these never
         // get a publishedUrl and must not block the publishing completion gate.
-        const { inArray, not } = await import("drizzle-orm");
+        const { inArray, not, and } = await import("drizzle-orm");
         const NON_PUBLISHABLE_TYPES = ["llm_txt", "schema_package", "schema_audit", "schema_delivery"];
         const allPages = await db
           .select({ id: contentPages.id, publishedUrl: contentPages.publishedUrl })
