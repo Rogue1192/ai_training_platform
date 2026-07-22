@@ -1173,8 +1173,17 @@ export async function regenerateContentPage(params: {
   )).limit(1);
   const credData = credResults[0];
   
-  const facts = (credData?.verifiedFacts as CredibilityFact[]) || [];
-  
+  // Use researchResults.facts (same source as full content generation) for richer context
+  const researchResults = (credData?.researchResults as any) ?? {};
+  const facts: CredibilityFact[] = (researchResults.facts ?? credData?.verifiedFacts ?? []) as CredibilityFact[];
+
+  // Get all page types for the campaign so interlink targets are populated
+  const allPageRows = await db.select({ pageType: contentPages.pageType })
+    .from(contentPages)
+    .where(eq(contentPages.campaignId, existingPage.campaignId!))
+    .limit(50);
+  const allPageTypes = allPageRows.map((r: { pageType: string }) => r.pageType).filter((t: string) => t !== existingPage.pageType);
+
   // Generate the page
   const messages: AIMessage[] = [
     { role: "system", content: customPrompt || CONTENT_GENERATION_SYSTEM_PROMPT },
@@ -1185,46 +1194,92 @@ export async function regenerateContentPage(params: {
       business.businessType || "",
       business.location || "",
       facts,
-      [] // No interlink targets for regeneration
+      allPageTypes
     )},
   ];
-  
-  const response = await callAI("anthropic", apiKey, "claude-sonnet-4-5-20250929", messages);
-  
+
+  // Apply same maxTokens fix as full generation
+  const maxTokens = config.type === "credibility_profile" ? 8192 : 4096;
+  const model = "claude-sonnet-4-5-20250929";
+  const response = await callAI("anthropic", apiKey, model, messages, { maxTokens });
+
+  // Robust JSON extraction (same as generateSinglePage)
+  const extractJsonRegen = (raw: string): string => {
+    let s = raw.trim();
+    if (s.startsWith("```json")) s = s.slice(7);
+    else if (s.startsWith("```")) s = s.slice(3);
+    if (s.endsWith("```")) s = s.slice(0, -3);
+    s = s.trim();
+    if (!s.startsWith("{")) {
+      const match = s.match(/\{[\s\S]*\}/);
+      if (match) s = match[0];
+    }
+    return s;
+  };
+
   let pageData: any;
   try {
-    let jsonStr = response.content.trim();
-    if (jsonStr.startsWith("```json")) jsonStr = jsonStr.slice(7);
-    if (jsonStr.startsWith("```")) jsonStr = jsonStr.slice(3);
-    if (jsonStr.endsWith("```")) jsonStr = jsonStr.slice(0, -3);
-    pageData = JSON.parse(jsonStr.trim());
+    pageData = JSON.parse(extractJsonRegen(response.content));
   } catch {
-    throw new Error("Failed to parse regenerated content");
+    // Auto-retry with correction prompt
+    try {
+      const correctionMessages: AIMessage[] = [
+        { role: "system", content: "You are a JSON formatter. Return ONLY the raw JSON object with no markdown, no explanation, no code fences." },
+        { role: "user", content: `Extract and return ONLY the valid JSON object from this text:\n\n${response.content.substring(0, 6000)}` },
+      ];
+      const retryResponse = await callAI("anthropic", apiKey, model, correctionMessages, { maxTokens: 8192 });
+      pageData = JSON.parse(extractJsonRegen(retryResponse.content));
+    } catch {
+      throw new Error("Failed to parse regenerated content");
+    }
   }
   
+  // Rebuild schema markup for the regenerated page
+  let newSchemaMarkup = existingPage.schemaMarkup || "";
+  try {
+    const { buildPageSchema } = await import("./schemaMarkupEngine");
+    const schemaBlock = buildPageSchema(
+      {
+        pageType: config.type,
+        pageTitle: pageData.pageTitle || existingPage.pageTitle,
+        pageContent: pageData.pageContent || "",
+        businessName: business.name,
+        businessWebsite: business.website || "",
+        publishedUrl: existingPage.publishedUrl || undefined,
+      },
+      facts
+    );
+    if (schemaBlock) newSchemaMarkup = JSON.stringify(schemaBlock, null, 2);
+  } catch {
+    // Non-fatal — keep existing schema markup
+  }
+
   const page: GeneratedPage = {
     pageType: config.type,
     pageTitle: pageData.pageTitle || existingPage.pageTitle,
     pageSlug: pageData.pageSlug || existingPage.pageSlug || config.type,
     pageContent: pageData.pageContent || "",
     metaDescription: pageData.metaDescription || "",
-    schemaMarkup: existingPage.schemaMarkup || "",
+    schemaMarkup: newSchemaMarkup,
     interlinkTargets: pageData.interlinkSuggestions || [],
     deliveryType: config.deliveryType,
   };
-  
-  // Update in database
+
+  // Update in database — preserve publishedUrl and status if page was already published
+  const preservePublished = !!existingPage.publishedUrl;
   await db.update(contentPages).set({
     pageTitle: page.pageTitle,
     pageSlug: page.pageSlug,
     pageContent: page.pageContent,
     metaDescription: page.metaDescription,
+    schemaMarkup: newSchemaMarkup,
     interlinkTargets: page.interlinkTargets,
-    status: "generated",
+    status: preservePublished ? "published" : "generated",
+    publishError: null,
     generationPrompt: customPrompt || `Regenerated ${config.type} page`,
     updatedAt: new Date(),
   }).where(eq(contentPages.id, pageId));
-  
+
   return page;
 }
 

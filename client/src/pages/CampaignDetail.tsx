@@ -1659,6 +1659,8 @@ export default function CampaignDetail() {
 // Separate component for content tab to keep things clean
 function ContentTab({ campaignId }: { campaignId: number }) {
   const utils = trpc.useUtils();
+  const { user: contentTabUser } = useAuth({ redirectOnUnauthenticated: false });
+  const isAdmin = (contentTabUser as any)?.role === 'admin';
   const { data: contentPagesData, isLoading } = trpc.campaign.getContentPages.useQuery(
     { campaignId },
     {
@@ -1791,6 +1793,25 @@ function ContentTab({ campaignId }: { campaignId: number }) {
   const updateContentPageContent = trpc.campaign.updateContentPageContent.useMutation({
     onError: (err) => toast.error(err.message),
   });
+
+  const [regenLoadingPages, setRegenLoadingPages] = useState<Set<number>>(new Set());
+
+  const regenerateContentPage = trpc.campaign.regenerateContentPage.useMutation({
+    onSuccess: (_data, variables) => {
+      setRegenLoadingPages(prev => { const s = new Set(prev); s.delete(variables.pageId); return s; });
+      utils.campaign.getContentPages.invalidate({ campaignId });
+      toast.success('Page regenerated successfully.');
+    },
+    onError: (err, variables) => {
+      setRegenLoadingPages(prev => { const s = new Set(prev); s.delete(variables.pageId); return s; });
+      toast.error(`Regeneration failed: ${err.message}`);
+    },
+  });
+
+  const handleRegeneratePage = (pageId: number) => {
+    setRegenLoadingPages(prev => new Set(prev).add(pageId));
+    regenerateContentPage.mutate({ pageId });
+  };
 
   // Parse the schema delivery plan from the DB content page.
   // NOTE: every hook must run before the early return below, or the hook
@@ -1925,6 +1946,23 @@ function ContentTab({ campaignId }: { campaignId: number }) {
                           <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-xs">
                             Needs URL
                           </Badge>
+                        )}
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs gap-1 text-amber-400 hover:text-amber-300"
+                            disabled={regenLoadingPages.has(page.id)}
+                            onClick={() => handleRegeneratePage(page.id)}
+                            title="Regenerate this page only"
+                          >
+                            {regenLoadingPages.has(page.id) ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-3 h-3" />
+                            )}
+                            Regen
+                          </Button>
                         )}
                         <Button
                           variant="ghost"
