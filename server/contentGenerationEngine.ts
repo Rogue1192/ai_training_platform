@@ -363,21 +363,43 @@ export async function generateSinglePage(params: {
   const model = "claude-sonnet-4-5-20250929";
   
   console.log(`[Content Generation] Generating ${config.type} page for ${businessName}...`);
-  
-  const response = await callAI("anthropic", apiKey, model, messages);
-  
-  // Parse JSON response
+
+  // credibility_profile generates very long output — raise token limit to avoid truncation
+  const maxTokens = config.type === "credibility_profile" ? 8192 : 4096;
+
+  const response = await callAI("anthropic", apiKey, model, messages, { maxTokens });
+
+  // Robust JSON extraction — strips code fences and falls back to first {...} block
+  const extractJson = (raw: string): string => {
+    let s = raw.trim();
+    if (s.startsWith("```json")) s = s.slice(7);
+    else if (s.startsWith("```")) s = s.slice(3);
+    if (s.endsWith("```")) s = s.slice(0, -3);
+    s = s.trim();
+    if (!s.startsWith("{")) {
+      const match = s.match(/\{[\s\S]*\}/);
+      if (match) s = match[0];
+    }
+    return s;
+  };
+
+  // Parse JSON response — with auto-retry on first failure
   let pageData: any;
   try {
-    let jsonStr = response.content.trim();
-    if (jsonStr.startsWith("```json")) jsonStr = jsonStr.slice(7);
-    if (jsonStr.startsWith("```")) jsonStr = jsonStr.slice(3);
-    if (jsonStr.endsWith("```")) jsonStr = jsonStr.slice(0, -3);
-    jsonStr = jsonStr.trim();
-    pageData = JSON.parse(jsonStr);
+    pageData = JSON.parse(extractJson(response.content));
   } catch {
-    console.error(`[Content Generation] Failed to parse response for ${config.type}:`, response.content.substring(0, 200));
-    throw new Error(`Failed to parse content generation response for ${config.type} page`);
+    console.warn(`[Content Generation] First parse failed for ${config.type} — retrying with correction prompt`);
+    try {
+      const correctionMessages: AIMessage[] = [
+        { role: "system", content: "You are a JSON formatter. Return ONLY the raw JSON object with no markdown, no explanation, no code fences. Nothing before or after the JSON." },
+        { role: "user", content: `The following text should be a JSON object but failed to parse. Extract and return ONLY the valid JSON object:\n\n${response.content.substring(0, 6000)}` },
+      ];
+      const retryResponse = await callAI("anthropic", apiKey, model, correctionMessages, { maxTokens: 8192 });
+      pageData = JSON.parse(extractJson(retryResponse.content));
+    } catch {
+      console.error(`[Content Generation] Retry parse also failed for ${config.type}:`, response.content.substring(0, 200));
+      throw new Error(`Failed to parse content generation response for ${config.type} page`);
+    }
   }
   
   // Generate schema markup deterministically using schemaMarkupEngine
