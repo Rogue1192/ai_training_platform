@@ -456,6 +456,14 @@ export async function generateAllContentPages(params: {
   
   const generatedPages: GeneratedPage[] = [];
   const db = await getDb();
+
+  // Delete any existing content pages for this campaign before regenerating
+  // This prevents duplicates if content generation is retried after a partial failure
+  if (db) {
+    const { contentPages: cpTable } = await import('../drizzle/schema');
+    const deleted = await db.delete(cpTable).where(eq(cpTable.campaignId, campaignId));
+    console.log(`[Content Generation] Cleared existing content pages for campaign ${campaignId} before regenerating`);
+  }
   
   // Generate each page sequentially (to avoid rate limits and maintain quality)
   for (const config of pageConfigs) {
