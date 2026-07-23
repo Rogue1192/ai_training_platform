@@ -2729,7 +2729,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
     runStep: protectedProcedure
       .input(z.object({
         campaignId: z.number(),
-        step: z.enum(["keyword_research", "credibility_research", "content_generation", "publishing", "indexing", "baseline_check", "training"]),
+        step: z.enum(["keyword_research", "credibility_research", "content_generation", "publishing", "indexing", "baseline_check", "fan_out_audit", "training"]),
       }))
       .mutation(async ({ ctx, input }) => {
         const { runPipelineStep } = await import("./pipelineOrchestrator");
@@ -2738,7 +2738,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
     runFull: protectedProcedure
       .input(z.object({
         campaignId: z.number(),
-        stopAfterStep: z.enum(["keyword_research", "credibility_research", "content_generation", "publishing", "indexing", "baseline_check", "training"]).optional(),
+        stopAfterStep: z.enum(["keyword_research", "credibility_research", "content_generation", "publishing", "indexing", "baseline_check", "fan_out_audit", "training"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { runFullPipeline } = await import("./pipelineOrchestrator");

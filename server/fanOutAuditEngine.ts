@@ -16,9 +16,9 @@
  * Pipeline position: after baseline_check, before credibility_research.
  */
 
-import OpenAI from "openai";
+import axios from "axios";
 import { getDb } from "./db";
-import { campaigns, businesses } from "../drizzle/schema";
+import { campaigns } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { getBusinessById } from "./db";
 
@@ -176,14 +176,16 @@ function isRelevantCitation(url: string, category: FanOutCategory): boolean {
 // ─── Main audit runner ────────────────────────────────────────────────────────
 
 export async function runFanOutAudit(campaignId: number): Promise<FanOutAuditResult> {
-  const db = getDb();
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
 
   // Load campaign + business
-  const campaign = await db
+  const campaignRows = await db
     .select()
     .from(campaigns)
     .where(eq(campaigns.id, campaignId))
-    .then((rows) => rows[0]);
+    .limit(1);
+  const campaign = campaignRows[0];
 
   if (!campaign) throw new Error(`Campaign ${campaignId} not found`);
 
@@ -191,8 +193,8 @@ export async function runFanOutAudit(campaignId: number): Promise<FanOutAuditRes
   if (!business) throw new Error(`Business ${campaign.businessId} not found`);
 
   const businessName = business.name;
-  const businessType = business.businessType ?? "contractor";
-  const location = business.location ?? "";
+  const businessType = (business as any).businessType ?? "contractor";
+  const location = (business as any).location ?? "";
   const scope = (campaign as any).campaignScope ?? "local";
 
   // Build the primary query — what a user would ask ChatGPT
@@ -214,8 +216,6 @@ export async function runFanOutAudit(campaignId: number): Promise<FanOutAuditRes
     throw new Error("OPENAI_API_KEY not configured — cannot run fan-out audit");
   }
 
-  const client = new OpenAI({ apiKey: openaiApiKey });
-
   // Run the primary discovery query
   let allFanOutQueries: string[] = [];
   let allCitedUrls: string[] = [];
@@ -224,14 +224,21 @@ export async function runFanOutAudit(campaignId: number): Promise<FanOutAuditRes
   let winnerEntity: string | undefined;
 
   try {
-    const response = await client.responses.create({
-      model: "gpt-4o-search-preview",
-      tools: [{ type: "web_search_preview" as any }],
-      input: primaryQuery,
-    } as any);
+    const response = await axios.post(
+      "https://api.openai.com/v1/responses",
+      {
+        model: "gpt-4o-search-preview",
+        tools: [{ type: "web_search_preview" }],
+        input: primaryQuery,
+      },
+      {
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiApiKey}` },
+        timeout: 60000,
+      }
+    );
 
     // Extract fan-out queries and citations from the response output
-    const output = (response as any).output ?? [];
+    const output: any[] = response.data?.output ?? [];
 
     for (const item of output) {
       // Fan-out queries
@@ -270,13 +277,20 @@ export async function runFanOutAudit(campaignId: number): Promise<FanOutAuditRes
 
   // Run entity-specific verification query to capture what ChatGPT searches when verifying our client
   try {
-    const verifyResponse = await client.responses.create({
-      model: "gpt-4o-search-preview",
-      tools: [{ type: "web_search_preview" as any }],
-      input: `Tell me about ${businessName} in ${location}. Are they licensed, insured, and accredited? What certifications do they hold?`,
-    } as any);
+    const verifyResponse = await axios.post(
+      "https://api.openai.com/v1/responses",
+      {
+        model: "gpt-4o-search-preview",
+        tools: [{ type: "web_search_preview" }],
+        input: `Tell me about ${businessName} in ${location}. Are they licensed, insured, and accredited? What certifications do they hold?`,
+      },
+      {
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiApiKey}` },
+        timeout: 60000,
+      }
+    );
 
-    const verifyOutput = (verifyResponse as any).output ?? [];
+    const verifyOutput: any[] = verifyResponse.data?.output ?? [];
     for (const item of verifyOutput) {
       if (item.type === "web_search_call" && item.action?.query) {
         // Add only if not already captured
@@ -363,13 +377,15 @@ export async function updateGapItem(
   gapId: string,
   update: { verificationUrl?: string; status?: FanOutGapItem["status"]; notes?: string },
 ): Promise<FanOutGapItem[]> {
-  const db = getDb();
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
 
-  const campaign = await db
+  const rows = await db
     .select({ fanOutGapList: campaigns.fanOutGapList })
     .from(campaigns)
     .where(eq(campaigns.id, campaignId))
-    .then((rows) => rows[0]);
+    .limit(1);
+  const campaign = rows[0];
 
   if (!campaign) throw new Error(`Campaign ${campaignId} not found`);
 
@@ -379,7 +395,7 @@ export async function updateGapItem(
       ...item,
       ...update,
       // Auto-resolve when a URL is provided
-      status: update.verificationUrl ? "resolved" : (update.status ?? item.status),
+      status: (update.verificationUrl ? "resolved" : (update.status ?? item.status)) as FanOutGapItem["status"],
     };
   });
 
@@ -403,16 +419,18 @@ export async function getFanOutAuditStatus(campaignId: number): Promise<{
   totalCount: number;
   readyForContentGeneration: boolean;
 }> {
-  const db = getDb();
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
 
-  const campaign = await db
+  const rows = await db
     .select({
       fanOutAuditCompletedAt: campaigns.fanOutAuditCompletedAt,
       fanOutGapList: campaigns.fanOutGapList,
     })
     .from(campaigns)
     .where(eq(campaigns.id, campaignId))
-    .then((rows) => rows[0]);
+    .limit(1);
+  const campaign = rows[0];
 
   if (!campaign) throw new Error(`Campaign ${campaignId} not found`);
 
