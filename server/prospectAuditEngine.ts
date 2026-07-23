@@ -400,7 +400,8 @@ CRITICAL RULES — violating any of these will make the query useless:
 4. NEVER use corporate jargon: "provider", "meeting these requirements", "solutions", "services" as a standalone noun.
 5. SPREAD ACROSS ALL SERVICES — if multiple services are listed in the context, you MUST use each service in at least 2-3 queries. Do NOT use the same service in more than 4 queries total. This is mandatory.
 6. Each query must be a complete, grammatically correct phrase that stands alone.
-7. BUCKET 3 queries MUST be genuinely different from Bucket 2. Bucket 2 = "who's best / most trusted." Bucket 3 = a specific requirement, constraint, or qualifier (availability, specialty, scope, extras, situation). Do NOT repeat Bucket 2 phrasing in Bucket 3.${noUrgencyRule}
+7. BUCKET 3 queries MUST be genuinely different from Bucket 2. Bucket 2 = "who's best / most trusted." Bucket 3 = a specific requirement, constraint, or qualifier (availability, specialty, scope, extras, situation). Do NOT repeat Bucket 2 phrasing in Bucket 3.
+8. EVERY query MUST include a specific service name from the business context above. NEVER write a query with only a generic word like "repair", "replacement", "services", "work", or "help" without the specific service type attached. Wrong: "Need replacement in Dallas" — Right: "Need HVAC replacement in Dallas". Wrong: "Any recommendations for repair near me" — Right: "Any recommendations for furnace repair near me".${noUrgencyRule}
 
 Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No explanations, no bucket labels, no extra text. NEVER wrap a query in quotation marks.`;
 
@@ -652,7 +653,7 @@ export async function generateProspectQueries(
           queriesNeededPerSeed,
           campaignScope,
           openaiKey,
-          [seed]  // pass only THIS seed so GPT-4o focuses on it
+          seedList  // pass ALL seeds as context so GPT-4o knows the full business type even when focusing on one seed
         );
         console.log(`[ProspectAudit] Fan-out got ${seedCandidates.length} candidates for seed "${seed}" in ${loc}`);
         // Score and take the best N for this seed
