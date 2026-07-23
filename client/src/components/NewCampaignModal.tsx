@@ -108,7 +108,10 @@ export default function NewCampaignModal({
   const [agencyId, setAgencyId] = useState("");
   const [source, setSource] = useState<"" | "rogue" | "ranklocal">("");
 
-  // ── Step 3: queries ──
+  // ── Step 3: primary keywords + queries ──
+  const [primaryKeyword1, setPrimaryKeyword1] = useState("");
+  const [primaryKeyword2, setPrimaryKeyword2] = useState("");
+  const [primaryKeyword3, setPrimaryKeyword3] = useState("");
   const [searchQueriesRaw, setSearchQueriesRaw] = useState("");
   const [queriesLoaded, setQueriesLoaded] = useState(false);
 
@@ -196,6 +199,9 @@ export default function NewCampaignModal({
     setBillingType("direct");
     setAgencyId("");
     setSource("");
+    setPrimaryKeyword1("");
+    setPrimaryKeyword2("");
+    setPrimaryKeyword3("");
     setSearchQueriesRaw("");
     setQueriesLoaded(false);
     setCreatedInfo(null);
@@ -235,6 +241,11 @@ export default function NewCampaignModal({
         return { ok: false, error: "Select at least one location for a local campaign" };
       }
     }
+    if (step === 3) {
+      if (!primaryKeyword1.trim()) return { ok: false, error: "Primary Keyword 1 is required" };
+      if (!primaryKeyword2.trim()) return { ok: false, error: "Primary Keyword 2 is required" };
+      if (!primaryKeyword3.trim()) return { ok: false, error: "Primary Keyword 3 is required" };
+    }
     return { ok: true };
   };
 
@@ -260,6 +271,8 @@ export default function NewCampaignModal({
       .map((q) => q.trim())
       .filter(Boolean);
 
+    const primaryKeywords = [primaryKeyword1.trim(), primaryKeyword2.trim(), primaryKeyword3.trim()].filter(Boolean);
+
     createMutation.mutate({
       businessId: selectedBusinessId,
       locations: selectedLocations.length > 0 ? selectedLocations : undefined,
@@ -270,6 +283,7 @@ export default function NewCampaignModal({
       source: source || undefined,
       searchQueries: searchQueries.length > 0 ? searchQueries : undefined,
       noCharge: isNoCharge,
+      primaryKeywords,
     });
   };
 
@@ -679,6 +693,49 @@ export default function NewCampaignModal({
         {step === 3 && (
           <div className="space-y-4">
             <SectionTitle icon={Search} title="Search Queries" />
+
+            {/* Primary Keywords — required, drives AI query generation */}
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-amber-300 text-sm">
+                  <p className="font-semibold">Primary Keywords <span className="text-destructive">*</span></p>
+                  <p className="text-xs mt-0.5 text-amber-300/80">
+                    Enter the 3 core services this client most wants to rank for. These drive all AI query generation.
+                    Choose high-volume money keywords (e.g. "AC repair", "AC replacement", "furnace repair") — not niche services.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">Keyword 1 <span className="text-destructive">*</span></Label>
+                  <Input
+                    value={primaryKeyword1}
+                    onChange={(e) => setPrimaryKeyword1(e.target.value)}
+                    placeholder="e.g. AC repair"
+                    className={`h-8 text-sm ${!primaryKeyword1.trim() ? 'border-amber-500/50' : 'border-green-500/50'}`}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Keyword 2 <span className="text-destructive">*</span></Label>
+                  <Input
+                    value={primaryKeyword2}
+                    onChange={(e) => setPrimaryKeyword2(e.target.value)}
+                    placeholder="e.g. AC replacement"
+                    className={`h-8 text-sm ${!primaryKeyword2.trim() ? 'border-amber-500/50' : 'border-green-500/50'}`}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Keyword 3 <span className="text-destructive">*</span></Label>
+                  <Input
+                    value={primaryKeyword3}
+                    onChange={(e) => setPrimaryKeyword3(e.target.value)}
+                    placeholder="e.g. furnace repair"
+                    className={`h-8 text-sm ${!primaryKeyword3.trim() ? 'border-amber-500/50' : 'border-green-500/50'}`}
+                  />
+                </div>
+              </div>
+            </div>
 
             <div className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 flex gap-2 text-sm">
               <Info className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />

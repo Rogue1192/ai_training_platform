@@ -460,6 +460,9 @@ export const campaigns = pgTable("campaigns", {
   // Checkbox in the publishing panel auto-triggers the scan; campaign stays blocked until both pass.
   llmTxtVerified: boolean("llmTxtVerified").default(false).notNull(),
   schemaVerified: boolean("schemaVerified").default(false).notNull(),
+  // Primary keywords — 3 core service keywords that drive query generation (e.g. "AC repair", "AC replacement", "heating repair")
+  // Required before keyword research can run. These replace buildServiceSeeds as the seed source.
+  primaryKeywords: text("primary_keywords").array().default([]),
   // Promo code applied at campaign creation
   promoCodeId: integer("promoCodeId"),
   promoCodeUsed: varchar("promoCodeUsed", { length: 50 }),

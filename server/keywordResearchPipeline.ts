@@ -240,10 +240,21 @@ export async function runCampaignKeywordResearch(campaignId: number): Promise<{
     // This is the SAME engine used by the prospect visibility audit — the single
     // source of truth for all query generation across the platform.
     const { generateProspectQueries } = await import("./prospectAuditEngine");
-    const { buildServiceSeeds } = await import("./dataforseoService");
-    const seeds = buildServiceSeeds(business.businessType, business.specialties);
-    const seedKeywordsStr = seeds.length > 0 ? seeds.join(", ") : (business.businessType || industry);
     const campaignScope = (campaign as any).campaignScope ?? "local";
+
+    // Prefer campaign.primaryKeywords (admin-set money keywords) over buildServiceSeeds.
+    // Fall back to buildServiceSeeds only when primaryKeywords is empty/null.
+    const campaignPrimaryKeywords: string[] = (campaign as any).primaryKeywords ?? [];
+    let seedKeywordsStr: string;
+    if (campaignPrimaryKeywords.length > 0) {
+      seedKeywordsStr = campaignPrimaryKeywords.join(", ");
+      console.log(`[Pipeline] Campaign ${campaignId} using primaryKeywords as seeds: "${seedKeywordsStr}"`);
+    } else {
+      const { buildServiceSeeds } = await import("./dataforseoService");
+      const seeds = buildServiceSeeds(business.businessType, business.specialties);
+      seedKeywordsStr = seeds.length > 0 ? seeds.join(", ") : (business.businessType || industry);
+      console.log(`[Pipeline] Campaign ${campaignId} no primaryKeywords set — using buildServiceSeeds: "${seedKeywordsStr}"`);
+    }
 
     console.log(`[Pipeline] Generating queries via prospect audit engine for campaign ${campaignId} — seeds: "${seedKeywordsStr}", locations: ${allLocations.join("; ")}`);
 

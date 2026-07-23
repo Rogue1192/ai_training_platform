@@ -119,6 +119,12 @@ export default function CampaignDetail() {
   const [selectedMode, setSelectedMode] = useState<string>("");
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
 
+  // ── Primary Keywords inline edit state ──
+  const [editingPrimaryKeywords, setEditingPrimaryKeywords] = useState(false);
+  const [pkw1, setPkw1] = useState("");
+  const [pkw2, setPkw2] = useState("");
+  const [pkw3, setPkw3] = useState("");
+
   const { user } = useAuth({ redirectOnUnauthenticated: false });
   const isAdmin = (user as any)?.role === 'admin';
 
@@ -987,6 +993,96 @@ export default function CampaignDetail() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Primary Keywords */}
+            {isAdmin && (
+              <Card className="bg-card border-border">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+                    <Search className="w-4 h-4 text-amber-400" />
+                    Primary Keywords
+                    {!editingPrimaryKeywords && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-auto h-6 px-2 text-xs"
+                        onClick={() => {
+                          const kws: string[] = (campaign as any).primaryKeywords ?? [];
+                          setPkw1(kws[0] ?? "");
+                          setPkw2(kws[1] ?? "");
+                          setPkw3(kws[2] ?? "");
+                          setEditingPrimaryKeywords(true);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {editingPrimaryKeywords ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={pkw1}
+                        onChange={(e) => setPkw1(e.target.value)}
+                        placeholder="Keyword 1 (e.g. AC repair)"
+                        className="h-7 text-xs"
+                      />
+                      <Input
+                        value={pkw2}
+                        onChange={(e) => setPkw2(e.target.value)}
+                        placeholder="Keyword 2 (e.g. AC replacement)"
+                        className="h-7 text-xs"
+                      />
+                      <Input
+                        value={pkw3}
+                        onChange={(e) => setPkw3(e.target.value)}
+                        placeholder="Keyword 3 (e.g. furnace repair)"
+                        className="h-7 text-xs"
+                      />
+                      <div className="flex gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs flex-1"
+                          disabled={!pkw1.trim() || !pkw2.trim() || !pkw3.trim() || updateCampaignMutation.isPending}
+                          onClick={() => {
+                            const kws = [pkw1.trim(), pkw2.trim(), pkw3.trim()].filter(Boolean);
+                            updateCampaignMutation.mutate(
+                              { id: campaignId, primaryKeywords: kws },
+                              { onSuccess: () => setEditingPrimaryKeywords(false) }
+                            );
+                          }}
+                        >
+                          {updateCampaignMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3 mr-1" />}
+                          Save
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => setEditingPrimaryKeywords(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {((campaign as any).primaryKeywords ?? []).length > 0 ? (
+                        ((campaign as any).primaryKeywords as string[]).map((kw, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground w-4">{i + 1}.</span>
+                            <span className="text-sm font-medium text-foreground">{kw}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-amber-400 italic">No primary keywords set — click Edit to add them.</p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Training Mode */}
             <Card className="bg-card border-border">

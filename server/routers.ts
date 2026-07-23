@@ -1272,6 +1272,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         specialties: z.string().optional(),
         campaignScope: z.enum(["local", "national", "ecommerce"]).default("local"),
         noCharge: z.boolean().default(false),
+        primaryKeywords: z.array(z.string()).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const { getDb } = await import("./db");
@@ -1469,6 +1470,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           billingType: resolvedBillingType,
           campaignScope: input.campaignScope ?? "local",
           noCharge: resolvedNoCharge,
+          primaryKeywords: input.primaryKeywords && input.primaryKeywords.length > 0 ? input.primaryKeywords : null,
         });
 
         const { initializeTrial } = await import("./trialManager");
@@ -1728,6 +1730,8 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           trainingHeld: z.boolean().optional(),
           // Training engine version — 'v3' | 'v4' | 'v5'
           trainingVersion: z.enum(["v3", "v4", "v5"]).optional(),
+          // Primary keywords — 3 core money keywords driving query generation
+          primaryKeywords: z.array(z.string()).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
