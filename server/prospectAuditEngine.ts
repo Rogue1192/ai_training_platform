@@ -326,86 +326,94 @@ async function fanOutQueriesForLocation(
   // only "emergency" and "urgent" are used.
   // Everything else (fence, painting, landscaping, cleaning, remodeling, etc.) gets
   // plain service-seeking framing with zero urgency language.
+  // TRUE emergency services — people genuinely search with urgency (burst pipe, locked out, etc.)
+  // HVAC is intentionally excluded: most HVAC searches are planned (tune-up, replacement, install).
+  // A small emergency allocation is handled separately for mixed services like HVAC/plumbing.
+  const serviceTypeLower = serviceType.toLowerCase();
+  const seedsLower = (allSeedKeywords ?? []).join(' ').toLowerCase();
+
   const EMERGENCY_SERVICES = [
-    'plumbing', 'plumber',
-    'electrical', 'electrician',
-    'hvac', 'heating', 'cooling', 'air conditioning', 'furnace', 'boiler',
     'locksmith',
     'tow truck', 'towing', 'roadside assistance',
     'water damage', 'flood restoration', 'fire damage', 'fire restoration',
     'emergency dental', 'emergency dentist',
     'emergency vet', 'emergency veterinarian',
-    'gas leak', 'sewer',
+    'gas leak', 'sewer backup',
   ];
+
+  // Mixed services — mostly planned but have a genuine emergency subset.
+  // Gets mostly normal framing with 2-3 emergency queries allowed.
+  const MIXED_EMERGENCY_SERVICES = [
+    'plumbing', 'plumber',
+    'electrical', 'electrician',
+    'hvac', 'heating', 'cooling', 'air conditioning', 'furnace', 'boiler',
+  ];
+  const isMixedEmergency = !EMERGENCY_SERVICES.some(e => serviceTypeLower.includes(e) || seedsLower.includes(e))
+    && MIXED_EMERGENCY_SERVICES.some(e => serviceTypeLower.includes(e) || seedsLower.includes(e));
   // NOTE: roofing and tree service are intentionally excluded.
   // People plan roofing projects — they do not search "emergency roofer fastest."
   // Tree removal after a storm may be urgent but "fastest tree service" is not a real query.
-  const serviceTypeLower = serviceType.toLowerCase();
-  const seedsLower = (allSeedKeywords ?? []).join(' ').toLowerCase();
   const isEmergencyService = EMERGENCY_SERVICES.some(e =>
     serviceTypeLower.includes(e) || seedsLower.includes(e)
   );
 
-  const bucket1Label = isEmergencyService
-    ? 'TRANSACTIONAL/URGENT (7 queries): The person needs someone NOW. Urgency is implied.'
-    : 'TRANSACTIONAL/READY TO ACT (7 queries): The person has decided they want this and is looking for the right place, person, or business to use. They are not researching — they want a specific name or recommendation.';
-
-  // Build dynamic examples from the actual seed keywords so GPT-4o
-  // pattern-matches off the real business type, not hardcoded fence examples.
   const seed1 = servicesList[0] ?? serviceType;
   const seed2 = servicesList[1] ?? servicesList[0] ?? serviceType;
-  const bucket1Examples = isEmergencyService
-    ? `- "Who does emergency ${seed1} in ${location}?"
-- "I need ${seed1} help right now in ${location} — who should I call?"
-- "Best ${seed1} available now in ${location}"`
-    : isLocal
-      ? `- "Who does ${seed1} in ${location}?"
-- "Looking for ${seed2} in ${location}"
-- "I need ${seed1} in ${location} — who do you recommend?"`
-      : `- "Who does ${seed1}?"
-- "Best ${seed2} with good reviews"
-- "I need ${seed1} — who do you recommend?"`;
 
-  const noUrgencyRule = isEmergencyService ? '' : `
-7. NEVER use urgency, speed, or emergency framing. Do NOT use words like: emergency, urgent, ASAP, fastest, quickest, today, tonight, right now, immediately, hurry, rush, quick. This service is NOT emergency-based. Real people do not search for it with urgency.`;
+  // Build urgency instruction based on service type
+  const urgencyInstruction = isEmergencyService
+    ? `Most of these queries should have urgency — the person needs help NOW.`
+    : isMixedEmergency
+    ? `Most of these queries are from people planning ahead or researching — NOT in a crisis. At most 2 queries can have emergency/urgent framing. The other 13+ must be normal, non-urgent searches.`
+    : `NONE of these queries should have any urgency. This is a planned service, not an emergency.`;
 
-  const systemPrompt = `You are an expert at writing the exact phrases real people type into ChatGPT, Gemini, and Perplexity when they are ready to take action — find a specific business, call someone, visit a place, or get something done. You understand the difference between someone who is ready to act vs. someone who is still researching.
+  const noUrgencyRule = (isEmergencyService || isMixedEmergency) ? '' : `
+9. NEVER use urgency, speed, or emergency framing. Do NOT use words like: emergency, urgent, ASAP, fastest, quickest, today, tonight, right now, immediately, hurry, rush, quick, same-day. This service is NOT emergency-based.`;
 
-BUSINESS CONTEXT — use this to understand what the business does and generate queries that reflect their specific services:
+  const systemPrompt = `You write search queries exactly the way real Americans type them into ChatGPT or Google on their phone. Casual, natural, sometimes incomplete. NOT formal. NOT robotic.
+
+BUSINESS:
 ${contextBlock}
 
-Your task: Generate exactly ${FAN_OUT_CANDIDATES} queries from someone who has already decided they want this and is now looking for the right place or person to use${locationClause}.
+You are generating queries from people who have already decided they want this service and are now looking for a specific business to call or visit${isLocal ? ` in ${location}` : ''}.
 
 ${locationInstruction}
 
-Generate queries across these 3 intent buckets:
+${urgencyInstruction}
 
-BUCKET 1 — ${bucket1Label} Examples of good queries:
-${bucket1Examples}
+Write ${FAN_OUT_CANDIDATES} queries. Mix these styles naturally — do NOT label them or group them:
 
-BUCKET 2 — COMMERCIAL/COMPARISON (7 queries): The person is vetting options, comparing businesses, or looking for the best. Examples:
-- "Best ${seed1}${isLocal ? ` in ${location}` : ''} with good reviews"
-- "Who are the most trusted ${seed2}${isLocal ? ` in ${location}` : ''}?"
-- "Top rated ${seed1}${isLocal ? ` near ${location}` : ''}"
+Style A — Direct ask (person wants a name or recommendation):
+  Good: "best HVAC company in Springfield MO"
+  Good: "who does furnace replacement in Nixa MO"
+  Good: "looking for a good AC repair guy in Ozark"
+  Bad: "Who does emergency HVAC installation in Nixa, MO?" (too formal, robotic)
+  Bad: "HVAC repair service now near Ozark, MO" (no one talks like this)
 
-BUCKET 3 — SPECIFIC QUALIFYING QUESTION (6 queries): The person has a specific requirement, preference, or constraint that goes beyond just "who's best." They are asking about availability, specialties, scope, extras, or a particular situation. Examples:
-- "${isLocal ? `Who does ${seed1} in ${location}` : `Who does ${seed1}`} and also does repairs?"
-- "${isLocal ? `${seed2} in ${location}` : seed2} that offer free estimates"
-- "${isLocal ? `Best ${seed1} in ${location}` : `Best ${seed1}`} for a large property"
+Style B — Comparison / vetting (person is checking options):
+  Good: "best rated HVAC company near Springfield MO"
+  Good: "most trusted heating and cooling in Nixa"
+  Good: "top HVAC companies in Ozark MO with good reviews"
 
-CRITICAL RULES — violating any of these will make the query useless:
-1. Write EXACTLY how a real person types on their phone. Natural, conversational, sometimes incomplete sentences.
-2. NEVER stack two business-category words together as modifiers. "fence installation company" is ok. "fence company contractor" is NOT ok. "restaurant dining provider" is NOT ok.
-3. NEVER include price, cost, budget, or how-to questions. Those are informational, not service-seeking intent.
-4. NEVER use corporate jargon: "provider", "meeting these requirements", "solutions", "services" as a standalone noun.
-5. SPREAD ACROSS ALL SERVICES — if multiple services are listed in the context, you MUST use each service in at least 2-3 queries. Do NOT use the same service in more than 4 queries total. This is mandatory.
-6. Each query must be a complete, grammatically correct phrase that stands alone.
-7. BUCKET 3 queries MUST be genuinely different from Bucket 2. Bucket 2 = "who's best / most trusted." Bucket 3 = a specific requirement, constraint, or qualifier (availability, specialty, scope, extras, situation). Do NOT repeat Bucket 2 phrasing in Bucket 3.
-8. EVERY query MUST include a specific service name from the business context above. NEVER write a query with only a generic word like "repair", "replacement", "services", "work", or "help" without the specific service type attached. Wrong: "Need replacement in Dallas" — Right: "Need HVAC replacement in Dallas". Wrong: "Any recommendations for repair near me" — Right: "Any recommendations for furnace repair near me".${noUrgencyRule}
+Style C — Specific situation or qualifier (person has a particular need):
+  Good: "HVAC company in Springfield that does mini splits"
+  Good: "who does ductless AC installation near Nixa MO"
+  Good: "furnace repair in Ozark for older homes"
+  Good: "air conditioning company in Springfield that works on commercial buildings"
 
-Output format: Number each query 1-${FAN_OUT_CANDIDATES}. One query per line. No explanations, no bucket labels, no extra text. NEVER wrap a query in quotation marks.`;
+HARD RULES:
+1. Sound like a real American typing on their phone. Casual. Natural. Short or medium length.
+2. NEVER use these words: provider, solutions, services (alone), meeting requirements, vendor, utilizing.
+3. NEVER ask about price, cost, or how-to. Those are research queries, not buying queries.
+4. EVERY query must name a specific service from the business context. Never just say "repair" or "replacement" alone — say "furnace repair" or "HVAC replacement".
+5. Spread across ALL the services listed. Do not repeat the same service more than 3-4 times.
+6. ${isLocal ? `Every query must include the city name naturally — not tacked on at the end after a question mark.` : `Do not include any city or location.`}
+7. Do NOT start every query with "Who does" or "Looking for" — vary the openings naturally.
+8. Do NOT use the word "immediately", "right now", "urgent", "emergency", "same-day", "fast", or "quick" unless this is a genuine emergency service.${noUrgencyRule}
 
-  const userPrompt = `Generate ${FAN_OUT_CANDIDATES} queries from someone who has decided they want this and is actively looking for the right business to use${locationClause}. Use the business context above. Follow all rules exactly. Do NOT use quotation marks around any query.`;
+Output: Number each query 1-${FAN_OUT_CANDIDATES}. One per line. No labels, no explanations, no quotes around queries.`;
+
+  const userPrompt = `Generate ${FAN_OUT_CANDIDATES} search queries. Real American English, casual and natural, the way someone actually types on their phone. Use the business context. Follow all rules. No quotes around queries.`;
 
   try {
     const response = await callAI(
