@@ -438,7 +438,29 @@ export function buildServiceSeeds(
   if (specialties) {
     // Only mine the leading clause; prose after the first sentence is usually
     // marketing copy, not a service list.
-    const head = specialties.split(/(?<=\.)\s/)[0] || specialties;
+    //
+    // IMPORTANT: Strip the business name from the start of the specialties text
+    // before parsing. Some specialties fields begin with the company name
+    // (e.g. "Right On Plumbing, Heating and Air specializes in..."), which causes
+    // the name to be extracted as a seed and injected into training queries.
+    // We strip any leading segment that matches the business name pattern:
+    // - If specialties starts with the businessType value, remove it.
+    // - Also strip a leading proper-noun clause that ends with "specializes in",
+    //   "is a", "is an", "provides", "offers", or "focuses on".
+    let cleanedSpecialties = specialties;
+    if (businessType) {
+      const btNorm = normalizePhrase(businessType);
+      const spNorm = normalizePhrase(cleanedSpecialties);
+      if (spNorm.startsWith(btNorm)) {
+        cleanedSpecialties = cleanedSpecialties.slice(businessType.length).replace(/^[\s,;]+/, '');
+      }
+    }
+    // Strip leading business-name clause ending in a verb phrase
+    cleanedSpecialties = cleanedSpecialties.replace(
+      /^[A-Z][^.]{0,120}?\b(specializes in|is a|is an|provides|offers|focuses on|serves|based in)\b[^,]*/i,
+      ''
+    ).replace(/^[\s,;]+/, '');
+    const head = cleanedSpecialties.split(/(?<=\.)\ /)[0] || cleanedSpecialties;
     const fragments = head.split(/[,;/]|\band\b|\bplus\b|\bfor\b|\bacross\b/i);
     for (const frag of fragments) {
       if (seeds.length >= 8) break;

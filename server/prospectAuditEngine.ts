@@ -429,22 +429,77 @@ Output: Number each query 1-${FAN_OUT_CANDIDATES}. One per line. No labels, no e
     const text = response.content || "";
     const lines = text.split("\n");
     const URGENCY_WORDS = /\b(emergency|emergencies|urgent|urgently|asap|fastest|quickest|quick|quickly|today|tonight|right now|immediately|hurry|rush|on the spot|same.?day)\b/i;
+
+    // Template-artifact phrases that real people never search — these indicate the
+    // model was filling in a sentence template rather than writing a natural query.
+    const TEMPLATE_ARTIFACTS = /^(looking for someone who does|can someone recommend|i need reliable|looking for maintenance|looking for most recommended|looking for highly rated|looking for urgent|looking for fast|who to call for fast|who are the top-rated|find the best|find me a|available today|available now)\b/i;
+
+    // Build a set of business-name word fragments to reject.
+    // We derive these from allSeedKeywords that look like proper nouns / brand names
+    // (i.e. words that are NOT generic service terms). This catches cases where the
+    // seed itself leaked a brand name (e.g. "right on plumbing" → rejects queries
+    // containing "right on" as a phrase).
+    const brandFragmentPattern: RegExp | null = (() => {
+      if (!allSeedKeywords || allSeedKeywords.length === 0) return null;
+      // Generic service words that are fine to appear in queries
+      const GENERIC_SERVICE = new Set([
+        'ac','hvac','heating','cooling','plumbing','repair','replacement','installation',
+        'install','service','contractor','company','furnace','boiler','duct','air',
+        'water','heater','heat','pump','mini','split','ductless','commercial','residential',
+        'roofing','roof','electrical','electric','painting','cleaning','landscaping',
+        'remodeling','renovation','flooring','concrete','fence','fencing','gutters',
+        'siding','windows','doors','insulation','drywall','tile','carpet','hardwood',
+        'plumber','electrician','roofer','painter','cleaner','landscaper',
+      ]);
+      const suspectFragments: string[] = [];
+      for (const seed of allSeedKeywords) {
+        const words = seed.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+        // A seed is suspicious if it contains non-generic words (likely a brand name fragment)
+        const nonGeneric = words.filter(w => !GENERIC_SERVICE.has(w));
+        if (nonGeneric.length > 0 && words.length <= 4) {
+          // Only flag if the non-generic portion is 2+ chars and looks like a proper noun
+          // (starts uppercase in original seed) or is an unusual word
+          const originalWords = seed.split(/\s+/);
+          for (const w of nonGeneric) {
+            const orig = originalWords.find(ow => ow.toLowerCase() === w);
+            if (orig && /^[A-Z]/.test(orig) && w.length >= 3) {
+              suspectFragments.push(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+            }
+          }
+        }
+      }
+      if (suspectFragments.length === 0) return null;
+      return new RegExp(`\\b(${suspectFragments.join('|')})\\b`, 'i');
+    })();
+
     const queries: string[] = [];
     let filteredCount = 0;
     for (const line of lines) {
-      const cleaned = line.replace(/^\d+[\.\)\s]+/, "").replace(/\*\*/g, "").replace(/^["']+|["']+$/g, "").trim();
+      const cleaned = line.replace(/^\d+[\.)\s]+/, "").replace(/\*\*/g, "").replace(/^["']+|["']+$/g, "").trim();
       if (cleaned.length > 10 && cleaned.length < 200) {
-        // Strip urgency framing for non-emergency services
+        // Reject urgency framing for non-emergency services
         if (!isEmergencyService && URGENCY_WORDS.test(cleaned)) {
           filteredCount++;
-          console.log(`[ProspectAudit] Filtered urgency query (non-emergency service): "${cleaned}"`);
+          console.log(`[ProspectAudit] Filtered urgency query: "${cleaned}"`);
+          continue;
+        }
+        // Reject template-artifact phrases that no real person types
+        if (TEMPLATE_ARTIFACTS.test(cleaned)) {
+          filteredCount++;
+          console.log(`[ProspectAudit] Filtered template-artifact query: "${cleaned}"`);
+          continue;
+        }
+        // Reject queries containing business-name brand fragments
+        if (brandFragmentPattern && brandFragmentPattern.test(cleaned)) {
+          filteredCount++;
+          console.log(`[ProspectAudit] Filtered brand-name query: "${cleaned}"`);
           continue;
         }
         queries.push(cleaned);
       }
     }
     if (filteredCount > 0) {
-      console.log(`[ProspectAudit] Removed ${filteredCount} urgency queries for non-emergency service "${serviceType}"`);
+      console.log(`[ProspectAudit] Removed ${filteredCount} bad queries for service "${serviceType}"`);
     }
     console.log(`[ProspectAudit] GPT-4o fan-out generated ${queries.length} candidates for "${serviceType}"${locationClause}`);
     return queries.slice(0, FAN_OUT_CANDIDATES);
