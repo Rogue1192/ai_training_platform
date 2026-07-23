@@ -477,11 +477,40 @@ export async function runPipelineStep(
           console.log(`[Pipeline] Smart scheduler mode change skipped: ${e.message}`);
         }
 
+        // ── Seed trainingQueries from campaignQueryLocations (idempotent guard) ───────
+        // trainingQueries must exist before the sprint runs. They are normally seeded
+        // at approveQueryReview, but campaigns that bypassed query_review (e.g. those
+        // created via createManual or fast-tracked through the pipeline) may arrive
+        // here without any trainingQueries rows. This guard ensures they are always
+        // present before the sprint schedule fires.
+        try {
+          const { trainingQueries: tqTable } = await import("../drizzle/schema");
+          const { getQueryLocationsByCampaignId } = await import("./dbCampaigns");
+          const { count: countTQ } = await import("drizzle-orm");
+          const existing = await db.select({ n: countTQ() }).from(tqTable).where(eq(tqTable.campaignId, campaignId));
+          const alreadySeeded = Number(existing[0]?.n ?? 0) > 0;
+          if (!alreadySeeded) {
+            const queryLocations = await getQueryLocationsByCampaignId(campaignId);
+            const uniqueQueries = Array.from(new Set(queryLocations.map((q: any) => q.searchQuery).filter(Boolean))) as string[];
+            for (let i = 0; i < uniqueQueries.length; i++) {
+              await db.insert(tqTable).values({
+                campaignId,
+                businessId: campaign.businessId,
+                phraseText: uniqueQueries[i],
+                phraseVariations: [uniqueQueries[i]],
+                sortOrder: i + 1,
+                isActive: true,
+                lockedAt: new Date(),
+              });
+            }
+            console.log(`[Pipeline] Seeded ${uniqueQueries.length} trainingQueries for campaign ${campaignId} (was missing — bypassed query_review)`);
+          }
+        } catch (seedErr: any) {
+          console.error(`[Pipeline] trainingQueries seeding failed (non-fatal): ${seedErr.message}`);
+        }
+
         // ── V3: Create 4-day sprint schedule ──────────────────────────────────────
-        // trainingQueries (phrases) are seeded when campaignQueryLocations are created.
-        // The pipeline step just needs to create the trainingDayRuns sprint schedule
-        // and set the campaign status to training. checkV3SprintRuns fires Day 1
-        // on its next 30-min tick.
+        // checkV3SprintRuns fires Day 1 on its next 30-min tick.
         const { createSprintSchedule } = await import("./trainingWorkerV3");
 
         // Idempotency: only create the sprint schedule if no day runs exist yet
