@@ -85,6 +85,7 @@ import { computePipelineStages, stageColor, stageTextColor } from "@/lib/pipelin
 const PIPELINE_STEPS = [
   { key: "keyword_research", label: "Keywords", icon: Search, color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/30" },
   { key: "baseline_check", label: "Baseline", icon: Eye, color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30" },
+  { key: "fan_out_audit", label: "Fan-Out Audit", icon: Search, color: "text-teal-400", bg: "bg-teal-500/10", border: "border-teal-500/30" },
   { key: "credibility_research", label: "Credibility", icon: Shield, color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/30" },
   { key: "content_generation", label: "Content", icon: FileText, color: "text-indigo-400", bg: "bg-indigo-500/10", border: "border-indigo-500/30" },
   { key: "publishing", label: "Publish", icon: Globe, color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/30" },
@@ -101,6 +102,7 @@ const statusTimestampMap: Record<string, string> = {
   publishing: "publishingCompletedAt",
   indexing: "indexingSubmittedAt",
   baseline_check: "baselineCheckCompletedAt",
+  fan_out_audit: "fanOutAuditCompletedAt",
   training: "trainingStartedAt",
 };
 
@@ -254,6 +256,34 @@ export default function CampaignDetail() {
       toast.error(`Baseline check failed: ${error.message}`);
       setIsRunningBaseline(false);
     },
+  });
+
+  // Fan-Out Audit state
+  const [isRunningFanOutAudit, setIsRunningFanOutAudit] = useState(false);
+  const [gapUrlInputs, setGapUrlInputs] = useState<Record<string, string>>({});
+  const { data: fanOutAuditStatus, refetch: refetchFanOutAudit } = trpc.campaign.getFanOutAuditStatus.useQuery(
+    { campaignId },
+    { enabled: !!campaignId }
+  );
+  const runFanOutAuditMutation = trpc.campaign.runFanOutAudit.useMutation({
+    onSuccess: (result) => {
+      const unresolved = (result as any).gapList?.filter((g: any) => g.status === "gap").length ?? 0;
+      toast.success(`Fan-Out Audit complete — ${unresolved} verification gap${unresolved !== 1 ? "s" : ""} found`);
+      setIsRunningFanOutAudit(false);
+      refetchCampaign();
+      refetchFanOutAudit();
+    },
+    onError: (error) => {
+      toast.error(`Fan-Out Audit failed: ${error.message}`);
+      setIsRunningFanOutAudit(false);
+    },
+  });
+  const updateGapItemMutation = trpc.campaign.updateGapItem.useMutation({
+    onSuccess: () => {
+      refetchFanOutAudit();
+      refetchCampaign();
+    },
+    onError: (error) => toast.error(`Failed to update gap item: ${error.message}`),
   });
 
   const [isRunningRankCheck, setIsRunningRankCheck] = useState(false);
@@ -914,12 +944,212 @@ export default function CampaignDetail() {
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="bg-muted/50">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="fan-out-audit" className="flex items-center gap-1">
+            Fan-Out Audit
+            {fanOutAuditStatus && fanOutAuditStatus.unresolvedCount > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-[10px] font-bold text-black">
+                {fanOutAuditStatus.unresolvedCount}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="credibility">Credibility</TabsTrigger>
           <TabsTrigger value="training">Training</TabsTrigger>
           <TabsTrigger value="rankings">Rankings</TabsTrigger>
           <TabsTrigger value="content">Content</TabsTrigger>
           <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
         </TabsList>
+
+        {/* ─── FAN-OUT AUDIT TAB ─── */}
+        <TabsContent value="fan-out-audit" className="space-y-4">
+          {/* Header card */}
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-card-foreground flex items-center gap-2">
+                  <Search className="w-4 h-4 text-teal-400" />
+                  ChatGPT Entity Verification Audit
+                </CardTitle>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-teal-500/30 text-teal-400 hover:bg-teal-500/10"
+                  disabled={isRunningFanOutAudit || runFanOutAuditMutation.isPending || !(campaign as any).baselineCheckCompletedAt}
+                  onClick={() => {
+                    setIsRunningFanOutAudit(true);
+                    runFanOutAuditMutation.mutate({ campaignId });
+                  }}
+                  title={!(campaign as any).baselineCheckCompletedAt ? "Run Baseline check first" : "Run ChatGPT fan-out audit"}
+                >
+                  {isRunningFanOutAudit || runFanOutAuditMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Running Audit…</>
+                  ) : (
+                    <><RefreshCw className="w-4 h-4 mr-2" />{fanOutAuditStatus?.completed ? "Re-run Audit" : "Run Fan-Out Audit"}</>
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                This audit asks ChatGPT to research this business and captures every search query it runs to verify claims independently.
+                Gaps are facts ChatGPT tried to confirm on a third-party URL (BBB, license registry, certification database) but couldn’t find.
+                Add a verification URL for each gap before running Credibility Research — those URLs will be baked into content, schema, and llm.txt.
+              </p>
+              {!(campaign as any).baselineCheckCompletedAt && (
+                <div className="mt-3 flex items-center gap-2 text-amber-400 text-sm">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  Baseline check must be completed before running the Fan-Out Audit.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Audit summary */}
+          {fanOutAuditStatus?.completed && (
+            <Card className="bg-card border-border">
+              <CardContent className="pt-4">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{fanOutAuditStatus.totalCount}</p>
+                    <p className="text-xs text-muted-foreground">Total Gaps Found</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-amber-400">{fanOutAuditStatus.unresolvedCount}</p>
+                    <p className="text-xs text-muted-foreground">Needs URL</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-green-400">{fanOutAuditStatus.resolvedCount}</p>
+                    <p className="text-xs text-muted-foreground">Resolved</p>
+                  </div>
+                </div>
+                {fanOutAuditStatus.unresolvedCount === 0 && fanOutAuditStatus.totalCount > 0 && (
+                  <div className="mt-3 flex items-center gap-2 text-green-400 text-sm">
+                    <CheckCircle className="w-4 h-4" />
+                    All gaps resolved — ready to run Credibility Research.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Gap list */}
+          {fanOutAuditStatus?.gapList && fanOutAuditStatus.gapList.length > 0 && (
+            <div className="space-y-3">
+              {fanOutAuditStatus.gapList.map((gap: any) => (
+                <Card key={gap.id} className={`border ${
+                  gap.status === "resolved" ? "border-green-500/30 bg-green-500/5" :
+                  gap.status === "not_applicable" ? "border-muted bg-muted/20" :
+                  "border-amber-500/30 bg-amber-500/5"
+                }`}>
+                  <CardContent className="pt-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs capitalize border-teal-500/30 text-teal-400">
+                            {gap.category.replace(/_/g, " ")}
+                          </Badge>
+                          {gap.status === "resolved" && (
+                            <Badge variant="outline" className="text-xs border-green-500/30 text-green-400">Resolved</Badge>
+                          )}
+                          {gap.status === "not_applicable" && (
+                            <Badge variant="outline" className="text-xs border-muted text-muted-foreground">N/A</Badge>
+                          )}
+                          {gap.status === "gap" && (
+                            <Badge variant="outline" className="text-xs border-amber-500/30 text-amber-400">Needs URL</Badge>
+                          )}
+                        </div>
+                        <p className="text-sm font-medium text-foreground">{gap.claim}</p>
+                        <p className="text-xs text-muted-foreground font-mono">ChatGPT searched: “{gap.query}”</p>
+                        {gap.citedUrl && (
+                          <a href={gap.citedUrl} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-green-400 hover:underline flex items-center gap-1">
+                            <ExternalLink className="w-3 h-3" />{gap.citedUrl}
+                          </a>
+                        )}
+                      </div>
+                      <div className="flex gap-1 flex-shrink-0">
+                        {gap.status !== "not_applicable" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-xs text-muted-foreground hover:text-foreground h-7"
+                            onClick={() => updateGapItemMutation.mutate({
+                              campaignId,
+                              gapId: gap.id,
+                              status: "not_applicable",
+                            })}
+                          >
+                            N/A
+                          </Button>
+                        )}
+                        {gap.status === "not_applicable" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-xs text-muted-foreground hover:text-foreground h-7"
+                            onClick={() => updateGapItemMutation.mutate({
+                              campaignId,
+                              gapId: gap.id,
+                              status: "gap",
+                            })}
+                          >
+                            Undo
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {/* URL input */}
+                    {gap.status !== "not_applicable" && (
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Paste verification URL (e.g. https://bbb.org/...)"
+                          className="text-xs h-8 bg-background/50"
+                          value={gapUrlInputs[gap.id] ?? gap.verificationUrl ?? ""}
+                          onChange={(e) => setGapUrlInputs(prev => ({ ...prev, [gap.id]: e.target.value }))}
+                        />
+                        <Button
+                          size="sm"
+                          className="h-8 px-3 text-xs bg-teal-600 hover:bg-teal-700 text-white"
+                          disabled={!gapUrlInputs[gap.id] && !gap.verificationUrl}
+                          onClick={() => {
+                            const url = gapUrlInputs[gap.id] || gap.verificationUrl;
+                            if (!url) return;
+                            updateGapItemMutation.mutate({
+                              campaignId,
+                              gapId: gap.id,
+                              verificationUrl: url,
+                              status: "resolved",
+                            });
+                          }}
+                        >
+                          <Save className="w-3 h-3 mr-1" />Save
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {fanOutAuditStatus?.completed && fanOutAuditStatus.gapList.length === 0 && (
+            <Card className="bg-card border-border">
+              <CardContent className="pt-6 text-center text-muted-foreground">
+                <CheckCircle className="w-8 h-8 text-green-400 mx-auto mb-2" />
+                <p className="text-sm">No verification gaps found — all claims are independently verifiable.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {!fanOutAuditStatus?.completed && (
+            <Card className="bg-card border-border">
+              <CardContent className="pt-6 text-center text-muted-foreground">
+                <Search className="w-8 h-8 text-teal-400/40 mx-auto mb-2" />
+                <p className="text-sm">Run the Fan-Out Audit to see what ChatGPT searches when verifying this business.</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
         {/* ─── CREDIBILITY TAB ─── */}
         <TabsContent value="credibility" className="space-y-4">

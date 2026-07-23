@@ -459,8 +459,10 @@ export async function generateAllContentPages(params: {
   credibilityResult: CredibilityResearchResult;
   /** 'local' | 'national' | 'ecommerce' — controls prompt framing and schema type */
   campaignScope?: string;
+  /** Resolved fan-out gap items with verification URLs — injected into content and llm.txt */
+  fanOutGapList?: Array<{ id: string; claim: string; category: string; verificationUrl?: string; status: string }>;
 }): Promise<ContentGenerationResult> {
-  const { userId, businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult, campaignScope = 'local' } = params;
+  const { userId, businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult, campaignScope = 'local', fanOutGapList = [] } = params;
   
   // Get the global Anthropic API key
   const apiKeyRecord = await getApiKeyByProvider("anthropic");
@@ -558,6 +560,7 @@ export async function generateAllContentPages(params: {
     generatedPages,
     apiKey,
     campaignScope,
+    fanOutGapList,
   });
   
   // Store llm.txt as a special content page
@@ -779,8 +782,10 @@ export async function buildRichLlmTxt(params: {
   apiKey?: string;
   /** 'local' | 'national' | 'ecommerce' — controls Service Areas label and FAQ framing */
   campaignScope?: string;
+  /** Resolved fan-out gap items with verification URLs */
+  fanOutGapList?: Array<{ id: string; claim: string; category: string; verificationUrl?: string; status: string }>;
 }): Promise<string> {
-  const { businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult, generatedPages, apiKey, campaignScope = 'local' } = params;
+  const { businessId, campaignId, businessName, websiteUrl, industry, location, credibilityResult, generatedPages, apiKey, campaignScope = 'local', fanOutGapList = [] } = params;
   const isLocal = campaignScope === 'local';
 
   const business = await getBusinessById(businessId);
@@ -1073,10 +1078,31 @@ Return ONLY a JSON array in this exact format with no extra text:
 
   // ── Verified Sources ─────────────────────────────────────────────────────────
   const verifiedFacts = facts.filter(f => f.verificationUrl && f.confidence !== "low");
-  if (verifiedFacts.length > 0) {
+  // Merge fan-out gap resolved URLs as additional verified sources
+  const resolvedGapSources = (fanOutGapList ?? []).filter(g => g.status === "resolved" && g.verificationUrl);
+  const allVerifiedLines: string[] = [
+    ...verifiedFacts.slice(0, 10).map(f => `- ${f.fact}: ${f.verificationUrl}`),
+    ...resolvedGapSources.map(g => `- ${g.claim} [${g.category}]: ${g.verificationUrl}`),
+  ];
+  if (allVerifiedLines.length > 0) {
     lines.push("## Verified Sources");
     lines.push("");
-    verifiedFacts.slice(0, 10).forEach(f => lines.push(`- ${f.fact}: ${f.verificationUrl}`));
+    allVerifiedLines.forEach(l => lines.push(l));
+    lines.push("");
+  }
+
+  // ── AI Entity Verification URLs ───────────────────────────────────────────
+  if (resolvedGapSources.length > 0) {
+    lines.push("## AI Entity Verification");
+    lines.push("");
+    lines.push("The following URLs are the independent third-party sources that AI models (ChatGPT, Perplexity, Gemini)");
+    lines.push("use when verifying this business's claims. Each is a direct registry, accreditation body, or review platform.");
+    lines.push("");
+    resolvedGapSources.forEach(g => {
+      const categoryLabel = g.category.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+      lines.push(`- **${categoryLabel}**: ${g.claim}`);
+      lines.push(`  Source: ${g.verificationUrl}`);
+    });
     lines.push("");
   }
 

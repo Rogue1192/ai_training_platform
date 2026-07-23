@@ -29,6 +29,7 @@ export const campaignStatusEnum = pgEnum("campaign_status", [
   "publishing",        // Auto-publishing to WordPress
   "indexing",          // Submitted for indexing, waiting
   "baseline_check",    // Running initial visibility report
+  "fan_out_audit",     // ChatGPT entity-verification audit — ops fills in credibility URLs before content generation
   "training",          // Active training sessions running
   "monitoring",        // Achieved rankings, in maintenance mode
   "paused",           // Manually paused
@@ -409,6 +410,11 @@ export const campaigns = pgTable("campaigns", {
   indexingSubmittedAt: timestamp("indexingSubmittedAt"),
   indexingVerifiedAt: timestamp("indexingVerifiedAt"),
   baselineCheckCompletedAt: timestamp("baselineCheckCompletedAt"),
+  fanOutAuditCompletedAt: timestamp("fanOutAuditCompletedAt"),
+  // Fan-out gap list — JSON array of FanOutGapItem objects surfaced by the ChatGPT entity-verification audit.
+  // Each item represents a claim ChatGPT tried to verify independently but couldn\'t find.
+  // Ops team fills in verificationUrl per item; content generation bakes those URLs into copy.
+  fanOutGapList: json("fanOutGapList"),
   trainingStartedAt: timestamp("trainingStartedAt"),
   sprintCompletedAt: timestamp("sprintCompletedAt"), // Set when all 4 sprint days complete — anchors 7-day rank tracking and 14-day bonus query scan
   // Configuration

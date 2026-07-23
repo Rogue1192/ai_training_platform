@@ -1873,6 +1873,41 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         const { runCampaignBaselineCheck } = await import("./keywordResearchPipeline");
         return runCampaignBaselineCheck(input.campaignId);
       }),
+    // ============= FAN-OUT AUDIT (Sprint 3.5 — between baseline and credibility) =============
+    runFanOutAudit: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { getCampaignById } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+        const { runFanOutAudit } = await import("./fanOutAuditEngine");
+        return runFanOutAudit(input.campaignId);
+      }),
+
+    getFanOutAuditStatus: protectedProcedure
+      .input(z.object({ campaignId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const { getFanOutAuditStatus } = await import("./fanOutAuditEngine");
+        return getFanOutAuditStatus(input.campaignId);
+      }),
+
+    updateGapItem: protectedProcedure
+      .input(z.object({
+        campaignId: z.number(),
+        gapId: z.string(),
+        verificationUrl: z.string().optional(),
+        status: z.enum(["gap", "resolved", "not_applicable"]).optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { updateGapItem } = await import("./fanOutAuditEngine");
+        return updateGapItem(input.campaignId, input.gapId, {
+          verificationUrl: input.verificationUrl,
+          status: input.status,
+          notes: input.notes,
+        });
+      }),
+
     // Get rank snapshots for a campaign
     getRankSnapshots: protectedProcedure
       .input(z.object({ campaignId: z.number(), limit: z.number().min(1).max(500).default(100) }))

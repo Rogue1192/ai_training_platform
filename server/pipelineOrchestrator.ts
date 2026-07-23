@@ -30,6 +30,7 @@ export type PipelineStep =
   | "publishing"
   | "indexing"
   | "baseline_check"
+  | "fan_out_audit"
   | "training";
 
 export interface PipelineStepResult {
@@ -57,6 +58,7 @@ export interface PipelineStatus {
 const PIPELINE_STEPS: PipelineStep[] = [
   "keyword_research",
   "baseline_check",
+  "fan_out_audit",
   "credibility_research",
   "content_generation",
   "publishing",
@@ -72,6 +74,7 @@ function statusToStep(status: string): PipelineStep {
     pending: "keyword_research",
     keyword_research: "keyword_research",
     query_review: "credibility_research",  // query_review pauses before credibility_research
+    fan_out_audit: "fan_out_audit",
     credibility_research: "credibility_research",
     content_generation: "content_generation",
     publishing: "publishing",
@@ -91,6 +94,7 @@ function statusToStep(status: string): PipelineStep {
 export function determineNextStep(campaign: any): PipelineStep {
   if (!campaign.keywordResearchCompletedAt) return "keyword_research";
   if (!campaign.baselineCheckCompletedAt) return "baseline_check";
+  if (!campaign.fanOutAuditCompletedAt) return "fan_out_audit";
   if (!campaign.credibilityResearchCompletedAt) return "credibility_research";
   if (!campaign.contentGenerationCompletedAt) return "content_generation";
   if (!campaign.publishingCompletedAt) return "publishing";
@@ -105,6 +109,7 @@ export function getCompletedSteps(campaign: any): PipelineStep[] {
   const completed: PipelineStep[] = [];
   if (campaign.keywordResearchCompletedAt) completed.push("keyword_research");
   if (campaign.baselineCheckCompletedAt) completed.push("baseline_check");
+  if (campaign.fanOutAuditCompletedAt) completed.push("fan_out_audit");
   if (campaign.credibilityResearchCompletedAt) completed.push("credibility_research");
   if (campaign.contentGenerationCompletedAt) completed.push("content_generation");
   if (campaign.publishingCompletedAt) completed.push("publishing");
@@ -160,15 +165,82 @@ export async function runPipelineStep(
         break;
       }
       
+      case "fan_out_audit": {
+        // ── Fan-Out Audit ─────────────────────────────────────────────────────
+        // Runs after baseline_check. Calls the OpenAI Responses API to capture
+        // what ChatGPT searches when verifying this business entity, then builds
+        // a gap list of claims that can't be independently verified.
+        // The pipeline PAUSES here so ops can fill in verification URLs before
+        // content generation bakes them into copy, schema, and llm.txt.
+        if (!campaign.baselineCheckCompletedAt) {
+          throw new Error(
+            "Baseline check must be completed before running the Fan-Out Audit."
+          );
+        }
+        const { runFanOutAudit } = await import("./fanOutAuditEngine");
+        const auditResult = await runFanOutAudit(campaignId);
+        const unresolvedCount = auditResult.gapList.filter((g: any) => g.status === "gap").length;
+        // Notify ops team if there are gaps to resolve
+        if (unresolvedCount > 0) {
+          try {
+            const { notifyOwner } = await import("./_core/notification");
+            const adminUrl = `${process.env.APP_BASE_URL ?? ""}/campaigns/${campaignId}`;
+            await notifyOwner({
+              title: `Fan-Out Audit: ${unresolvedCount} Verification Gap${unresolvedCount !== 1 ? "s" : ""} — ${business.name}`,
+              content: [
+                `ChatGPT ran ${auditResult.fanOutQueries.length} queries when researching ${business.businessType ?? "contractors"} in ${business.location ?? "your area"}.`,
+                "",
+                auditResult.auditSummary,
+                "",
+                `Action required: Open the campaign and go to the Fan-Out Audit tab to add verification URLs for each open gap.`,
+                `Campaign: ${adminUrl}`,
+              ].join("\n"),
+            });
+          } catch (emailErr: any) {
+            console.error("[Pipeline] Failed to send fan-out audit notification:", emailErr.message);
+          }
+        }
+        result = {
+          step,
+          success: true,
+          message: `Fan-out audit complete. ${auditResult.fanOutQueries.length} queries captured, ${unresolvedCount} verification gap${unresolvedCount !== 1 ? "s" : ""} found. ${unresolvedCount > 0 ? "Ops team notified — add verification URLs before proceeding to credibility research." : "All claims verifiable — ready for credibility research."}`,
+          data: {
+            fanOutQueryCount: auditResult.fanOutQueries.length,
+            gapCount: auditResult.gapList.length,
+            unresolvedCount,
+            clientMentioned: auditResult.clientMentioned,
+            winnerEntity: auditResult.winnerEntity,
+          },
+          // nextStep intentionally omitted — pipeline pauses here for ops URL entry
+          // (or auto-advances if no gaps)
+          nextStep: unresolvedCount === 0 ? "credibility_research" : undefined,
+        };
+        break;
+      }
+
       case "credibility_research": {
-        // ── Baseline gate ─────────────────────────────────────────────────────
-        // Credibility research must NOT run until the baseline visibility check
-        // has been completed. This ensures we capture a clean pre-content baseline
-        // before any credibility pages or schema are added to the client's site.
+        // ── Baseline + Fan-Out Audit gates ────────────────────────────────────
+        // Credibility research must NOT run until both the baseline check AND
+        // the fan-out audit have been completed (all gaps resolved or N/A).
         if (!campaign.baselineCheckCompletedAt) {
           throw new Error(
             "Baseline visibility check must be completed before running credibility research. " +
             "Run the Baseline step first to capture a clean pre-content AI visibility snapshot."
+          );
+        }
+        if (!campaign.fanOutAuditCompletedAt) {
+          throw new Error(
+            "Fan-Out Audit must be completed before running credibility research. " +
+            "Run the Fan-Out Audit step first to identify and fill in verification URLs."
+          );
+        }
+        // Check that all gaps are resolved
+        const gapList = (campaign.fanOutGapList as any[]) ?? [];
+        const openGaps = gapList.filter((g: any) => g.status === "gap");
+        if (openGaps.length > 0) {
+          throw new Error(
+            `${openGaps.length} fan-out verification gap${openGaps.length !== 1 ? "s" : ""} still need URLs. ` +
+            "Resolve all gaps in the Fan-Out Audit tab before running credibility research."
           );
         }
         const { runCredibilityResearch } = await import("./credibilityResearchEngine");
@@ -221,6 +293,10 @@ export async function runPipelineStep(
         }
         
         const { generateAllContentPages } = await import("./contentGenerationEngine");
+        // Load resolved fan-out gap items so content generation can embed verification URLs
+        const fanOutGapList = ((campaign as any).fanOutGapList as any[] ?? []).filter(
+          (g: any) => g.status === "resolved" && g.verificationUrl
+        );
         const contentResult = await generateAllContentPages({
           userId,
           businessId: campaign.businessId,
@@ -231,6 +307,7 @@ export async function runPipelineStep(
           location: business.location || "",
           credibilityResult: credData.researchResults as any,
           campaignScope: (campaign as any).campaignScope ?? "local",
+          fanOutGapList,
         });
 
 
