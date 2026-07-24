@@ -470,7 +470,7 @@ export default function CampaignDetail() {
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-card">
               <span className="text-xs text-muted-foreground font-medium">Engine</span>
               <Select
-                value={(campaign as any).trainingVersion ?? 'v3'}
+                value={((campaign as any).trainingVersion ?? 'v3').toLowerCase()}
                 onValueChange={(v) => {
                   updateCampaignMutation.mutate({ id: campaignId, trainingVersion: v as 'v3' | 'v4' | 'v5' });
                 }}
