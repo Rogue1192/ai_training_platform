@@ -887,7 +887,9 @@ export async function generateCampaignRankReport(campaignId: number): Promise<Ca
       : null,
     baselineCheckAt: campaign.baselineCheckCompletedAt?.toISOString() || null,
     totalChecks: Number(allSnapshotCount[0]?.count || 0),
-    isBaselineOnly: !(campaign as any).sprintCompletedAt,
+    // Show Before vs. After as soon as at least one post-baseline scheduled check exists.
+    // No longer gated on sprint completion — gains are visible in real time.
+    isBaselineOnly: currentSnaps.length === 0,
   };
 }
 
