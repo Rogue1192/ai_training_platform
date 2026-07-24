@@ -608,6 +608,14 @@ export function startScheduler(): void {
     });
   }, 24 * 60 * 60 * 1000);
 
+  // Auto-run keyword research for campaigns stuck in 'keyword_research' status.
+  // Fires immediately on start and every 5 minutes — catches campaigns reset after
+  // a query quality fix or created via createManual without approveQueryReview.
+  checkPendingKeywordResearch().catch((err: Error) => console.error("[Scheduler] Keyword research check failed:", err));
+  setInterval(() => {
+    checkPendingKeywordResearch().catch((err: Error) => console.error("[Scheduler] Keyword research check failed:", err));
+  }, 5 * 60 * 1000); // every 5 minutes
+
   // Auto-run baseline check for campaigns stuck in baseline_check status.
   // Fires immediately on start and every 5 minutes — catches any campaign where
   // the fire-and-forget runFullPipeline call from approveQueryReview failed.
@@ -778,6 +786,58 @@ export async function checkPendingBaselineChecks(): Promise<void> {
     }
   } catch (err: any) {
     console.error('[Scheduler] checkPendingBaselineChecks error:', err.message);
+  }
+}
+
+/**
+ * Auto-run keyword research for campaigns stuck in 'keyword_research' status.
+ *
+ * Safety net for campaigns that were reset to keyword_research (e.g. after a
+ * query quality fix) or created via createManual without going through the normal
+ * approveQueryReview flow. Without this poller they sit at the Keywords badge
+ * forever because nothing else triggers keyword research automatically.
+ *
+ * Runs every 5 minutes. Idempotent — the pipeline step guards against re-running
+ * if keywordResearchCompletedAt is already set.
+ */
+export async function checkPendingKeywordResearch(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const { campaigns: cTable } = await import('../drizzle/schema');
+    const { eq, and, isNull } = await import('drizzle-orm');
+    const pending = await db
+      .select()
+      .from(cTable)
+      .where(
+        and(
+          eq(cTable.status, 'keyword_research'),
+          isNull(cTable.keywordResearchCompletedAt)
+        )
+      )
+      .limit(5); // process at most 5 at a time to avoid overloading DataForSEO
+    if (pending.length === 0) return;
+    console.log(`[Scheduler] Found ${pending.length} campaign(s) pending keyword research — running now`);
+    const adminUsers = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
+    const ownerId = adminUsers[0]?.id ?? 0;
+    const { runPipelineStep, runFullPipeline } = await import('./pipelineOrchestrator');
+    for (const campaign of pending) {
+      try {
+        console.log(`[Scheduler] Running keyword research for campaign ${campaign.id}`);
+        const result = await runPipelineStep(campaign.id, 'keyword_research', ownerId);
+        console.log(`[Scheduler] Keyword research for campaign ${campaign.id}: ${result.message}`);
+        if (result.success) {
+          console.log(`[Scheduler] Keyword research done for campaign ${campaign.id} — continuing pipeline`);
+          runFullPipeline(campaign.id, ownerId).catch((err: any) =>
+            console.error(`[Scheduler] Post-keyword pipeline error for campaign ${campaign.id}:`, err.message)
+          );
+        }
+      } catch (err: any) {
+        console.error(`[Scheduler] Keyword research failed for campaign ${campaign.id}:`, err.message);
+      }
+    }
+  } catch (err: any) {
+    console.error('[Scheduler] checkPendingKeywordResearch error:', err.message);
   }
 }
 
