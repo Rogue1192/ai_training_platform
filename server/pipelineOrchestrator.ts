@@ -177,28 +177,48 @@ export async function runPipelineStep(
             "Baseline check must be completed before running the Fan-Out Audit."
           );
         }
-        const { runFanOutAudit } = await import("./fanOutAuditEngine");
-        const auditResult = await runFanOutAudit(campaignId);
-        const unresolvedCount = auditResult.gapList.filter((g: any) => g.status === "gap").length;
-        // Notify ops team if there are gaps to resolve
-        if (unresolvedCount > 0) {
-          try {
-            const { notifyOwner } = await import("./_core/notification");
-            const adminUrl = `${process.env.APP_BASE_URL ?? ""}/campaigns/${campaignId}`;
-            await notifyOwner({
-              title: `Fan-Out Audit: ${unresolvedCount} Verification Gap${unresolvedCount !== 1 ? "s" : ""} — ${business.name}`,
-              content: [
-                `ChatGPT ran ${auditResult.fanOutQueries.length} queries when researching ${business.businessType ?? "contractors"} in ${business.location ?? "your area"}.`,
-                "",
-                auditResult.auditSummary,
-                "",
-                `Action required: Open the campaign and go to the Fan-Out Audit tab to add verification URLs for each open gap.`,
-                `Campaign: ${adminUrl}`,
-              ].join("\n"),
-            });
-          } catch (emailErr: any) {
-            console.error("[Pipeline] Failed to send fan-out audit notification:", emailErr.message);
+        let auditResult: any = null;
+        let unresolvedCount = 0;
+        try {
+          const { runFanOutAudit } = await import("./fanOutAuditEngine");
+          auditResult = await runFanOutAudit(campaignId);
+          unresolvedCount = auditResult.gapList.filter((g: any) => g.status === "gap").length;
+          // Notify ops team if there are gaps to resolve
+          if (unresolvedCount > 0) {
+            try {
+              const { notifyOwner } = await import("./_core/notification");
+              const adminUrl = `${process.env.APP_BASE_URL ?? ""}/campaigns/${campaignId}`;
+              await notifyOwner({
+                title: `Fan-Out Audit: ${unresolvedCount} Verification Gap${unresolvedCount !== 1 ? "s" : ""} — ${business.name}`,
+                content: [
+                  `ChatGPT ran ${auditResult.fanOutQueries.length} queries when researching ${business.businessType ?? "contractors"} in ${business.location ?? "your area"}.`,
+                  "",
+                  auditResult.auditSummary,
+                  "",
+                  `Action required: Open the campaign and go to the Fan-Out Audit tab to add verification URLs for each open gap.`,
+                  `Campaign: ${adminUrl}`,
+                ].join("\n"),
+              });
+            } catch (emailErr: any) {
+              console.error("[Pipeline] Failed to send fan-out audit notification:", emailErr.message);
+            }
           }
+        } catch (auditErr: any) {
+          // Fan-out audit is non-blocking. If OpenAI key is missing or the API
+          // call fails, log the error and auto-advance to credibility_research.
+          // Ops can run the audit manually later from the Fan-Out Audit tab.
+          console.warn(`[Pipeline] Fan-out audit skipped for campaign ${campaignId}: ${auditErr.message}`);
+          await updateCampaign(campaignId, {
+            fanOutAuditCompletedAt: new Date(),
+            fanOutGapList: [],
+          } as any);
+          result = {
+            step,
+            success: true,
+            message: `Fan-out audit skipped (${auditErr.message}). Pipeline continuing to credibility research — run the audit manually from the Fan-Out Audit tab when ready.`,
+            nextStep: "credibility_research",
+          };
+          break;
         }
         result = {
           step,
@@ -228,12 +248,8 @@ export async function runPipelineStep(
             "Run the Baseline step first to capture a clean pre-content AI visibility snapshot."
           );
         }
-        if (!campaign.fanOutAuditCompletedAt) {
-          throw new Error(
-            "Fan-Out Audit must be completed before running credibility research. " +
-            "Run the Fan-Out Audit step first to identify and fill in verification URLs."
-          );
-        }
+        // Fan-out audit is non-blocking — pipeline auto-advances even if audit was skipped.
+        // If fanOutAuditCompletedAt is null, credibility research can still run.
         // Check that all gaps are resolved
         const gapList = (campaign.fanOutGapList as any[]) ?? [];
         const openGaps = gapList.filter((g: any) => g.status === "gap");

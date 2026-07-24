@@ -210,11 +210,14 @@ export async function runFanOutAudit(campaignId: number): Promise<FanOutAuditRes
   console.log(`[FanOutAudit] Running audit for campaign ${campaignId} (${businessName})`);
   console.log(`[FanOutAudit] Primary query: "${primaryQuery}"`);
 
-  // Initialize OpenAI client using platform API key
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  if (!openaiApiKey) {
-    throw new Error("OPENAI_API_KEY not configured — cannot run fan-out audit");
+  // Fetch OpenAI API key from the encrypted apiKeys table (same pattern as other engines)
+  const { getApiKeyByProvider } = await import("./db");
+  const { decrypt } = await import("./encryption");
+  const openaiKeyRecord = await getApiKeyByProvider("openai");
+  if (!openaiKeyRecord) {
+    throw new Error("OpenAI API key not configured — add it in Settings → API Keys to run fan-out audit");
   }
+  const openaiApiKey = decrypt(openaiKeyRecord.encryptedKey);
 
   // Run the primary discovery query
   let allFanOutQueries: string[] = [];
