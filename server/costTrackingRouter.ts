@@ -122,11 +122,9 @@ export const costTrackingRouter = router({
           input.billingType !== "all"
             ? and(
                 eq(campaigns.billingType, input.billingType),
-                eq(campaigns.noCharge, false),
                 input.agencyId ? eq(businesses.agencyId, input.agencyId) : undefined
               )
-            : and(
-                eq(campaigns.noCharge, false),
+            : (
                 input.agencyId ? eq(businesses.agencyId, input.agencyId) : undefined
               )
         )
