@@ -286,18 +286,18 @@ export function ScoreComparisonCard({
         </div>
         {baseline !== null && (
           <span
-            className={`flex items-center gap-1 text-xs font-bold ${
+            className={`flex items-center gap-1.5 text-base font-bold px-2 py-0.5 rounded-lg ${
               isPositive
-                ? "text-emerald-400"
+                ? "text-emerald-400 bg-emerald-400/10"
                 : diff < 0
-                ? "text-red-400"
-                : "text-gray-500"
+                ? "text-red-400 bg-red-400/10"
+                : "text-gray-400 bg-white/5"
             }`}
           >
             {isPositive ? (
-              <TrendingUp className="w-3 h-3" />
+              <TrendingUp className="w-4 h-4" />
             ) : diff < 0 ? (
-              <TrendingDown className="w-3 h-3" />
+              <TrendingDown className="w-4 h-4" />
             ) : null}
             {isPositive ? "+" : ""}
             {diff}
@@ -309,11 +309,11 @@ export function ScoreComparisonCard({
           {current}
         </span>
         {baseline !== null && (
-          <span className="text-sm text-muted-foreground mb-1">
+          <span className="text-base text-muted-foreground mb-1">
             from{" "}
             <span
-              className="font-mono"
-              style={{ color: getScoreColor(baseline), opacity: 0.7 }}
+              className="font-mono font-bold text-lg"
+              style={{ color: getScoreColor(baseline), opacity: 0.8 }}
             >
               {baseline}
             </span>
