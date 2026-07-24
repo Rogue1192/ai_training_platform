@@ -59,7 +59,16 @@ export function startManualRankCheck(campaignId: number): { started: boolean; al
   const startedAt = new Date().toISOString();
   _manualCheckRuns.set(campaignId, { status: "running", startedAt });
   runScheduledRankCheck(campaignId)
-    .then((result) => {
+    .then(async (result) => {
+      // Always run bonus query scan on manual checks — no 14-day gap guard.
+      // This lets operators see bonus wins immediately without waiting for the
+      // bi-weekly scheduler window.
+      try {
+        const { runBonusQueryScan } = await import("./bonusQueryScanner");
+        await runBonusQueryScan(campaignId);
+      } catch (bonusErr: any) {
+        console.warn(`[Rank Tracking] Bonus scan failed during manual check for campaign ${campaignId}:`, bonusErr?.message);
+      }
       _manualCheckRuns.set(campaignId, {
         status: "done",
         startedAt,
