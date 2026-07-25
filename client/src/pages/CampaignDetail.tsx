@@ -278,6 +278,20 @@ export default function CampaignDetail() {
       setIsRunningFanOutAudit(false);
     },
   });
+
+  // EOD Web Search
+  const [isRunningEODWebSearch, setIsRunningEODWebSearch] = useState(false);
+  const runEODWebSearchMutation = trpc.campaign.runEODWebSearch.useMutation({
+    onSuccess: () => {
+      toast.success('EOD web search started — results will update shortly');
+      setIsRunningEODWebSearch(false);
+      refetchCampaign();
+    },
+    onError: (error) => {
+      toast.error(`EOD web search failed: ${error.message}`);
+      setIsRunningEODWebSearch(false);
+    },
+  });
   const updateGapItemMutation = trpc.campaign.updateGapItem.useMutation({
     onSuccess: () => {
       refetchFanOutAudit();
@@ -513,6 +527,21 @@ export default function CampaignDetail() {
           >
             <RefreshCw className="w-4 h-4 mr-2" />
             Regenerate Queries
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setIsRunningEODWebSearch(true);
+              runEODWebSearchMutation.mutate({ campaignId });
+            }}
+            disabled={isRunningEODWebSearch || runEODWebSearchMutation.isPending}
+            title="Run end-of-day web search across all queries — confirms real-world mentions and updates graduation status"
+          >
+            {isRunningEODWebSearch || runEODWebSearchMutation.isPending ? (
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Running EOD…</>
+            ) : (
+              <><Search className="w-4 h-4 mr-2" />Run EOD Search</>
+            )}
           </Button>
           <Button
             variant="outline"

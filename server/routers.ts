@@ -1891,6 +1891,49 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
         return getFanOutAuditStatus(input.campaignId);
       }),
 
+    // Manually trigger an EOD web search for a specific campaign + day run.
+    // Creates a new dayRun record if dayRunId is not provided.
+    runEODWebSearch: protectedProcedure
+      .input(z.object({ campaignId: z.number(), dayRunId: z.number().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const { getCampaignById } = await import("./dbCampaigns");
+        const campaign = await getCampaignById(input.campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const { trainingDayRuns } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+
+        let dayRunId = input.dayRunId;
+        if (!dayRunId) {
+          // Create a new dayRun record for this manual EOD web search
+          const today = new Date().toISOString().split('T')[0];
+          const [inserted] = await db
+            .insert(trainingDayRuns)
+            .values({
+              campaignId: input.campaignId,
+              runType: 'sprint',
+              runDay: 0, // 0 = manual/ad-hoc
+              scheduledDate: today,
+              status: 'completed',
+              webSearchStatus: 'pending',
+            })
+            .returning({ id: trainingDayRuns.id });
+          dayRunId = inserted.id;
+        }
+
+        const { runEndOfDayWebSearch } = await import("./trainingWorkerV3");
+        // Run in background so the mutation returns immediately
+        runEndOfDayWebSearch(input.campaignId, dayRunId).catch((err: any) => {
+          console.error(`[EOD] Manual web search failed for campaign ${input.campaignId}:`, err.message);
+        });
+
+        return { success: true, dayRunId };
+      }),
+
     updateGapItem: protectedProcedure
       .input(z.object({
         campaignId: z.number(),
