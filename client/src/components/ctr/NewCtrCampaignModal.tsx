@@ -29,8 +29,10 @@ import {
   ChevronLeft,
   CheckCircle2,
   AlertCircle,
+  Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { RADIUS_OPTIONS } from "@/lib/ctrGeo";
 
 interface Keyword {
   text: string;
@@ -38,12 +40,18 @@ interface Keyword {
   weight: number;
 }
 
+interface ZipBias {
+  zipCode: string;
+  weightPct: number;
+}
+
 const STEPS = [
   { id: 1, label: "Business" },
   { id: 2, label: "Location" },
-  { id: 3, label: "Keywords" },
-  { id: 4, label: "Ramp" },
-  { id: 5, label: "Review" },
+  { id: 3, label: "Radius & ZIPs" },
+  { id: 4, label: "Keywords" },
+  { id: 5, label: "Ramp" },
+  { id: 6, label: "Review" },
 ];
 
 const KEYWORD_TYPE_COLORS = {
@@ -72,13 +80,20 @@ export function NewCtrCampaignModal({
   const [targetCity, setTargetCity] = useState("");
   const [targetCountry, setTargetCountry] = useState("US");
   const [gscSiteUrl, setGscSiteUrl] = useState("");
+  const [centerAddress, setCenterAddress] = useState("");
 
-  // Step 3 — Keywords
+  // Step 3 — Radius & ZIP bias
+  const [radiusMiles, setRadiusMiles] = useState(5);
+  const [zipBiases, setZipBiases] = useState<ZipBias[]>([]);
+  const [zipInput, setZipInput] = useState("");
+  const [zipWeight, setZipWeight] = useState(25);
+
+  // Step 4 — Keywords
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [kwInput, setKwInput] = useState("");
   const [kwType, setKwType] = useState<"primary" | "brand" | "local">("primary");
 
-  // Step 4 — Ramp
+  // Step 5 — Ramp
   const [weeklyRampPct, setWeeklyRampPct] = useState(5);
   const [rampMode, setRampMode] = useState<"auto" | "manual">("auto");
 
@@ -90,12 +105,13 @@ export function NewCtrCampaignModal({
     onError: (err) => toast.error(err.message),
   });
 
+  // ── Keyword helpers ──────────────────────────────────────────────────────
+
   function addKeyword() {
     const text = kwInput.trim();
     if (!text) return;
     if (keywords.find((k) => k.text.toLowerCase() === text.toLowerCase())) return;
     const newKws = [...keywords, { text, type: kwType, weight: 0 }];
-    // Auto-distribute weights evenly
     const even = parseFloat((100 / newKws.length).toFixed(2));
     setKeywords(newKws.map((k) => ({ ...k, weight: even })));
     setKwInput("");
@@ -107,6 +123,25 @@ export function NewCtrCampaignModal({
     const even = parseFloat((100 / newKws.length).toFixed(2));
     setKeywords(newKws.map((k) => ({ ...k, weight: even })));
   }
+
+  // ── ZIP bias helpers ─────────────────────────────────────────────────────
+
+  function addZip() {
+    const zip = zipInput.trim().replace(/\D/g, "").slice(0, 5);
+    if (zip.length < 5) { toast.error("Enter a valid 5-digit ZIP code"); return; }
+    if (zipBiases.find((z) => z.zipCode === zip)) { toast.error("ZIP already added"); return; }
+    setZipBiases([...zipBiases, { zipCode: zip, weightPct: zipWeight }]);
+    setZipInput("");
+  }
+
+  function removeZip(zip: string) {
+    setZipBiases(zipBiases.filter((z) => z.zipCode !== zip));
+  }
+
+  const totalZipWeight = zipBiases.reduce((s, z) => s + z.weightPct, 0);
+  const freeRoamPct = Math.max(0, 100 - totalZipWeight);
+
+  // ── Submit ───────────────────────────────────────────────────────────────
 
   function handleSubmit() {
     createCampaign.mutate({
@@ -129,8 +164,9 @@ export function NewCtrCampaignModal({
   const canAdvance = () => {
     if (step === 1) return businessName.trim().length > 0;
     if (step === 2) return targetCity.trim().length > 0;
-    if (step === 3) return keywords.length > 0;
-    if (step === 4) return true;
+    if (step === 3) return true; // radius always valid
+    if (step === 4) return keywords.length > 0;
+    if (step === 5) return true;
     return true;
   };
 
@@ -143,23 +179,21 @@ export function NewCtrCampaignModal({
 
         {/* Step indicator */}
         <div className="flex items-center gap-1 mb-4">
-          {STEPS.map((s, i) => (
-            <div key={s.id} className="flex items-center gap-1 flex-1">
-              <div
-                className={cn(
-                  "flex-1 h-1.5 rounded-full transition-colors",
-                  step > s.id ? "bg-primary" : step === s.id ? "bg-primary/60" : "bg-muted"
-                )}
-              />
-              {i < STEPS.length - 1 && null}
-            </div>
+          {STEPS.map((s) => (
+            <div
+              key={s.id}
+              className={cn(
+                "flex-1 h-1.5 rounded-full transition-colors",
+                step > s.id ? "bg-primary" : step === s.id ? "bg-primary/60" : "bg-muted"
+              )}
+            />
           ))}
         </div>
         <p className="text-xs text-muted-foreground -mt-3 mb-4">
           Step {step} of {STEPS.length} — <span className="text-foreground font-medium">{STEPS[step - 1].label}</span>
         </p>
 
-        {/* Step 1 — Business */}
+        {/* ── Step 1 — Business ─────────────────────────────────────────── */}
         {step === 1 && (
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -190,7 +224,7 @@ export function NewCtrCampaignModal({
           </div>
         )}
 
-        {/* Step 2 — Location & GSC */}
+        {/* ── Step 2 — Location & GSC ───────────────────────────────────── */}
         {step === 2 && (
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -202,11 +236,20 @@ export function NewCtrCampaignModal({
               />
             </div>
             <div className="space-y-1.5">
+              <Label>Business Address <span className="text-muted-foreground text-xs font-normal">(used as radius center)</span></Label>
+              <Input
+                placeholder="e.g. 1234 Main St, Orlando FL 32801"
+                value={centerAddress}
+                onChange={(e) => setCenterAddress(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Origin points for sessions will be randomized within your chosen radius from this address.
+              </p>
+            </div>
+            <div className="space-y-1.5">
               <Label>Target Country</Label>
               <Select value={targetCountry} onValueChange={setTargetCountry}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="US">United States</SelectItem>
                   <SelectItem value="CA">Canada</SelectItem>
@@ -226,14 +269,125 @@ export function NewCtrCampaignModal({
                 onChange={(e) => setGscSiteUrl(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                The exact property URL from your Google Search Console account. Used to pull baseline clicks for the ramp calculator.
+                Exact property URL from your Google Search Console. Used for the ramp calculator baseline.
               </p>
             </div>
           </div>
         )}
 
-        {/* Step 3 — Keywords */}
+        {/* ── Step 3 — Radius & ZIP Bias ────────────────────────────────── */}
         {step === 3 && (
+          <div className="space-y-5">
+            {/* Radius selector */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Target className="h-4 w-4 text-primary" />
+                Origin Radius
+              </Label>
+              <div className="grid grid-cols-3 gap-2">
+                {RADIUS_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setRadiusMiles(opt.value)}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-sm font-medium transition-all",
+                      radiusMiles === opt.value
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/40"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Every session will originate from a unique random point within this radius of the business address. No two sessions share the same origin.
+              </p>
+            </div>
+
+            {/* ZIP bias */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-blue-400" />
+                ZIP Code Bias
+                <Badge variant="outline" className="text-xs font-normal">Optional</Badge>
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Layer ZIP codes on top of the radius to concentrate sessions in specific areas. Useful when rank tracking shows weakness in a particular ZIP.
+              </p>
+
+              <div className="flex gap-2">
+                <Input
+                  placeholder="ZIP code (e.g. 32817)"
+                  value={zipInput}
+                  onChange={(e) => setZipInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addZip()}
+                  maxLength={5}
+                  className="flex-1"
+                />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">{zipWeight}%</span>
+                  <input
+                    type="range"
+                    min={5}
+                    max={80}
+                    step={5}
+                    value={zipWeight}
+                    onChange={(e) => setZipWeight(Number(e.target.value))}
+                    className="w-20 accent-primary"
+                  />
+                </div>
+                <Button onClick={addZip} size="icon" variant="outline">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {zipBiases.length > 0 && (
+                <div className="space-y-1.5 mt-2">
+                  {zipBiases.map((z) => (
+                    <div key={z.zipCode} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-3.5 w-3.5 text-blue-400" />
+                        <span className="font-mono">{z.zipCode}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground">{z.weightPct}% of sessions</span>
+                        <button onClick={() => removeZip(z.zipCode)} className="text-muted-foreground hover:text-destructive">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {/* Distribution summary */}
+                  <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs space-y-1">
+                    {zipBiases.map((z) => (
+                      <div key={z.zipCode} className="flex justify-between">
+                        <span className="text-muted-foreground">ZIP {z.zipCode}</span>
+                        <span>{z.weightPct}%</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between border-t border-border/40 pt-1 mt-1">
+                      <span className="text-muted-foreground">Free roam (full radius)</span>
+                      <span className={freeRoamPct < 0 ? "text-destructive" : "text-green-400"}>{freeRoamPct}%</span>
+                    </div>
+                    {totalZipWeight > 100 && (
+                      <p className="text-destructive text-xs">⚠ Total ZIP weights exceed 100%. Reduce some weights.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {zipBiases.length === 0 && (
+                <div className="rounded-lg border border-dashed px-4 py-3 text-center">
+                  <p className="text-xs text-muted-foreground">No ZIP bias — sessions will be uniformly distributed across the full {radiusMiles}-mile radius</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 4 — Keywords ─────────────────────────────────────────── */}
+        {step === 4 && (
           <div className="space-y-4">
             <div className="flex gap-2">
               <Input
@@ -244,9 +398,7 @@ export function NewCtrCampaignModal({
                 className="flex-1"
               />
               <Select value={kwType} onValueChange={(v) => setKwType(v as any)}>
-                <SelectTrigger className="w-28">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="primary">Primary</SelectItem>
                   <SelectItem value="brand">Brand</SelectItem>
@@ -268,30 +420,21 @@ export function NewCtrCampaignModal({
                 {keywords.map((kw, i) => (
                   <div key={i} className="flex items-center gap-2 rounded-lg border px-3 py-2">
                     <span className="flex-1 text-sm">{kw.text}</span>
-                    <Badge className={cn("text-xs", KEYWORD_TYPE_COLORS[kw.type])}>
-                      {kw.type}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground w-10 text-right">
-                      {kw.weight.toFixed(0)}%
-                    </span>
-                    <button
-                      onClick={() => removeKeyword(i)}
-                      className="text-muted-foreground hover:text-destructive transition-colors"
-                    >
+                    <Badge className={cn("text-xs", KEYWORD_TYPE_COLORS[kw.type])}>{kw.type}</Badge>
+                    <span className="text-xs text-muted-foreground w-10 text-right">{kw.weight.toFixed(0)}%</span>
+                    <button onClick={() => removeKeyword(i)} className="text-muted-foreground hover:text-destructive transition-colors">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 ))}
-                <p className="text-xs text-muted-foreground">
-                  Weights are distributed evenly. You can adjust them on the campaign detail page.
-                </p>
+                <p className="text-xs text-muted-foreground">Weights are distributed evenly. Adjust on the campaign detail page.</p>
               </div>
             )}
           </div>
         )}
 
-        {/* Step 4 — Ramp */}
-        {step === 4 && (
+        {/* ── Step 5 — Ramp ─────────────────────────────────────────────── */}
+        {step === 5 && (
           <div className="space-y-5">
             <div className="rounded-lg bg-muted/40 border p-4 flex items-start gap-3">
               <Shield className="h-4 w-4 text-primary mt-0.5 shrink-0" />
@@ -321,16 +464,14 @@ export function NewCtrCampaignModal({
                 <span>7% (aggressive)</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Sessions increase by {weeklyRampPct}% each week from the GSC baseline. Stays within natural growth patterns.
+                Sessions increase by {weeklyRampPct}% each week from the GSC baseline.
               </p>
             </div>
 
             <div className="space-y-1.5">
               <Label>Ramp Mode</Label>
               <Select value={rampMode} onValueChange={(v) => setRampMode(v as any)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="auto">Auto (GSC-driven baseline)</SelectItem>
                   <SelectItem value="manual">Manual (set target directly)</SelectItem>
@@ -338,22 +479,20 @@ export function NewCtrCampaignModal({
               </Select>
               {rampMode === "auto" && gscSiteUrl && (
                 <p className="text-xs text-green-400 flex items-center gap-1 mt-1">
-                  <CheckCircle2 className="h-3 w-3" />
-                  GSC URL set — baseline will be pulled automatically
+                  <CheckCircle2 className="h-3 w-3" /> GSC URL set — baseline will be pulled automatically
                 </p>
               )}
               {rampMode === "auto" && !gscSiteUrl && (
                 <p className="text-xs text-amber-400 flex items-center gap-1 mt-1">
-                  <AlertCircle className="h-3 w-3" />
-                  No GSC URL set — ramp will start from 0 baseline
+                  <AlertCircle className="h-3 w-3" /> No GSC URL set — ramp will start from 0 baseline
                 </p>
               )}
             </div>
           </div>
         )}
 
-        {/* Step 5 — Review */}
-        {step === 5 && (
+        {/* ── Step 6 — Review ───────────────────────────────────────────── */}
+        {step === 6 && (
           <div className="space-y-3">
             <div className="rounded-lg border divide-y text-sm">
               <div className="flex justify-between px-4 py-2.5">
@@ -363,6 +502,16 @@ export function NewCtrCampaignModal({
               <div className="flex justify-between px-4 py-2.5">
                 <span className="text-muted-foreground">Location</span>
                 <span className="font-medium">{targetCity}, {targetCountry}</span>
+              </div>
+              <div className="flex justify-between px-4 py-2.5">
+                <span className="text-muted-foreground">Origin Radius</span>
+                <span className="font-medium text-primary">{radiusMiles} miles</span>
+              </div>
+              <div className="flex justify-between px-4 py-2.5">
+                <span className="text-muted-foreground">ZIP Bias</span>
+                <span className="font-medium">
+                  {zipBiases.length > 0 ? `${zipBiases.length} ZIP${zipBiases.length > 1 ? "s" : ""} (${totalZipWeight}% biased)` : "None — full radius"}
+                </span>
               </div>
               <div className="flex justify-between px-4 py-2.5">
                 <span className="text-muted-foreground">Keywords</span>
@@ -402,7 +551,7 @@ export function NewCtrCampaignModal({
             <ChevronLeft className="h-4 w-4" />
             {step === 1 ? "Cancel" : "Back"}
           </Button>
-          {step < 5 ? (
+          {step < STEPS.length ? (
             <Button
               onClick={() => setStep(step + 1)}
               disabled={!canAdvance()}
@@ -414,7 +563,7 @@ export function NewCtrCampaignModal({
           ) : (
             <Button
               onClick={handleSubmit}
-              disabled={createCampaign.isPending}
+              disabled={createCampaign.isPending || totalZipWeight > 100}
               className="gap-1"
             >
               {createCampaign.isPending ? "Creating..." : "Create Campaign"}

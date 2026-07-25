@@ -26,7 +26,11 @@ import {
   MapPin,
   Clock,
   CheckCircle2,
+  Target,
+  Shuffle,
+  X,
 } from "lucide-react";
+import { RADIUS_OPTIONS, generateUniqueOrigin } from "@/lib/ctrGeo";
 import { cn } from "@/lib/utils";
 
 const JOURNEY_TYPES = [
@@ -55,10 +59,34 @@ export default function CtrDriveSimulation() {
   const [journeyType, setJourneyType] = useState("driving");
   const [persona, setPersona] = useState("residential");
   const [originAddress, setOriginAddress] = useState("");
+  const [useRadiusOrigin, setUseRadiusOrigin] = useState(true);
+  const [radiusMiles, setRadiusMiles] = useState(5);
+  const [zipInput, setZipInput] = useState("");
+  const [zipWeight, setZipWeight] = useState(25);
+  const [zipBiases, setZipBiases] = useState<Array<{ zipCode: string; weightPct: number }>>([]);
   const [destinationAddress, setDestinationAddress] = useState("");
   const [createCalendar, setCreateCalendar] = useState(true);
   const [calendarTitle, setCalendarTitle] = useState("");
   const [scheduledFor, setScheduledFor] = useState("");
+
+  // Derive the selected campaign's center coords
+  const selectedCampaign = (campaigns as any[]).find((c: any) => String(c.id) === campaignId);
+
+  function addZip() {
+    const zip = zipInput.trim().replace(/\D/g, "").slice(0, 5);
+    if (zip.length < 5) { toast.error("Enter a valid 5-digit ZIP"); return; }
+    if (zipBiases.find(z => z.zipCode === zip)) { toast.error("ZIP already added"); return; }
+    setZipBiases([...zipBiases, { zipCode: zip, weightPct: zipWeight }]);
+    setZipInput("");
+  }
+
+  function randomizeOrigin() {
+    // Use campaign center if available, otherwise fallback to a generic point
+    const lat = selectedCampaign?.centerLat ?? 28.5383;
+    const lng = selectedCampaign?.centerLng ?? -81.3792;
+    const point = generateUniqueOrigin(lat, lng, radiusMiles, [], zipBiases.map(z => ({ ...z, centerLat: null, centerLng: null, isActive: true })));
+    setOriginAddress(`${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}${point.sourceZip ? ` (ZIP ${point.sourceZip})` : ""}`);
+  }
 
   const { data: campaigns = [] } = trpc.ctr.listCampaigns.useQuery();
   const { data: journeys = [], refetch } = trpc.ctr.listDriveJourneys.useQuery(
@@ -175,14 +203,102 @@ export default function CtrDriveSimulation() {
                 </Select>
               </div>
 
-              {/* Addresses */}
-              <div className="space-y-1.5">
-                <Label>Origin Address <span className="text-destructive">*</span></Label>
-                <Input
-                  placeholder="123 Residential St, Orlando, FL 32801"
-                  value={originAddress}
-                  onChange={(e) => setOriginAddress(e.target.value)}
-                />
+              {/* Origin — Radius or Manual */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <Target className="h-3.5 w-3.5 text-primary" />
+                    Origin Address <span className="text-destructive">*</span>
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Randomize</span>
+                    <Switch checked={useRadiusOrigin} onCheckedChange={setUseRadiusOrigin} />
+                  </div>
+                </div>
+
+                {useRadiusOrigin ? (
+                  <div className="space-y-3 rounded-lg border p-3">
+                    {/* Radius selector */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">Radius from business address</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {RADIUS_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setRadiusMiles(opt.value)}
+                            className={cn(
+                              "rounded border px-2 py-1.5 text-xs font-medium transition-all",
+                              radiusMiles === opt.value
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border text-muted-foreground hover:border-primary/40"
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ZIP bias */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">ZIP bias (optional)</p>
+                      <div className="flex gap-1.5">
+                        <Input
+                          placeholder="ZIP"
+                          value={zipInput}
+                          onChange={(e) => setZipInput(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && addZip()}
+                          maxLength={5}
+                          className="w-24 text-sm"
+                        />
+                        <div className="flex items-center gap-1 flex-1">
+                          <span className="text-xs text-muted-foreground w-8">{zipWeight}%</span>
+                          <input
+                            type="range" min={5} max={80} step={5}
+                            value={zipWeight}
+                            onChange={(e) => setZipWeight(Number(e.target.value))}
+                            className="flex-1 accent-primary"
+                          />
+                        </div>
+                        <Button onClick={addZip} size="icon" variant="outline" className="h-9 w-9">
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      {zipBiases.map(z => (
+                        <div key={z.zipCode} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-muted/40">
+                          <span className="font-mono">{z.zipCode}</span>
+                          <span className="text-muted-foreground">{z.weightPct}%</span>
+                          <button onClick={() => setZipBiases(zipBiases.filter(x => x.zipCode !== z.zipCode))}>
+                            <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Generate button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2 text-xs"
+                      onClick={randomizeOrigin}
+                    >
+                      <Shuffle className="h-3.5 w-3.5" />
+                      Generate Random Origin
+                    </Button>
+
+                    {originAddress && (
+                      <div className="rounded bg-muted/40 px-3 py-2 text-xs font-mono text-muted-foreground">
+                        {originAddress}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <Input
+                    placeholder="123 Residential St, Orlando, FL 32801"
+                    value={originAddress}
+                    onChange={(e) => setOriginAddress(e.target.value)}
+                  />
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>Destination (Business Address) <span className="text-destructive">*</span></Label>
