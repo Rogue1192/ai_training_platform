@@ -1428,7 +1428,7 @@ export async function checkV3SprintRuns(): Promise<void> {
     if (!db) return;
 
     const { trainingDayRuns: tdrTable, campaigns: cTable, contentPages: cpTable } = await import('../drizzle/schema');
-    const { eq: eqV3, and: andV3, lte: lteV3, isNull: isNullV3 } = await import('drizzle-orm');
+    const { eq: eqV3, and: andV3, lte: lteV3, isNull: isNullV3, gte: gteV3 } = await import('drizzle-orm');
     const { getTodayCentral } = await import('./dateUtils');
     const today = getTodayCentral(); // Central Time (America/Chicago) — keeps scheduler and dashboard congruent
 
@@ -1538,10 +1538,22 @@ export async function checkV3SprintRuns(): Promise<void> {
         // If so: stamp sprintCompletedAt (anchors 7-day rank tracking + 14-day bonus scan)
         // and immediately fire the first post-sprint rank tracking check.
         if (run.runType === 'sprint') {
+          // Only count sprint runs created AFTER trainingStartedAt to avoid false-positive
+          // completions when a campaign is reset/restarted (old completed runs still exist in DB).
+          const [currentCampaign] = await db
+            .select({ trainingStartedAt: cTable.trainingStartedAt })
+            .from(cTable)
+            .where(eqV3(cTable.id, run.campaignId))
+            .limit(1);
+          const trainingStartedAt = currentCampaign?.trainingStartedAt ?? new Date(0);
           const allSprintRuns = await db
             .select()
             .from(tdrTable)
-            .where(andV3(eqV3(tdrTable.campaignId, run.campaignId), eqV3(tdrTable.runType, 'sprint')));
+            .where(andV3(
+              eqV3(tdrTable.campaignId, run.campaignId),
+              eqV3(tdrTable.runType, 'sprint'),
+              gteV3(tdrTable.createdAt, trainingStartedAt)
+            ));
           const sprintComplete = allSprintRuns.length >= 4 && allSprintRuns.every(r => r.status === 'completed');
           if (sprintComplete) {
             const { updateCampaign } = await import('./dbCampaigns');
