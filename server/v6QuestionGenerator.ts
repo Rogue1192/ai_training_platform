@@ -2,7 +2,7 @@ import { getDb, getApiKeyByProvider } from "./db";
 import { decrypt } from "./encryption";
 import { callAI } from "./aiProviders";
 import { campaigns, businesses, campaignQueryLocations, trainingQueries } from "../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 const INFLUENCER_PROVIDER = "minimax" as const;
 const INFLUENCER_MODEL = "MiniMax-M2.7-highspeed";
@@ -59,11 +59,20 @@ export async function generateV6Questions(campaignId: number): Promise<void> {
   }
   const influencerKey = decrypt(influencerKeyEncrypted.encryptedKey);
 
-  console.log(`[V6QuestionGen] Generating conversational questions for campaign ${campaignId}`);
+  // ── Idempotency guard ────────────────────────────────────────────────────
+  // If questions already exist for this campaign, skip generation.
+  // The scheduler calls this every 5 minutes — without this guard it would
+  // wipe and regenerate in a loop while baselineCheckCompletedAt is NULL.
+  const existingCount = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(campaignQueryLocations)
+    .where(eq(campaignQueryLocations.campaignId, campaignId));
+  if ((existingCount[0]?.count ?? 0) > 0) {
+    console.log(`[V6QuestionGen] Campaign ${campaignId} already has ${existingCount[0]?.count} questions — skipping generation`);
+    return;
+  }
 
-  // Clear existing queries for this campaign
-  await db.delete(campaignQueryLocations).where(eq(campaignQueryLocations.campaignId, campaignId));
-  await db.delete(trainingQueries).where(eq(trainingQueries.campaignId, campaignId));
+  console.log(`[V6QuestionGen] Generating conversational questions for campaign ${campaignId}`);
 
   let generatedCount = 0;
 
