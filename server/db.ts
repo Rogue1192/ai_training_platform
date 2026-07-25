@@ -521,32 +521,34 @@ export async function getAllTodayMetrics(): Promise<{
     return { activeTrainings: 0, completedGoals: 0, apiCallsToday: 0, avgResponseTime: 0 };
   }
 
+  const { campaigns: cTable, trainingDayRuns, costLogs } = await import('../drizzle/schema');
+
+  // Active trainings = campaigns currently in 'training' status
   const activeResult = await db
     .select({ count: sql<number>`count(*)` })
-    .from(trainingSessions)
-    .where(eq(trainingSessions.status, "in_progress"));
+    .from(cTable)
+    .where(eq(cTable.status, 'training'));
   const activeTrainings = Number(activeResult[0]?.count ?? 0);
 
+  // Completed goals = total training day runs completed across all campaigns
   const completedResult = await db
     .select({ count: sql<number>`count(*)` })
-    .from(trainingSessions)
-    .where(eq(trainingSessions.status, "completed"));
+    .from(trainingDayRuns)
+    .where(eq(trainingDayRuns.status, 'completed'));
   const completedGoals = Number(completedResult[0]?.count ?? 0);
 
+  // API calls today = costLog entries created today
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayIso = today.toISOString();
 
-  const conversationsResult = await db
-    .select({
-      count: sql<number>`count(*)`,
-      avgTime: sql<number>`avg(${trainingConversations.responseTime})`,
-    })
-    .from(trainingConversations)
-    .where(gte(trainingConversations.createdAt, new Date(todayIso)));
+  const apiCallsResult = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(costLogs)
+    .where(gte(costLogs.createdAt, today));
+  const apiCallsToday = Number(apiCallsResult[0]?.count ?? 0);
 
-  const apiCallsToday = Number(conversationsResult[0]?.count ?? 0);
-  const avgResponseTime = Number(conversationsResult[0]?.avgTime ?? 0);
+  // Avg response time: not tracked in new pipeline — return 0 for now
+  const avgResponseTime = 0;
 
   return { activeTrainings, completedGoals, apiCallsToday, avgResponseTime };
 }

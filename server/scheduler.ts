@@ -1519,17 +1519,17 @@ export async function checkV3SprintRuns(): Promise<void> {
         if (trainingVersion === 'v5') {
           const { runTrainingDay: runTrainingDayV5 } = await import('./trainingWorkerV5');
           await runTrainingDayV5(run.campaignId, run.id);
-          // V5: no trainer AI, no end-of-day web search needed.
         } else if (trainingVersion === 'v4') {
           const { runTrainingDay: runTrainingDayV4 } = await import('./trainingWorkerV4');
           await runTrainingDayV4(run.campaignId, run.id);
-          // V4 determines graduation inside the session — no daily end-of-day web search needed.
-          // Post-sprint rank check fires at the end of Day 4 (handled below).
         } else {
-          const { runTrainingDay, runEndOfDayWebSearch } = await import('./trainingWorkerV3');
+          const { runTrainingDay } = await import('./trainingWorkerV3');
           await runTrainingDay(run.campaignId, run.id);
-          await runEndOfDayWebSearch(run.campaignId, run.id);
         }
+        // End-of-day web search runs on all engine versions — pure web search,
+        // no trainer AI — so results are comparable across V3/V4/V5.
+        const { runEndOfDayWebSearch } = await import('./trainingWorkerV3');
+        await runEndOfDayWebSearch(run.campaignId, run.id);
 
         // After each sprint run completes, check if all 4 sprint days are now done.
         // If so: stamp sprintCompletedAt (anchors 7-day rank tracking + 14-day bonus scan)
