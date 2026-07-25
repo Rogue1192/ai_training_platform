@@ -1516,7 +1516,10 @@ export async function checkV3SprintRuns(): Promise<void> {
 
         console.log(`[SchedulerV3] Executing training day run ${run.id} (campaign ${run.campaignId}, day ${run.runDay}, engine ${trainingVersion})`);
 
-        if (trainingVersion === 'v5') {
+        if (trainingVersion === 'v6') {
+          const { runTrainingDay: runTrainingDayV6 } = await import('./trainingWorkerV6');
+          await runTrainingDayV6(run.campaignId, run.id);
+        } else if (trainingVersion === 'v5') {
           const { runTrainingDay: runTrainingDayV5 } = await import('./trainingWorkerV5');
           await runTrainingDayV5(run.campaignId, run.id);
         } else if (trainingVersion === 'v4') {
