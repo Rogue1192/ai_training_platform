@@ -419,6 +419,11 @@ export default function CampaignDetail() {
   }
 
   const handleRunStep = (step: StepKey) => {
+    // Gate: block content generation if there are unresolved fan-out gaps
+    if (step === "content_generation" && fanOutAuditStatus?.completed && (fanOutAuditStatus.unresolvedCount ?? 0) > 0) {
+      toast.error(`Fill in ${fanOutAuditStatus.unresolvedCount} missing credibility URL${fanOutAuditStatus.unresolvedCount !== 1 ? 's' : ''} in the Fan-Out Audit section before generating content.`);
+      return;
+    }
     setRunningStep(step);
     runStepMutation.mutate({ campaignId, step });
   };
@@ -1034,30 +1039,49 @@ export default function CampaignDetail() {
 
           {/* Audit summary */}
           {fanOutAuditStatus?.completed && (
-            <Card className="bg-card border-border">
-              <CardContent className="pt-4">
-                <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="space-y-3">
+              {/* Action Required banner */}
+              {fanOutAuditStatus.unresolvedCount > 0 && (
+                <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-2xl font-bold text-foreground">{fanOutAuditStatus.totalCount}</p>
-                    <p className="text-xs text-muted-foreground">Total Gaps Found</p>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-amber-400">{fanOutAuditStatus.unresolvedCount}</p>
-                    <p className="text-xs text-muted-foreground">Needs URL</p>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-green-400">{fanOutAuditStatus.resolvedCount}</p>
-                    <p className="text-xs text-muted-foreground">Resolved</p>
+                    <p className="text-sm font-semibold text-amber-300">Action Required — Fill In Missing URLs</p>
+                    <p className="text-xs text-amber-200/70 mt-1">
+                      {fanOutAuditStatus.unresolvedCount} credibility {fanOutAuditStatus.unresolvedCount === 1 ? 'gap needs a' : 'gaps need'} verification URL{fanOutAuditStatus.unresolvedCount !== 1 ? 's' : ''} before content generation can start.
+                      Find the real source URLs for each item below and paste them in. Content will link out to these sources and training will cite them in the debate.
+                    </p>
                   </div>
                 </div>
-                {fanOutAuditStatus.unresolvedCount === 0 && fanOutAuditStatus.totalCount > 0 && (
-                  <div className="mt-3 flex items-center gap-2 text-green-400 text-sm">
-                    <CheckCircle className="w-4 h-4" />
-                    All gaps resolved — ready to run Credibility Research.
+              )}
+              {/* All resolved banner */}
+              {fanOutAuditStatus.unresolvedCount === 0 && fanOutAuditStatus.totalCount > 0 && (
+                <div className="flex items-center gap-3 rounded-lg border border-green-500/40 bg-green-500/10 p-4">
+                  <CheckCircle className="w-5 h-5 text-green-400 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-green-300">All Gaps Resolved — Ready for Content Generation</p>
+                    <p className="text-xs text-green-200/70 mt-1">All credibility URLs are filled in. Content generation will link out to these verified sources and training will cite them in the debate.</p>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                </div>
+              )}
+              <Card className="bg-card border-border">
+                <CardContent className="pt-4">
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <p className="text-2xl font-bold text-foreground">{fanOutAuditStatus.totalCount}</p>
+                      <p className="text-xs text-muted-foreground">Total Gaps Found</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-amber-400">{fanOutAuditStatus.unresolvedCount}</p>
+                      <p className="text-xs text-muted-foreground">Needs URL</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-green-400">{fanOutAuditStatus.resolvedCount}</p>
+                      <p className="text-xs text-muted-foreground">Resolved</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {/* Gap list */}
