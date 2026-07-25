@@ -1506,15 +1506,6 @@ export async function checkV3SprintRuns(): Promise<void> {
       }
 
       try {
-        // ── Standalone EOD web search run (no training, just web search) ──
-        if (run.runType === 'eod_web_search') {
-          console.log(`[SchedulerV3] Executing standalone EOD web search run ${run.id} (campaign ${run.campaignId})`);
-          const { runEndOfDayWebSearch } = await import('./trainingWorkerV3');
-          await runEndOfDayWebSearch(run.campaignId, run.id);
-          await db.update(tdrTable).set({ status: 'completed' }).where(eqV3(tdrTable.id, run.id));
-          continue;
-        }
-
         // Determine which training engine to use for this campaign
         const [runCampaign] = await db
           .select({ trainingVersion: cTable.trainingVersion })
