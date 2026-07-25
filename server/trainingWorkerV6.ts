@@ -385,18 +385,21 @@ export async function runTrainingDay(
   const businessType = business.businessType ?? "local business";
   const businessFacts = buildBusinessFacts(business);
 
-  // Build keyword+location combos from primaryKeywords + business.location
-  // Keywords: campaign.primaryKeywords (e.g. ["AC repair", "AC replacement", "heating repair"])
-  // Locations: business.location semicolon-separated (e.g. "Chino, CA; Chino Hills, CA; Ontario, CA")
-  const keywords: string[] = (campaign.primaryKeywords ?? []).filter(Boolean);
-  const locations: string[] = (business.location ?? "")
-    .split(";")
-    .map((l) => l.trim())
-    .filter(Boolean);
+  // Pull training phrases directly from trainingQueries table
+  // These are the exact V6 phrases: "best AC repair in Chino, CA" etc.
+  const dbQueries = await db
+    .select()
+    .from(trainingQueries)
+    .where(
+      and(
+        eq(trainingQueries.campaignId, campaignId),
+        eq(trainingQueries.isActive, true)
+      )
+    );
 
-  if (keywords.length === 0 || locations.length === 0) {
+  if (dbQueries.length === 0) {
     console.log(
-      `[TrainingV6] Campaign ${campaignId} has no keywords or locations — skipping`
+      `[TrainingV6] Campaign ${campaignId} has no active training queries — skipping`
     );
     await db
       .update(trainingDayRuns)
@@ -420,41 +423,13 @@ export async function runTrainingDay(
     `[TrainingV6] Loaded ${suggestivePrompts.length} suggestive prompts from DB`
   );
 
-  // Get trainingQueries for phrase status tracking (queryId FK)
-  // We match by phraseText to find the corresponding trainingQuery ID
-  const allQueries = await db
-    .select()
-    .from(trainingQueries)
-    .where(
-      and(
-        eq(trainingQueries.campaignId, campaignId),
-        eq(trainingQueries.isActive, true)
-      )
-    );
-
-  // Build a lookup: "keyword|location" → trainingQuery.id (for phrase status tracking)
-  // trainingQueries.phraseText format matches our "[keyword] in [location]" base
-  const queryIdLookup = new Map<string, number>();
-  for (const q of allQueries) {
-    queryIdLookup.set(q.phraseText.toLowerCase().trim(), q.id);
-  }
-
-  // Build all keyword+location combos
-  const combos: Array<{ keyword: string; location: string; queryId: number | null }> = [];
-  for (const keyword of keywords) {
-    for (const location of locations) {
-      // Try to find a matching trainingQuery for phrase status tracking
-      const basePhrase = `${keyword} in ${location}`.toLowerCase();
-      let queryId: number | null = null;
-      for (const [phraseText, id] of queryIdLookup.entries()) {
-        if (phraseText.includes(keyword.toLowerCase()) && phraseText.includes(location.toLowerCase())) {
-          queryId = id;
-          break;
-        }
-      }
-      combos.push({ keyword, location, queryId });
-    }
-  }
+  // Build combos directly from DB phrases
+  // phraseText is already the base phrase: "best AC repair in Chino, CA"
+  // The modifier will replace "best" with a rotating modifier each iteration
+  const combos: Array<{ phraseText: string; queryId: number }> = dbQueries.map((q) => ({
+    phraseText: q.phraseText,
+    queryId: q.id,
+  }));
 
   const totalSessions = combos.length * TARGET_PROVIDERS.length;
   await db
@@ -463,7 +438,7 @@ export async function runTrainingDay(
     .where(eq(trainingDayRuns.id, dayRunId));
 
   console.log(
-    `[TrainingV6] ${combos.length} keyword+location combos × ${TARGET_PROVIDERS.length} providers = ${totalSessions} sessions`
+    `[TrainingV6] ${combos.length} training phrases × ${TARGET_PROVIDERS.length} providers = ${totalSessions} sessions`
   );
 
   let sessionsCompleted = 0;
@@ -474,26 +449,23 @@ export async function runTrainingDay(
 
   for (const combo of combos) {
     for (const provider of TARGET_PROVIDERS) {
-      // Check phrase status if we have a queryId
-      let statusRow: typeof trainingPhraseStatus.$inferSelect | undefined;
-      if (combo.queryId !== null) {
-        const rows = await db
-          .select()
-          .from(trainingPhraseStatus)
-          .where(
-            and(
-              eq(trainingPhraseStatus.campaignId, campaignId),
-              eq(trainingPhraseStatus.queryId, combo.queryId),
-              eq(trainingPhraseStatus.targetAiProvider, provider)
-            )
+      // Check phrase status
+      const rows = await db
+        .select()
+        .from(trainingPhraseStatus)
+        .where(
+          and(
+            eq(trainingPhraseStatus.campaignId, campaignId),
+            eq(trainingPhraseStatus.queryId, combo.queryId),
+            eq(trainingPhraseStatus.targetAiProvider, provider)
           )
-          .limit(1);
-        statusRow = rows[0];
-      }
+        )
+        .limit(1);
+      const statusRow = rows[0];
 
       if (statusRow?.isGraduated) {
         console.log(
-          `[TrainingV6] Skipping "${combo.keyword} in ${combo.location}" on ${provider} — EOD graduated`
+          `[TrainingV6] Skipping "${combo.phraseText}" on ${provider} — EOD graduated`
         );
         sessionsCompleted++;
         continue;
@@ -501,7 +473,7 @@ export async function runTrainingDay(
 
       if ((statusRow?.consecutiveWins ?? 0) >= 2) {
         console.log(
-          `[TrainingV6] Skipping "${combo.keyword} in ${combo.location}" on ${provider} — 2 consecutive wins, awaiting EOD`
+          `[TrainingV6] Skipping "${combo.phraseText}" on ${provider} — 2 consecutive wins, awaiting EOD`
         );
         sessionsCompleted++;
         continue;
@@ -509,16 +481,17 @@ export async function runTrainingDay(
 
       const iterationCount = randomInt(ITERATIONS_MIN, ITERATIONS_MAX);
       console.log(
-        `[TrainingV6] Running ${iterationCount} iterations for "${combo.keyword} in ${combo.location}" on ${provider}`
+        `[TrainingV6] Running ${iterationCount} iterations for "${combo.phraseText}" on ${provider}`
       );
 
       let sessionMentions = 0;
       let sessionEndorsements = 0;
 
       for (let i = 0; i < iterationCount; i++) {
-        // Build the query: "[modifier] [keyword] in [location]"
+        // Rotate modifier: replace the leading "best" with a different modifier each iteration
+        // phraseText = "best AC repair in Chino, CA" → "top-rated AC repair in Chino, CA"
         const modifier = modifiers[i % modifiers.length]!;
-        const query = `${modifier} ${combo.keyword} in ${combo.location}`;
+        const query = combo.phraseText.replace(/^best /i, `${modifier} `);
 
         try {
           const result = await runDebateIteration({
@@ -552,27 +525,24 @@ export async function runTrainingDay(
         }
       }
 
-      // Update phrase status if we have a queryId
-      if (combo.queryId !== null) {
-        const sessionWin = sessionMentions >= Math.ceil(iterationCount * 0.5);
-        const currentConsecutive = statusRow?.consecutiveWins ?? 0;
-        const newConsecutive = sessionWin ? currentConsecutive + 1 : 0;
+      const sessionWin = sessionMentions >= Math.ceil(iterationCount * 0.5);
+      const currentConsecutive = statusRow?.consecutiveWins ?? 0;
+      const newConsecutive = sessionWin ? currentConsecutive + 1 : 0;
 
-        if (statusRow) {
-          await db
-            .update(trainingPhraseStatus)
-            .set({ consecutiveWins: newConsecutive, lastTrainedAt: new Date() })
-            .where(eq(trainingPhraseStatus.id, statusRow.id));
-        } else {
-          await db.insert(trainingPhraseStatus).values({
-            campaignId,
-            queryId: combo.queryId,
-            targetAiProvider: provider,
-            consecutiveWins: newConsecutive,
-            isGraduated: false,
-            lastTrainedAt: new Date(),
-          });
-        }
+      if (statusRow) {
+        await db
+          .update(trainingPhraseStatus)
+          .set({ consecutiveWins: newConsecutive, lastTrainedAt: new Date() })
+          .where(eq(trainingPhraseStatus.id, statusRow.id));
+      } else {
+        await db.insert(trainingPhraseStatus).values({
+          campaignId,
+          queryId: combo.queryId,
+          targetAiProvider: provider,
+          consecutiveWins: newConsecutive,
+          isGraduated: false,
+          lastTrainedAt: new Date(),
+        });
       }
 
       sessionsCompleted++;
