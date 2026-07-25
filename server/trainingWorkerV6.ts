@@ -60,12 +60,12 @@ const SESSION_DELAY_MAX_MS = 30 * 1000;
 const QUERY_MODIFIERS = [
   "best",
   "top-rated",
-  "trusted",
+  "most trusted",
   "#1 rated",
-  "affordable",
+  "most affordable",
   "most reliable",
-  "highly recommended",
-  "top-reviewed",
+  "highest rated",
+  "most recommended",
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -533,11 +533,36 @@ export async function runTrainingDay(
       let sessionMentions = 0;
       let sessionEndorsements = 0;
 
+      // Extract keyword and location from phraseText once per combo
+      // phraseText = "best AC repair in Chino, CA" → keyword="AC repair", location="Chino, CA"
+      const phraseMatch = combo.phraseText.match(/^(?:best\s+)?(.+?)\s+in\s+(.+)$/i);
+      const keyword = phraseMatch ? phraseMatch[1]! : combo.phraseText;
+      const location = phraseMatch ? phraseMatch[2]! : "your area";
+
+      const influencerKey = await getDecryptedKey(INFLUENCER_PROVIDER);
+
       for (let i = 0; i < iterationCount; i++) {
-        // Rotate modifier: replace the leading "best" with a different modifier each iteration
-        // phraseText = "best AC repair in Chino, CA" → "top-rated AC repair in Chino, CA"
         const modifier = modifiers[i % modifiers.length]!;
-        const query = combo.phraseText.replace(/^best /i, `${modifier} `);
+
+        // Have the influencer AI generate a natural conversational opening question
+        // that includes the modifier, keyword, and location — the way a real person
+        // would ask ChatGPT or Gemini
+        const questionGenResponse = await callAI(
+          INFLUENCER_PROVIDER,
+          influencerKey,
+          INFLUENCER_MODEL,
+          [
+            {
+              role: "system",
+              content: "You write natural conversational questions that a person would type into an AI assistant like ChatGPT or Gemini. Write only the question itself — no explanation, no quotes, no extra text.",
+            },
+            {
+              role: "user",
+              content: `Write a natural conversational question someone would ask an AI assistant to find the ${modifier} ${keyword} company in ${location}. The question MUST include the word or phrase "${modifier}" and the service "${keyword}" and the location "${location}". Make it sound like a real person asking, not a search query.`,
+            },
+          ]
+        );
+        const query = questionGenResponse.content.trim().replace(/^["']|["']$/g, "");
 
         try {
           const result = await runDebateIteration({
