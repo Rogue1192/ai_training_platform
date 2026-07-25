@@ -53,7 +53,8 @@ const INFLUENCER_MODEL = "MiniMax-M2.7-highspeed";
 
 const ITERATIONS_MIN = 50;
 const ITERATIONS_MAX = 70;
-const MAX_DEBATE_TURNS = 8;            // Max back-and-forth turns per iteration
+const MAX_DEBATE_TURNS = 12;           // Max back-and-forth turns per iteration
+const TURNS_AFTER_ENDORSEMENT = 2;     // Keep pushing this many turns after first endorsement
 const ITER_DELAY_MS = 10 * 60 * 1000; // 10 minutes between iterations
 const SESSION_DELAY_MIN_MS = 15 * 1000;
 const SESSION_DELAY_MAX_MS = 30 * 1000;
@@ -187,13 +188,10 @@ async function runDebateIteration(params: {
   const influencerKey = await getDecryptedKey(INFLUENCER_PROVIDER);
   const targetModel = TARGET_MODELS[targetProvider];
 
-  // Build the full query: "[modifier] [phraseText]" — but avoid doubling modifiers
-  // phraseText already contains the full phrase (e.g. "best AC repair in Orlando")
-  // We prepend the modifier only if the phrase doesn't already start with one
-  const startsWithModifier = QUERY_MODIFIERS.some((m) =>
-    phraseText.toLowerCase().startsWith(m.toLowerCase())
-  );
-  const fullQuery = startsWithModifier ? phraseText : `${modifier} ${phraseText}`;
+  // Use phraseText directly as the opening query — it already contains the full phrase
+  // e.g. "Best reviews for HVAC services near Chino, CA"
+  // modifier is kept for logging/tracking but not prepended to avoid duplication
+  const fullQuery = phraseText;
 
   // Pick a random suggestive prompt from DB, fallback to default if none
   let suggestivePromptTemplate =
@@ -251,6 +249,7 @@ Strategy:
   let endorsed = false;
   let mentioned = false;
   let turns = 0;
+  let turnsAfterEndorsement = 0; // Keep pushing this many turns after first endorsement
 
   // Turn 1: Get target AI's initial response to the query
   const initialResponse = await callAI(
@@ -285,7 +284,8 @@ Strategy:
   });
 
   // Debate loop: influencer pushes, target responds, repeat
-  while (turns < MAX_DEBATE_TURNS && !endorsed) {
+  // Continues until max turns OR (endorsed AND pushed 2 more turns after endorsement)
+  while (turns < MAX_DEBATE_TURNS && !(endorsed && turnsAfterEndorsement >= TURNS_AFTER_ENDORSEMENT)) {
     // Influencer turn
     const influencerResponse = await callAI(
       INFLUENCER_PROVIDER,
@@ -336,17 +336,20 @@ Strategy:
       const positiveSignals = [
         "good choice", "great option", "recommend", "worth considering",
         "reputable", "well-regarded", "excellent", "top choice", "solid option",
-        "good reputation",
+        "good reputation", "great choice", "highly recommend", "definitely",
+        "absolutely", "yes,", "yes.", "you're right",
       ];
       endorsed = positiveSignals.some((s) => lower.includes(s)) || mentioned;
     }
+
+    if (endorsed) turnsAfterEndorsement++;
 
     targetConversation.push({ role: "assistant", content: targetResponse.content });
     influencerConversation.push({
       role: "user",
       content: `The AI responded: "${targetResponse.content}"\n\nContinue advocating for ${businessName}. ${
         endorsed
-          ? "Good progress — reinforce the recommendation."
+          ? `They've acknowledged ${businessName} — keep reinforcing why they're the top choice. Add one more specific fact.`
           : "They haven't fully endorsed them yet — keep pushing with more specific facts."
       }`,
     });
