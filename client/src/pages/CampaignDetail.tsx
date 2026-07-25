@@ -419,9 +419,10 @@ export default function CampaignDetail() {
   }
 
   const handleRunStep = (step: StepKey) => {
-    // Gate: block content generation if there are unresolved fan-out gaps
-    if (step === "content_generation" && fanOutAuditStatus?.completed && (fanOutAuditStatus.unresolvedCount ?? 0) > 0) {
-      toast.error(`Fill in ${fanOutAuditStatus.unresolvedCount} missing credibility URL${fanOutAuditStatus.unresolvedCount !== 1 ? 's' : ''} in the Fan-Out Audit section before generating content.`);
+    // Gate: block content generation only if there are actionable unresolved gaps (status = "gap", not "not_applicable")
+    const actionableGaps = fanOutAuditStatus?.gapList?.filter((g: any) => g.status === "gap").length ?? 0;
+    if (step === "content_generation" && fanOutAuditStatus?.completed && actionableGaps > 0) {
+      toast.error(`${actionableGaps} credibility gap${actionableGaps !== 1 ? 's' : ''} still need a URL or need to be marked N/A in the Fan-Out Audit section.`);
       return;
     }
     setRunningStep(step);
@@ -1047,8 +1048,8 @@ export default function CampaignDetail() {
                   <div>
                     <p className="text-sm font-semibold text-amber-300">Action Required — Fill In Missing URLs</p>
                     <p className="text-xs text-amber-200/70 mt-1">
-                      {fanOutAuditStatus.unresolvedCount} credibility {fanOutAuditStatus.unresolvedCount === 1 ? 'gap needs a' : 'gaps need'} verification URL{fanOutAuditStatus.unresolvedCount !== 1 ? 's' : ''} before content generation can start.
-                      Find the real source URLs for each item below and paste them in. Content will link out to these sources and training will cite them in the debate.
+                      {fanOutAuditStatus.unresolvedCount} credibility {fanOutAuditStatus.unresolvedCount === 1 ? 'gap needs' : 'gaps need'} attention before content generation can start.
+                      For each item below: paste in the real source URL, or mark it N/A if the business genuinely doesn't have that credential. Content will link out to verified sources and training will cite them in the debate.
                     </p>
                   </div>
                 </div>
