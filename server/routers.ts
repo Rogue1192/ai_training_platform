@@ -5259,6 +5259,7 @@ import { costTrackingRouter } from "./costTrackingRouter";
 import { trainingQueryRouter } from "./trainingQueryRouter";
 import { promoCodeRouter } from "./promoCodeRouter";
 import { ctrRouter } from "./ctrRouter";
+import { ctrSettingsRouter } from "./ctrSettingsRouter";
 export const appRouterWithInsights = router({
   ...appRouter._def.procedures,
   llmInsights: llmInsightsRouter,
@@ -5267,6 +5268,7 @@ export const appRouterWithInsights = router({
   trainingQuery: trainingQueryRouter,
   promoCode: promoCodeRouter,
   ctr: ctrRouter,
+  ctrSettings: ctrSettingsRouter,
 });
 export type AppRouter = typeof appRouter;
 // Re-export the extended router for use in server setup

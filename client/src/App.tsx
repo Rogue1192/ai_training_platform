@@ -37,6 +37,7 @@ import CtrDashboard from "./pages/ctr/CtrDashboard";
 import CtrCampaigns from "./pages/ctr/CtrCampaigns";
 import CtrDriveSimulation from "./pages/ctr/CtrDriveSimulation";
 import CtrAnalytics from "./pages/ctr/CtrAnalytics";
+import CtrSettings from "./pages/ctr/CtrSettings";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Redirect } from "wouter";
 import { useEffect, useRef, useMemo } from "react";
@@ -65,6 +66,7 @@ const CTR_NAV_ITEMS = [
   { href: "/ctr/campaigns", label: "CTR Campaigns", icon: MousePointerClick },
   { href: "/ctr/drive", label: "Drive Simulation", icon: Navigation },
   { href: "/ctr/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/ctr/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 // Admin navigation — full platform access
@@ -297,6 +299,11 @@ function Router() {
       <Route path="/ctr/analytics">
         <DashboardLayout navigationItems={CTR_NAV_ITEMS}>
           <CtrAnalytics />
+        </DashboardLayout>
+      </Route>
+      <Route path="/ctr/settings">
+        <DashboardLayout navigationItems={CTR_NAV_ITEMS}>
+          <CtrSettings />
         </DashboardLayout>
       </Route>
 
