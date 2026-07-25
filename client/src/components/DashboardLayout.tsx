@@ -26,6 +26,7 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation, Redirect } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+import { ModuleSwitcher } from "./ModuleSwitcher";
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -169,6 +170,8 @@ function DashboardLayoutContent({
               ) : null}
             </div>
           </SidebarHeader>
+
+          <ModuleSwitcher isCollapsed={isCollapsed} />
 
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
