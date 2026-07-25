@@ -32,6 +32,7 @@ import {
   trainingQueries,
   trainingPhraseStatus,
   trainingDayRuns,
+  trainingSessionLogs,
   campaigns,
   businesses,
   promptTemplates,
@@ -152,6 +153,12 @@ interface DebateResult {
   endorsed: boolean;
   mentioned: boolean;
   turns: number;
+  conversationHistory: Array<{
+    role: "user" | "assistant" | "trainer";
+    content: string;
+    turn: number;
+    isTrainerMessage?: boolean;
+  }>;
 }
 
 async function runDebateIteration(params: {
@@ -346,7 +353,46 @@ Strategy:
     });
   }
 
-  return { endorsed, mentioned, turns };
+  // Build conversation history for the session log
+  // Format: each turn has role (user=query/influencer, assistant=target AI, trainer=MiniMax)
+  const conversationHistory: Array<{
+    role: "user" | "assistant" | "trainer";
+    content: string;
+    turn: number;
+    isTrainerMessage?: boolean;
+  }> = [];
+
+  // Turn 1: initial query
+  conversationHistory.push({ role: "user", content: query, turn: 1 });
+  // Turn 1: initial target AI response
+  if (targetConversation.length >= 2) {
+    const initialAiMsg = targetConversation[1];
+    if (initialAiMsg) {
+      conversationHistory.push({ role: "assistant", content: initialAiMsg.content, turn: 1 });
+    }
+  }
+  // Subsequent turns: influencer then target AI
+  // targetConversation: [system, assistant(t1), user(inf1), assistant(t2), user(inf2), assistant(t3)...]
+  // influencerConversation: [system, user(ctx1), assistant(inf1), user(ctx2), assistant(inf2)...]
+  let turnNum = 2;
+  for (let i = 2; i < targetConversation.length; i++) {
+    const msg = targetConversation[i];
+    if (!msg) continue;
+    if (msg.role === "user") {
+      // This is an influencer message fed into target AI
+      conversationHistory.push({
+        role: "trainer",
+        content: msg.content,
+        turn: turnNum,
+        isTrainerMessage: true,
+      });
+    } else if (msg.role === "assistant") {
+      conversationHistory.push({ role: "assistant", content: msg.content, turn: turnNum });
+      turnNum++;
+    }
+  }
+
+  return { endorsed, mentioned, turns, conversationHistory };
 }
 
 // ─── Training Day Runner ──────────────────────────────────────────────────────
@@ -514,6 +560,27 @@ export async function runTrainingDay(
             `[TrainingV6] Iter ${i + 1}/${iterationCount} "${query}" [${provider}] ` +
               `— endorsed: ${result.endorsed}, turns: ${result.turns}`
           );
+
+          // Save iteration to trainingSessionLogs so the dialogue viewer works
+          await db.insert(trainingSessionLogs).values({
+            campaignId,
+            dayRunId,
+            queryId: combo.queryId,
+            phraseText: combo.phraseText,
+            variationText: query,
+            variationIndex: i,
+            targetProvider: provider,
+            sessionWin: result.endorsed,
+            cleanProbeMentioned: result.mentioned,
+            cleanProbeQuery: query,
+            cleanProbeResponse: null,
+            totalTurns: result.turns,
+            conversationHistory: result.conversationHistory,
+            trainerInputTokens: 0,
+            trainerOutputTokens: 0,
+            targetInputTokens: 0,
+            targetOutputTokens: 0,
+          });
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           console.error(`[TrainingV6] Iteration error:`, msg);
