@@ -752,17 +752,14 @@ export async function runEndOfDayWebSearch(campaignId: number, dayRunId: number)
             console.log(`[TrainingV3] Reverted graduation: "${query.phraseText}" on ${targetProvider} — not in web search`);
             phrasesInRotation++;
           } else {
-            // If web search confirms the business is mentioned, count it as a win
-            // and increment consecutiveWins — this is real-world confirmation
-            const newConsecutiveWins = webMentioned
-              ? status.consecutiveWins + 1
-              : 0; // reset streak on miss
-            const CONSECUTIVE_WINS_NEEDED = 2;
-            const nowGraduated = newConsecutiveWins >= CONSECUTIVE_WINS_NEEDED;
+            // EOD web search is the definitive graduation gate:
+            // 1 mention = graduated (pulled from rotation).
+            // 0 mentions = back in rotation, reset consecutiveWins.
+            const nowGraduated = webMentioned;
             await db
               .update(trainingPhraseStatus)
               .set({
-                consecutiveWins: newConsecutiveWins,
+                consecutiveWins: webMentioned ? (status.consecutiveWins + 1) : 0,
                 isGraduated: nowGraduated,
                 lastWebSearchAt: new Date(),
                 lastWebSearchResult: webMentioned ? "mentioned" : "not_mentioned",
@@ -773,7 +770,7 @@ export async function runEndOfDayWebSearch(campaignId: number, dayRunId: number)
             if (nowGraduated) {
               phrasesGraduated++;
               console.log(`[TrainingV3] WEB-SEARCH GRADUATED: "${query.phraseText}" on ${targetProvider} — confirmed in real-world search`);
-            } else if (!nowGraduated) {
+            } else {
               phrasesInRotation++;
             }
           }

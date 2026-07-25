@@ -155,35 +155,39 @@ async function updatePhraseStatus(
     )
     .limit(1);
 
+  // NOTE: V5 never sets isGraduated here.
+  // isGraduated is ONLY set by EOD web search (runEndOfDayWebSearch).
+  // consecutiveWins >= CONSECUTIVE_WINS_NEEDED is used as an in-session skip
+  // signal only — it means "stop training this phrase today, wait for EOD confirmation".
+
   if (existing.length === 0) {
     const consecutiveWins = sessionWin ? 1 : 0;
-    const isGraduated = consecutiveWins >= CONSECUTIVE_WINS_NEEDED;
     await db.insert(trainingPhraseStatus).values({
       campaignId,
       queryId,
       targetAiProvider,
       consecutiveWins,
       totalWins: sessionWin ? 1 : 0,
-      isGraduated,
+      isGraduated: false, // EOD web search sets this
       lastRunAt: new Date(),
     });
-    return { isGraduated };
+    return { isGraduated: false };
   }
 
   const current = existing[0];
   const newConsecutiveWins = sessionWin ? current.consecutiveWins + 1 : 0;
-  const isGraduated = current.isGraduated || newConsecutiveWins >= CONSECUTIVE_WINS_NEEDED;
+  // Preserve isGraduated if already set by EOD web search; never promote it here
   await db
     .update(trainingPhraseStatus)
     .set({
       consecutiveWins: newConsecutiveWins,
       totalWins: current.totalWins + (sessionWin ? 1 : 0),
-      isGraduated,
+      // isGraduated intentionally NOT updated here
       lastRunAt: new Date(),
     })
     .where(eq(trainingPhraseStatus.id, current.id));
 
-  return { isGraduated };
+  return { isGraduated: current.isGraduated ?? false };
 }
 
 // ─── Single session ───────────────────────────────────────────────────────────
@@ -469,23 +473,28 @@ export async function runTrainingDay(campaignId: number, dayRunId: number): Prom
   let phrasesGraduated = 0;
 
   for (const query of queries) {
-    // Check if already graduated on BOTH providers — skip if so
+    // In-session skip: if a phrase has 2+ consecutive clean-probe wins on BOTH providers,
+    // skip it for the rest of this day's training and wait for EOD web search to confirm.
+    // (isGraduated is only set by EOD web search — this is a day-level skip, not permanent.)
     const statusRows = await db
       .select()
       .from(trainingPhraseStatus)
       .where(
         and(
           eq(trainingPhraseStatus.campaignId, campaignId),
-          eq(trainingPhraseStatus.queryId, query.id),
-          eq(trainingPhraseStatus.isGraduated, true)
+          eq(trainingPhraseStatus.queryId, query.id)
         )
       );
 
-    const graduatedProviders = new Set(statusRows.map(r => r.targetAiProvider));
-    const allGraduated = TARGET_PROVIDERS.every(p => graduatedProviders.has(p));
+    const skippedProviders = new Set(
+      statusRows
+        .filter(r => (r.consecutiveWins ?? 0) >= CONSECUTIVE_WINS_NEEDED || r.isGraduated)
+        .map(r => r.targetAiProvider)
+    );
+    const allSkipped = TARGET_PROVIDERS.every(p => skippedProviders.has(p));
 
-    if (allGraduated) {
-      console.log(`[TrainingV5] Skipping fully graduated phrase "${query.phraseText}"`);
+    if (allSkipped) {
+      console.log(`[TrainingV5] Skipping phrase "${query.phraseText}" — 2+ consecutive wins or EOD-graduated on all providers. Awaiting EOD web search.`);
       sessionsCompleted++;
       continue;
     }
@@ -511,7 +520,7 @@ export async function runTrainingDay(campaignId: number, dayRunId: number): Prom
 
       // Update phrase status per provider independently
       for (const provider of TARGET_PROVIDERS) {
-        if (graduatedProviders.has(provider)) continue; // already graduated
+        if (skippedProviders.has(provider)) continue; // already at 2+ wins or EOD-graduated
         const { sessionWin } = result.providerResults[provider];
         const { isGraduated } = await updatePhraseStatus(
           campaignId,
