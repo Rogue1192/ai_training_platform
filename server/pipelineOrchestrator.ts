@@ -483,17 +483,21 @@ export async function runPipelineStep(
         // ── Training gate (full: URLs + llm.txt + schema) ──────────────────────────────────────────────────────────────────────
         // Hard gate: ALL THREE must pass before training starts.
         // enforcePublishingGate is an alias for enforceTrainingGate.
-        try {
-          const { enforcePublishingGate } = await import("./contentVerifier");
-          await enforcePublishingGate({
-            campaignId,
-            websiteUrl: business.website || "",
-          });
-        } catch (gateErr: any) {
-          await db.update(campaigns)
-            .set({ status: "publishing", updatedAt: new Date() })
-            .where(eq(campaigns.id, campaignId));
-          throw gateErr;
+        // V6 campaigns bypass the content gate — V6 trains the AI directly
+        // and does not depend on website content being published and indexed.
+        if (campaign.trainingVersion !== "v6") {
+          try {
+            const { enforcePublishingGate } = await import("./contentVerifier");
+            await enforcePublishingGate({
+              campaignId,
+              websiteUrl: business.website || "",
+            });
+          } catch (gateErr: any) {
+            await db.update(campaigns)
+              .set({ status: "publishing", updatedAt: new Date() })
+              .where(eq(campaigns.id, campaignId));
+            throw gateErr;
+          }
         }
 
         // Apply aggressive training mode via smart scheduler
