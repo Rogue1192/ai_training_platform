@@ -8,6 +8,7 @@ import { appRouter, llmInsightsRouter, agencyRouter } from "../routers";
 import { costTrackingRouter } from "../costTrackingRouter";
 import { prospectAuditRouter } from "../prospectAuditRouter";
 import { trainingQueryRouter } from "../trainingQueryRouter";
+import { v7AccountRouter } from "../v7AccountRouter";
 import { router } from "./trpc";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -40,6 +41,7 @@ const combinedRouter = router({
   costTracking: costTrackingRouter,
   prospectAudit: prospectAuditRouter,
   trainingQuery: trainingQueryRouter,
+  v7Accounts: v7AccountRouter,
 });
 export type CombinedRouter = typeof combinedRouter;
 

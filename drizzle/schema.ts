@@ -1084,3 +1084,89 @@ export const trainingSessionLogs = pgTable("trainingSessionLogs", {
 });
 export type TrainingSessionLog = typeof trainingSessionLogs.$inferSelect;
 export type InsertTrainingSessionLog = typeof trainingSessionLogs.$inferInsert;
+
+// ─── V7 Browser Training — Account Pool & Proxy Management ───────────────────
+//
+// V7 uses real ChatGPT and Gemini free accounts via CloakBrowser + residential
+// proxies instead of API calls. Each account has "use my data to train" enabled,
+// meaning conversations feed directly into the model's RLHF pipeline.
+//
+// Account rotation: each training iteration picks the next account in the pool
+// for that provider, so multiple independent users appear to recommend the same
+// business — a consensus signal far stronger than a single account.
+
+export const v7AccountProviderEnum = pgEnum("v7_account_provider", ["chatgpt", "gemini"]);
+export const v7AccountStatusEnum = pgEnum("v7_account_status", [
+  "active",
+  "warming",
+  "cooldown",
+  "flagged",
+  "disabled",
+]);
+
+export const v7Accounts = pgTable("v7Accounts", {
+  id: serial("id").primaryKey(),
+  provider: v7AccountProviderEnum("provider").notNull(),
+  email: text("email").notNull(),
+  encryptedPassword: text("encryptedPassword").notNull(),
+  status: v7AccountStatusEnum("status").default("warming").notNull(),
+  proxyId: integer("proxyId"),
+  lastUsedAt: timestamp("lastUsedAt"),
+  totalSessionsRun: integer("totalSessionsRun").default(0).notNull(),
+  consecutiveErrors: integer("consecutiveErrors").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  notes: text("notes"),
+});
+export type V7Account = typeof v7Accounts.$inferSelect;
+export type InsertV7Account = typeof v7Accounts.$inferInsert;
+
+export const v7ProxyStatusEnum = pgEnum("v7_proxy_status", ["active", "flagged", "disabled"]);
+
+export const v7Proxies = pgTable("v7Proxies", {
+  id: serial("id").primaryKey(),
+  encryptedConnectionString: text("encryptedConnectionString").notNull(),
+  city: text("city"),
+  state: text("state"),
+  country: text("country").default("US").notNull(),
+  status: v7ProxyStatusEnum("status").default("active").notNull(),
+  lastTestedAt: timestamp("lastTestedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type V7Proxy = typeof v7Proxies.$inferSelect;
+export type InsertV7Proxy = typeof v7Proxies.$inferInsert;
+
+export const v7SessionStatusEnum = pgEnum("v7_session_status", [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+]);
+
+export const v7SessionLogs = pgTable("v7SessionLogs", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaignId").notNull(),
+  dayRunId: integer("dayRunId").notNull(),
+  queryId: integer("queryId").notNull(),
+  phraseText: text("phraseText").notNull(),
+  variationText: text("variationText").notNull(),
+  variationIndex: integer("variationIndex").notNull().default(0),
+  targetProvider: v7AccountProviderEnum("targetProvider").notNull(),
+  accountId: integer("accountId").notNull(),
+  proxyId: integer("proxyId"),
+  status: v7SessionStatusEnum("status").default("pending").notNull(),
+  sessionWin: boolean("sessionWin").default(false).notNull(),
+  cleanProbeMentioned: boolean("cleanProbeMentioned").default(false).notNull(),
+  totalTurns: integer("totalTurns").notNull().default(0),
+  conversationHistory: json("conversationHistory").$type<Array<{
+    role: "user" | "assistant" | "trainer";
+    content: string;
+    turn: number;
+    isTrainerMessage?: boolean;
+  }>>().notNull().default([]),
+  errorMessage: text("errorMessage"),
+  screenshotPath: text("screenshotPath"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type V7SessionLog = typeof v7SessionLogs.$inferSelect;
+export type InsertV7SessionLog = typeof v7SessionLogs.$inferInsert;
