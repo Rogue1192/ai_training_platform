@@ -456,6 +456,17 @@ export async function runPipelineStep(
           };
           break;
         }
+        // ── V6: Generate conversational questions before baseline ─────────────
+        // For V6 campaigns, MiniMax generates natural conversational questions
+        // (e.g. "Who is the most trusted AC repair company in Chino Hills, CA?")
+        // and stores them in campaignQueryLocations + trainingQueries.
+        // The baseline then runs on those exact stored questions.
+        if (campaign.trainingVersion === "v6") {
+          console.log(`[Pipeline] V6 campaign ${campaignId} — generating conversational questions before baseline`);
+          const { generateV6Questions } = await import("./v6QuestionGenerator");
+          await generateV6Questions(campaignId);
+          console.log(`[Pipeline] V6 question generation complete for campaign ${campaignId}`);
+        }
         const { runCampaignBaselineCheck } = await import("./keywordResearchPipeline");
         const baselineResult = await runCampaignBaselineCheck(campaignId);
         result = {
