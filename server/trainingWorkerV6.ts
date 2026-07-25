@@ -36,6 +36,8 @@ import {
   campaigns,
   businesses,
   promptTemplates,
+  rankSnapshots,
+  campaignQueryLocations,
 } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 
@@ -469,15 +471,75 @@ export async function runTrainingDay(
     `[TrainingV6] Loaded ${suggestivePrompts.length} suggestive prompts from DB`
   );
 
-  // Build combos directly from DB phrases
-  // phraseText is already the base phrase: "best AC repair in Chino, CA"
-  // The modifier will replace "best" with a rotating modifier each iteration
-  const combos: Array<{ phraseText: string; queryId: number }> = dbQueries.map((q) => ({
+  // Build combos from DB phrases
+  const allCombos: Array<{ phraseText: string; queryId: number }> = dbQueries.map((q) => ({
     phraseText: q.phraseText,
     queryId: q.id,
   }));
 
-  const totalSessions = combos.length * TARGET_PROVIDERS.length;
+  // Priority weighting based on baseline hit rate:
+  // Pull latest baseline snapshots to score each phrase per provider
+  // Score = number of providers (chatgpt + gemini + ai_mode) that already mention the business
+  // 0 hits = highest priority (3x iterations), 1-2 hits = normal (2x), 3 hits = low priority (1x)
+  const baselineScores = new Map<string, number>(); // key: `${queryId}:${provider}`
+  try {
+    const snapshots = await db
+      .select({
+        queryLocationId: rankSnapshots.queryLocationId,
+        chatgptMentioned: rankSnapshots.chatgptMentioned,
+        geminiMentioned: rankSnapshots.geminiMentioned,
+        aiOverviewMentioned: rankSnapshots.aiOverviewMentioned,
+      })
+      .from(rankSnapshots)
+      .where(
+        and(
+          eq(rankSnapshots.campaignId, campaignId),
+          eq(rankSnapshots.checkType, "baseline")
+        )
+      );
+
+    // Map queryLocationId -> total hits across all 3 surfaces
+    const hitMap = new Map<number, number>();
+    for (const snap of snapshots) {
+      const hits =
+        (snap.chatgptMentioned ? 1 : 0) +
+        (snap.geminiMentioned ? 1 : 0) +
+        (snap.aiOverviewMentioned ? 1 : 0);
+      const existing = hitMap.get(snap.queryLocationId) ?? 0;
+      hitMap.set(snap.queryLocationId, Math.max(existing, hits));
+    }
+
+    // Map trainingQuery.id -> campaignQueryLocation.id via phraseText match
+    const cqlRows = await db
+      .select({ id: campaignQueryLocations.id, searchQuery: campaignQueryLocations.searchQuery })
+      .from(campaignQueryLocations)
+      .where(eq(campaignQueryLocations.campaignId, campaignId));
+
+    for (const combo of allCombos) {
+      const cql = cqlRows.find((r) => r.searchQuery === combo.phraseText);
+      const totalHits = cql ? (hitMap.get(cql.id) ?? 0) : 0;
+      for (const provider of TARGET_PROVIDERS) {
+        baselineScores.set(`${combo.queryId}:${provider}`, totalHits);
+      }
+    }
+    console.log(`[TrainingV6] Loaded baseline scores for ${baselineScores.size} phrase/provider combos`);
+  } catch (err) {
+    console.warn(`[TrainingV6] Could not load baseline scores — using uniform priority:`, err);
+  }
+
+  // Build weighted combo list: 0 hits = 3 slots, 1-2 hits = 2 slots, 3 hits = 1 slot
+  const combos: Array<{ phraseText: string; queryId: number }> = [];
+  for (const combo of allCombos) {
+    const avgHits =
+      TARGET_PROVIDERS.reduce((sum, p) => sum + (baselineScores.get(`${combo.queryId}:${p}`) ?? 0), 0) /
+      TARGET_PROVIDERS.length;
+    const slots = avgHits === 0 ? 3 : avgHits <= 2 ? 2 : 1;
+    for (let s = 0; s < slots; s++) combos.push(combo);
+  }
+  // Shuffle so high-priority phrases are spread throughout the day, not front-loaded
+  const shuffledCombos = shuffle(combos);
+
+  const totalSessions = shuffledCombos.length * TARGET_PROVIDERS.length;
   await db
     .update(trainingDayRuns)
     .set({ status: "running", sessionsTotal: totalSessions })
@@ -493,7 +555,7 @@ export async function runTrainingDay(
   // Shuffle modifiers once per day — cycle through them across iterations
   const modifiers = shuffle([...QUERY_MODIFIERS]);
 
-  for (const combo of combos) {
+  for (const combo of shuffledCombos) {
     for (const provider of TARGET_PROVIDERS) {
       // Check phrase status
       const rows = await db
