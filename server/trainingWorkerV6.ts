@@ -1,30 +1,27 @@
 /**
  * Training Worker V6 — Influencer Debate Engine
  *
- * Restores the original mechanism that achieved 86%+ success:
+ * Query format: "[modifier] [keyword] in [location]"
+ * e.g. "best AC repair in Chino, CA"
+ *      "top-rated AC replacement in Las Vegas, NV"
+ *      "#1 rated heating repair in Henderson, NV"
  *
- *   Each iteration = a full multi-turn debate:
- *     1. Target AI (ChatGPT or Gemini) receives a clean high-intent query
- *        e.g. "Who is the best AC repair company in Orlando?"
- *     2. MiniMax (influencer AI) introduces the business and argues its case
- *        using real business facts (years in business, BBB rating, specialties, etc.)
- *     3. Target AI responds — may push back, mention competitors, etc.
- *     4. MiniMax continues arguing until target AI acknowledges/endorses the business
- *        OR max debate turns reached (8 turns)
- *     5. Conversation logged, iteration complete
+ * Keywords come from campaign.primaryKeywords (up to 3)
+ * Locations come from business.location (semicolon-separated)
+ * Modifiers rotate: best, top-rated, trusted, #1 rated, affordable, most reliable,
+ *                   highly recommended, top-reviewed
  *
- *   50–70 iterations per keyword+location combo
- *   10-minute gap between iterations (spaced repetition)
- *   Both ChatGPT and Gemini trained in separate passes per day
+ * Each iteration = a full multi-turn debate (up to 12 turns):
+ *   1. Target AI (ChatGPT or Gemini) receives the query and responds
+ *   2. MiniMax (influencer) argues for the business using real facts
+ *   3. MiniMax's response is fed back to target AI as the next user message
+ *   4. Loop continues until endorsement + 2 reinforcement turns, or max turns
  *
- *   Query format: "[modifier] [keyword] in [location]"
- *   Modifiers rotate: best, top-rated, trusted, #1 rated, affordable, most reliable,
- *                     highly recommended, top-reviewed
- *
- *   Uses trainingQueries table (phraseText per row) — same as V5
- *   trainingPhraseStatus.queryId is a FK to trainingQueries.id
- *   Suggestive prompts loaded from DB promptTemplates table (templateType = 'suggestive')
- *   4-day sprint with EOD web search graduation (same as V5)
+ * 50–70 iterations per keyword+location combo, 10-minute gaps
+ * Both ChatGPT and Gemini trained in separate passes per day
+ * Suggestive prompts loaded from DB promptTemplates (templateType='suggestive')
+ * Phrase status tracked via trainingPhraseStatus (queryId = trainingQueries.id)
+ * EOD web search is the only graduation gate
  */
 
 import { getDb, getApiKeyByProvider } from "./db";
@@ -162,8 +159,7 @@ async function runDebateIteration(params: {
   businessId: number;
   campaignCreatedAt: Date;
   dayRunId: number;
-  phraseText: string;  // Full phrase from trainingQueries e.g. "best AC repair in Orlando"
-  modifier: string;    // e.g. "best"
+  query: string;       // e.g. "best AC repair in Chino, CA"
   businessName: string;
   businessFacts: string;
   businessType: string;
@@ -175,8 +171,7 @@ async function runDebateIteration(params: {
     businessId,
     campaignCreatedAt,
     dayRunId,
-    phraseText,
-    modifier,
+    query,
     businessName,
     businessFacts,
     businessType,
@@ -188,11 +183,6 @@ async function runDebateIteration(params: {
   const influencerKey = await getDecryptedKey(INFLUENCER_PROVIDER);
   const targetModel = TARGET_MODELS[targetProvider];
 
-  // Use phraseText directly as the opening query — it already contains the full phrase
-  // e.g. "Best reviews for HVAC services near Chino, CA"
-  // modifier is kept for logging/tracking but not prepended to avoid duplication
-  const fullQuery = phraseText;
-
   // Pick a random suggestive prompt from DB, fallback to default if none
   let suggestivePromptTemplate =
     "I've heard {businessName} is really good - have you heard of them?";
@@ -203,11 +193,11 @@ async function runDebateIteration(params: {
     }
   }
 
-  // Extract location from phrase (e.g. "AC repair in Orlando" → "Orlando")
-  const locationMatch = phraseText.match(/ in (.+)$/i);
+  // Extract location from query (e.g. "best AC repair in Chino, CA" → "Chino, CA")
+  const locationMatch = query.match(/ in (.+)$/i);
   const location = locationMatch ? locationMatch[1]! : "your area";
 
-  // Format the suggestive prompt (strip {cleanPrompt} placeholder if present)
+  // Format the suggestive prompt
   const formattedSuggestiveHint = suggestivePromptTemplate
     .replace(/\{cleanPrompt\}\s*/g, "")
     .replace(/\{businessName\}/g, businessName)
@@ -215,7 +205,7 @@ async function runDebateIteration(params: {
     .replace(/\{location\}/g, location)
     .trim();
 
-  // Target AI conversation — starts fresh each iteration (no memory)
+  // Target AI conversation — starts fresh each iteration
   const targetConversation: AIMessage[] = [
     {
       role: "system",
@@ -223,7 +213,7 @@ async function runDebateIteration(params: {
     },
     {
       role: "user",
-      content: fullQuery,
+      content: query,
     },
   ];
 
@@ -249,7 +239,7 @@ Strategy:
   let endorsed = false;
   let mentioned = false;
   let turns = 0;
-  let turnsAfterEndorsement = 0; // Keep pushing this many turns after first endorsement
+  let turnsAfterEndorsement = 0;
 
   // Turn 1: Get target AI's initial response to the query
   const initialResponse = await callAI(
@@ -274,18 +264,19 @@ Strategy:
   mentioned = businessMentioned(initialResponse.content, businessName);
   endorsed = mentioned;
 
-  // Add target's response to target conversation
   targetConversation.push({ role: "assistant", content: initialResponse.content });
 
-  // Influencer's first message: introduce the business using the suggestive prompt hint
+  // Influencer's first message: introduce the business
   influencerConversation.push({
     role: "user",
-    content: `The user asked: "${fullQuery}"\n\nThe AI assistant responded: "${initialResponse.content}"\n\nNow advocate for ${businessName}. Start with something like: "${formattedSuggestiveHint}" — then back it up with specific business facts.`,
+    content: `The user asked: "${query}"\n\nThe AI assistant responded: "${initialResponse.content}"\n\nNow advocate for ${businessName}. Start with something like: "${formattedSuggestiveHint}" — then back it up with specific business facts.`,
   });
 
-  // Debate loop: influencer pushes, target responds, repeat
-  // Continues until max turns OR (endorsed AND pushed 2 more turns after endorsement)
-  while (turns < MAX_DEBATE_TURNS && !(endorsed && turnsAfterEndorsement >= TURNS_AFTER_ENDORSEMENT)) {
+  // Debate loop: continues until max turns OR endorsed + 2 reinforcement turns
+  while (
+    turns < MAX_DEBATE_TURNS &&
+    !(endorsed && turnsAfterEndorsement >= TURNS_AFTER_ENDORSEMENT)
+  ) {
     // Influencer turn
     const influencerResponse = await callAI(
       INFLUENCER_PROVIDER,
@@ -307,7 +298,7 @@ Strategy:
 
     influencerConversation.push({ role: "assistant", content: influencerResponse.content });
 
-    // Feed influencer's message back to target AI as the next user message (the debate)
+    // Feed influencer's message back to target AI (the debate)
     targetConversation.push({ role: "user", content: influencerResponse.content });
 
     // Target AI responds
@@ -367,7 +358,6 @@ export async function runTrainingDay(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // Clear key cache for fresh key lookups
   delete keyCache.openai;
   delete keyCache.google;
   delete keyCache.minimax;
@@ -395,6 +385,26 @@ export async function runTrainingDay(
   const businessType = business.businessType ?? "local business";
   const businessFacts = buildBusinessFacts(business);
 
+  // Build keyword+location combos from primaryKeywords + business.location
+  // Keywords: campaign.primaryKeywords (e.g. ["AC repair", "AC replacement", "heating repair"])
+  // Locations: business.location semicolon-separated (e.g. "Chino, CA; Chino Hills, CA; Ontario, CA")
+  const keywords: string[] = (campaign.primaryKeywords ?? []).filter(Boolean);
+  const locations: string[] = (business.location ?? "")
+    .split(";")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (keywords.length === 0 || locations.length === 0) {
+    console.log(
+      `[TrainingV6] Campaign ${campaignId} has no keywords or locations — skipping`
+    );
+    await db
+      .update(trainingDayRuns)
+      .set({ status: "completed", completedAt: new Date() })
+      .where(eq(trainingDayRuns.id, dayRunId));
+    return;
+  }
+
   // Load suggestive prompts from DB once per training day
   const suggestivePrompts = await db
     .select({ templateContent: promptTemplates.templateContent })
@@ -410,8 +420,9 @@ export async function runTrainingDay(
     `[TrainingV6] Loaded ${suggestivePrompts.length} suggestive prompts from DB`
   );
 
-  // Get all active training queries for this campaign (same table V5 uses)
-  const queries = await db
+  // Get trainingQueries for phrase status tracking (queryId FK)
+  // We match by phraseText to find the corresponding trainingQuery ID
+  const allQueries = await db
     .select()
     .from(trainingQueries)
     .where(
@@ -421,52 +432,76 @@ export async function runTrainingDay(
       )
     );
 
-  if (queries.length === 0) {
-    console.log(`[TrainingV6] No active training queries for campaign ${campaignId}`);
-    await db
-      .update(trainingDayRuns)
-      .set({ status: "completed", completedAt: new Date() })
-      .where(eq(trainingDayRuns.id, dayRunId));
-    return;
+  // Build a lookup: "keyword|location" → trainingQuery.id (for phrase status tracking)
+  // trainingQueries.phraseText format matches our "[keyword] in [location]" base
+  const queryIdLookup = new Map<string, number>();
+  for (const q of allQueries) {
+    queryIdLookup.set(q.phraseText.toLowerCase().trim(), q.id);
   }
 
-  const totalSessions = queries.length * TARGET_PROVIDERS.length;
+  // Build all keyword+location combos
+  const combos: Array<{ keyword: string; location: string; queryId: number | null }> = [];
+  for (const keyword of keywords) {
+    for (const location of locations) {
+      // Try to find a matching trainingQuery for phrase status tracking
+      const basePhrase = `${keyword} in ${location}`.toLowerCase();
+      let queryId: number | null = null;
+      for (const [phraseText, id] of queryIdLookup.entries()) {
+        if (phraseText.includes(keyword.toLowerCase()) && phraseText.includes(location.toLowerCase())) {
+          queryId = id;
+          break;
+        }
+      }
+      combos.push({ keyword, location, queryId });
+    }
+  }
+
+  const totalSessions = combos.length * TARGET_PROVIDERS.length;
   await db
     .update(trainingDayRuns)
     .set({ status: "running", sessionsTotal: totalSessions })
     .where(eq(trainingDayRuns.id, dayRunId));
 
+  console.log(
+    `[TrainingV6] ${combos.length} keyword+location combos × ${TARGET_PROVIDERS.length} providers = ${totalSessions} sessions`
+  );
+
   let sessionsCompleted = 0;
   const phrasesGraduated = 0;
 
-  // For each query, train both providers
-  for (const query of queries) {
+  // Shuffle modifiers once per day — cycle through them across iterations
+  const modifiers = shuffle([...QUERY_MODIFIERS]);
+
+  for (const combo of combos) {
     for (const provider of TARGET_PROVIDERS) {
-      // Check if already EOD-graduated for this provider
-      const [statusRow] = await db
-        .select()
-        .from(trainingPhraseStatus)
-        .where(
-          and(
-            eq(trainingPhraseStatus.campaignId, campaignId),
-            eq(trainingPhraseStatus.queryId, query.id),
-            eq(trainingPhraseStatus.targetAiProvider, provider)
+      // Check phrase status if we have a queryId
+      let statusRow: typeof trainingPhraseStatus.$inferSelect | undefined;
+      if (combo.queryId !== null) {
+        const rows = await db
+          .select()
+          .from(trainingPhraseStatus)
+          .where(
+            and(
+              eq(trainingPhraseStatus.campaignId, campaignId),
+              eq(trainingPhraseStatus.queryId, combo.queryId),
+              eq(trainingPhraseStatus.targetAiProvider, provider)
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
+        statusRow = rows[0];
+      }
 
       if (statusRow?.isGraduated) {
         console.log(
-          `[TrainingV6] Skipping "${query.phraseText}" on ${provider} — EOD graduated`
+          `[TrainingV6] Skipping "${combo.keyword} in ${combo.location}" on ${provider} — EOD graduated`
         );
         sessionsCompleted++;
         continue;
       }
 
-      // In-session skip: 2+ consecutive wins from previous day
       if ((statusRow?.consecutiveWins ?? 0) >= 2) {
         console.log(
-          `[TrainingV6] Skipping "${query.phraseText}" on ${provider} — 2 consecutive wins, awaiting EOD`
+          `[TrainingV6] Skipping "${combo.keyword} in ${combo.location}" on ${provider} — 2 consecutive wins, awaiting EOD`
         );
         sessionsCompleted++;
         continue;
@@ -474,17 +509,16 @@ export async function runTrainingDay(
 
       const iterationCount = randomInt(ITERATIONS_MIN, ITERATIONS_MAX);
       console.log(
-        `[TrainingV6] Running ${iterationCount} debate iterations for "${query.phraseText}" on ${provider}`
+        `[TrainingV6] Running ${iterationCount} iterations for "${combo.keyword} in ${combo.location}" on ${provider}`
       );
 
       let sessionMentions = 0;
       let sessionEndorsements = 0;
 
-      // Shuffle modifiers and cycle through them
-      const modifiers = shuffle([...QUERY_MODIFIERS]);
-
       for (let i = 0; i < iterationCount; i++) {
+        // Build the query: "[modifier] [keyword] in [location]"
         const modifier = modifiers[i % modifiers.length]!;
+        const query = `${modifier} ${combo.keyword} in ${combo.location}`;
 
         try {
           const result = await runDebateIteration({
@@ -492,8 +526,7 @@ export async function runTrainingDay(
             businessId: campaign.businessId,
             campaignCreatedAt: campaign.createdAt,
             dayRunId,
-            phraseText: query.phraseText,
-            modifier,
+            query,
             businessName,
             businessFacts,
             businessType,
@@ -505,7 +538,7 @@ export async function runTrainingDay(
           if (result.endorsed) sessionEndorsements++;
 
           console.log(
-            `[TrainingV6] Iter ${i + 1}/${iterationCount} "${modifier} ${query.phraseText}" [${provider}] ` +
+            `[TrainingV6] Iter ${i + 1}/${iterationCount} "${query}" [${provider}] ` +
               `— endorsed: ${result.endorsed}, turns: ${result.turns}`
           );
         } catch (err: unknown) {
@@ -519,29 +552,27 @@ export async function runTrainingDay(
         }
       }
 
-      // Update phrase status: session win = >50% of iterations got a mention
-      const sessionWin = sessionMentions >= Math.ceil(iterationCount * 0.5);
-      const currentConsecutive = statusRow?.consecutiveWins ?? 0;
-      const newConsecutive = sessionWin ? currentConsecutive + 1 : 0;
+      // Update phrase status if we have a queryId
+      if (combo.queryId !== null) {
+        const sessionWin = sessionMentions >= Math.ceil(iterationCount * 0.5);
+        const currentConsecutive = statusRow?.consecutiveWins ?? 0;
+        const newConsecutive = sessionWin ? currentConsecutive + 1 : 0;
 
-      // Upsert phrase status (isGraduated only set by EOD web search)
-      if (statusRow) {
-        await db
-          .update(trainingPhraseStatus)
-          .set({
+        if (statusRow) {
+          await db
+            .update(trainingPhraseStatus)
+            .set({ consecutiveWins: newConsecutive, lastTrainedAt: new Date() })
+            .where(eq(trainingPhraseStatus.id, statusRow.id));
+        } else {
+          await db.insert(trainingPhraseStatus).values({
+            campaignId,
+            queryId: combo.queryId,
+            targetAiProvider: provider,
             consecutiveWins: newConsecutive,
+            isGraduated: false,
             lastTrainedAt: new Date(),
-          })
-          .where(eq(trainingPhraseStatus.id, statusRow.id));
-      } else {
-        await db.insert(trainingPhraseStatus).values({
-          campaignId,
-          queryId: query.id,
-          targetAiProvider: provider,
-          consecutiveWins: newConsecutive,
-          isGraduated: false,
-          lastTrainedAt: new Date(),
-        });
+          });
+        }
       }
 
       sessionsCompleted++;
@@ -568,6 +599,6 @@ export async function runTrainingDay(
 
   console.log(
     `[TrainingV6] Training day complete for campaign ${campaignId}: ` +
-      `${sessionsCompleted} sessions, ${phrasesGraduated} graduated`
+      `${sessionsCompleted} sessions`
   );
 }
