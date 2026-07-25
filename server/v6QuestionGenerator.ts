@@ -96,7 +96,13 @@ export async function generateV6Questions(campaignId: number): Promise<void> {
         );
         
         const query = questionGenResponse.content.trim().replace(/^["']|["']$/g, "");
-        
+
+        // Skip if AI returned empty content
+        if (!query || query.length < 10) {
+          console.warn(`[V6QuestionGen] Empty/short response for ${modifier} ${keyword} in ${location} — skipping`);
+          continue;
+        }
+
         // Insert into campaignQueryLocations (for baseline and tracking)
         const [cql] = await db.insert(campaignQueryLocations).values({
           campaignId,
