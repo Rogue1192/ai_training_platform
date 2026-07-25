@@ -1,14 +1,21 @@
+import path from "path";
+import fs from "fs";
 import { V7Account, V7Proxy } from "../drizzle/schema";
 
 /**
- * V7 Browser Worker (Stub)
- * 
- * This module handles the actual Playwright/CloakBrowser automation.
- * It logs into ChatGPT/Gemini, submits the query, reads the response,
- * and submits follow-up arguments from the influencer AI.
- * 
- * Note: In a real deployment, this would import 'cloakbrowser' instead of 'playwright'.
- * For the architecture design phase, we stub the interface.
+ * V7 Browser Worker
+ *
+ * Handles real browser automation via CloakBrowser Pro.
+ * Uses persistent profiles so sessions stay logged in across runs.
+ * Each account gets its own profile directory and a fixed fingerprint seed.
+ *
+ * Key rules (from CloakBrowser Pro docs):
+ * - One profile, one seed — always reuse the same seed for the same profile
+ * - Use launch_persistent_context (launchPersistentContext in JS) for all sessions
+ * - geoip=True + residential proxy = biggest anti-bot win
+ * - humanize=True, human_preset="careful" for all interactive sessions
+ * - Always close in a finally block to free session slots
+ * - Start headless=False for Google/ChatGPT (tough sites)
  */
 
 export interface BrowserSessionResult {
@@ -18,58 +25,198 @@ export interface BrowserSessionResult {
   screenshotPath?: string;
 }
 
+// Profile storage root — persistent across Railway deployments via volume
+const PROFILES_DIR = process.env.CLOAK_PROFILES_DIR ?? path.join(process.cwd(), ".cloakprofiles");
+
+function getProfileDir(accountId: number): string {
+  const dir = path.join(PROFILES_DIR, `account_${accountId}`);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function getFingerprint(accountId: number): number {
+  // Deterministic seed from account ID — stable across restarts, unique per account
+  return 10000 + (accountId * 7919) % 89999;
+}
+
+function buildProxyString(proxy: V7Proxy | null): string | undefined {
+  if (!proxy) return undefined;
+  try {
+    // Stored as encrypted but we decrypt at runtime via the encrypt/decrypt util
+    // For now, treat encryptedConnectionString as the raw connection string
+    // (the CTR settings page stores it encrypted — V7 proxies store it the same way)
+    return proxy.encryptedConnectionString;
+  } catch {
+    return undefined;
+  }
+}
+
 export class V7BrowserWorker {
   /**
-   * Initializes a new browser context with the account's proxy and fingerprint.
+   * Runs a full AI training session for a given provider.
+   * Opens the persistent profile, submits the query, reads the response,
+   * and returns the response text. Closes the browser in a finally block.
    */
-  static async initSession(account: V7Account, proxy: V7Proxy | null): Promise<any> {
-    console.log(`[V7Browser] Initializing CloakBrowser session for ${account.email} (${account.provider})`);
-    if (proxy) {
-      console.log(`[V7Browser] Using residential proxy in ${proxy.city}, ${proxy.state}`);
-    }
-    
-    // In production:
-    // const { launch } = require('cloakbrowser');
-    // const browser = await launch({
-    //   headless: true,
-    //   proxy: proxy ? { server: proxy.encryptedConnectionString } : undefined,
-    //   humanize: true,
-    //   geoip: true
-    // });
-    // return browser.newContext();
-    
-    return { id: "mock_browser_context" };
-  }
-  
-  /**
-   * Submits a query to the target AI and waits for the response.
-   */
-  static async submitQuery(
-    context: any, 
-    provider: "chatgpt" | "gemini", 
-    query: string
+  static async runSession(
+    account: V7Account,
+    proxy: V7Proxy | null,
+    provider: "chatgpt" | "gemini",
+    query: string,
+    followUpArguments: string[] = []
   ): Promise<BrowserSessionResult> {
-    console.log(`[V7Browser] Submitting query to ${provider}: "${query}"`);
-    
-    // In production:
-    // 1. Navigate to chatgpt.com or gemini.google.com
-    // 2. Check if logged in, if not, perform login flow
-    // 3. Type query into input box with humanized typing speed
-    // 4. Click submit
-    // 5. Wait for generation to complete
-    // 6. Extract the latest assistant message text
-    
-    return {
-      success: true,
-      responseContent: "This is a mock response from the browser automation."
-    };
+    const licenseKey = process.env.CLOAKBROWSER_LICENSE_KEY;
+    if (!licenseKey) {
+      return { success: false, errorMessage: "CLOAKBROWSER_LICENSE_KEY not set" };
+    }
+
+    const profileDir = getProfileDir(account.id);
+    const fingerprint = getFingerprint(account.id);
+    const proxyString = buildProxyString(proxy);
+
+    let ctx: any = null;
+
+    try {
+      const { launchPersistentContext } = await import("cloakbrowser");
+
+      const launchArgs: string[] = [`--fingerprint=${fingerprint}`];
+      // Allow 3rd-party cookies for embedded logins (needed for Google SSO on Gemini)
+      if (provider === "gemini") {
+        launchArgs.push("--fingerprint-allow-3p-cookies");
+      }
+
+      ctx = await launchPersistentContext(profileDir, {
+        licenseKey,
+        headless: false,           // headed — Google and ChatGPT detect headless
+        humanize: true,
+        humanPreset: "careful",
+        geoip: true,               // match timezone + locale to proxy IP
+        proxy: proxyString,
+        args: launchArgs,
+      });
+
+      const page = await ctx.newPage();
+
+      let responseContent: string | undefined;
+
+      if (provider === "chatgpt") {
+        responseContent = await V7BrowserWorker._runChatGPTSession(page, query, followUpArguments);
+      } else {
+        responseContent = await V7BrowserWorker._runGeminiSession(page, query, followUpArguments);
+      }
+
+      return { success: true, responseContent };
+
+    } catch (err: any) {
+      console.error(`[V7Browser] Session error for account ${account.id} on ${provider}:`, err?.message ?? err);
+      return { success: false, errorMessage: err?.message ?? String(err) };
+    } finally {
+      if (ctx) {
+        try { await ctx.close(); } catch { /* ignore close errors */ }
+      }
+    }
   }
-  
-  /**
-   * Closes the browser session and cleans up resources.
-   */
-  static async closeSession(context: any): Promise<void> {
-    console.log(`[V7Browser] Closing browser session`);
-    // In production: await context.close();
+
+  // ── ChatGPT session ─────────────────────────────────────────────────────────
+
+  private static async _runChatGPTSession(
+    page: any,
+    query: string,
+    followUps: string[]
+  ): Promise<string> {
+    await page.goto("https://chat.openai.com/", { waitUntil: "domcontentloaded", timeout: 60000 });
+
+    // Wait for the prompt textarea to be ready
+    await page.waitForSelector('textarea[placeholder], div[contenteditable="true"]', { timeout: 30000 });
+
+    // Type the initial query
+    await V7BrowserWorker._typeIntoChat(page, query);
+
+    // Read the response
+    let response = await V7BrowserWorker._waitForChatGPTResponse(page);
+
+    // Submit follow-up arguments (debate turns)
+    for (const arg of followUps) {
+      await page.waitForTimeout(2000 + Math.random() * 2000);
+      await V7BrowserWorker._typeIntoChat(page, arg);
+      response = await V7BrowserWorker._waitForChatGPTResponse(page);
+    }
+
+    return response;
+  }
+
+  private static async _typeIntoChat(page: any, text: string): Promise<void> {
+    // Try the textarea first, then contenteditable div
+    const input = await page.$('textarea[placeholder]') ?? await page.$('div[contenteditable="true"]');
+    if (!input) throw new Error("Could not find chat input");
+    await input.click();
+    await input.fill(text);
+    await page.keyboard.press("Enter");
+  }
+
+  private static async _waitForChatGPTResponse(page: any): Promise<string> {
+    // Wait for the stop-generating button to disappear (generation complete)
+    try {
+      await page.waitForSelector('[data-testid="stop-button"]', { timeout: 10000 });
+      await page.waitForSelector('[data-testid="stop-button"]', { state: "hidden", timeout: 120000 });
+    } catch {
+      // If stop button never appeared, just wait a bit
+      await page.waitForTimeout(5000);
+    }
+
+    // Extract the last assistant message
+    const messages = await page.$$eval(
+      '[data-message-author-role="assistant"]',
+      (els: Element[]) => els.map(el => el.textContent ?? "")
+    );
+    return messages[messages.length - 1] ?? "";
+  }
+
+  // ── Gemini session ──────────────────────────────────────────────────────────
+
+  private static async _runGeminiSession(
+    page: any,
+    query: string,
+    followUps: string[]
+  ): Promise<string> {
+    await page.goto("https://gemini.google.com/", { waitUntil: "domcontentloaded", timeout: 60000 });
+
+    // Wait for the input area
+    await page.waitForSelector('rich-textarea, textarea[aria-label]', { timeout: 30000 });
+
+    await V7BrowserWorker._typeIntoGemini(page, query);
+    let response = await V7BrowserWorker._waitForGeminiResponse(page);
+
+    for (const arg of followUps) {
+      await page.waitForTimeout(2000 + Math.random() * 2000);
+      await V7BrowserWorker._typeIntoGemini(page, arg);
+      response = await V7BrowserWorker._waitForGeminiResponse(page);
+    }
+
+    return response;
+  }
+
+  private static async _typeIntoGemini(page: any, text: string): Promise<void> {
+    const input = await page.$('rich-textarea') ?? await page.$('textarea[aria-label]');
+    if (!input) throw new Error("Could not find Gemini input");
+    await input.click();
+    await input.fill(text);
+    await page.keyboard.press("Enter");
+  }
+
+  private static async _waitForGeminiResponse(page: any): Promise<string> {
+    // Wait for the loading indicator to disappear
+    try {
+      await page.waitForSelector('.loading-indicator, [aria-label="Stop generating"]', { timeout: 10000 });
+      await page.waitForSelector('.loading-indicator, [aria-label="Stop generating"]', { state: "hidden", timeout: 120000 });
+    } catch {
+      await page.waitForTimeout(5000);
+    }
+
+    // Extract the last model response
+    const messages = await page.$$eval(
+      'model-response, .model-response-text',
+      (els: Element[]) => els.map(el => el.textContent ?? "")
+    );
+    return messages[messages.length - 1] ?? "";
   }
 }
