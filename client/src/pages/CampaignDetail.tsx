@@ -492,7 +492,7 @@ export default function CampaignDetail() {
               <Select
                 value={((campaign as any).trainingVersion ?? 'v3').toLowerCase()}
                 onValueChange={(v) => {
-                  updateCampaignMutation.mutate({ id: campaignId, trainingVersion: v as 'v3' | 'v4' | 'v5' });
+                  updateCampaignMutation.mutate({ id: campaignId, trainingVersion: v as 'v3' | 'v4' | 'v5' | 'v6' | 'v7' });
                 }}
               >
                 <SelectTrigger className="h-7 w-16 text-xs border-0 bg-transparent p-0 focus:ring-0">
@@ -502,6 +502,8 @@ export default function CampaignDetail() {
                   <SelectItem value="v3">V3</SelectItem>
                   <SelectItem value="v4">V4</SelectItem>
                   <SelectItem value="v5">V5</SelectItem>
+                  <SelectItem value="v6">V6</SelectItem>
+                  <SelectItem value="v7">V7 🧠</SelectItem>
                 </SelectContent>
               </Select>
             </div>

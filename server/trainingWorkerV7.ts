@@ -324,3 +324,63 @@ async function updatePhraseStatus(queryId: number, provider: string, win: boolea
   // Implementation mirrors V6 phrase status updating
   // (incrementing consecutive wins, graduating phrases, etc.)
 }
+
+/**
+ * runTrainingDay — V7 entry point matching the V3/V4/V5/V6 scheduler interface.
+ * 
+ * Fetches all active training queries for the campaign and runs a V7 debate
+ * iteration for each one against both ChatGPT and Gemini.
+ */
+export async function runTrainingDay(
+  campaignId: number,
+  dayRunId: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  console.log(`[TrainingV7] Starting training day for campaign ${campaignId}, dayRun ${dayRunId}`);
+
+  // Mark the day run as running
+  await db.update(trainingDayRuns)
+    .set({ status: "running" } as any)
+    .where(eq(trainingDayRuns.id, dayRunId));
+
+  // Get all active training queries for this campaign
+  const queries = await db.select()
+    .from(trainingQueries)
+    .where(eq(trainingQueries.campaignId, campaignId));
+
+  if (queries.length === 0) {
+    console.warn(`[TrainingV7] No training queries found for campaign ${campaignId}`);
+    await db.update(trainingDayRuns)
+      .set({ status: "completed", completedAt: new Date() })
+      .where(eq(trainingDayRuns.id, dayRunId));
+    return;
+  }
+
+  let sessionsCompleted = 0;
+  const providers: Array<"chatgpt" | "gemini"> = ["chatgpt", "gemini"];
+
+  for (const query of queries) {
+    for (const provider of providers) {
+      try {
+        await runV7DebateIteration(campaignId, dayRunId, query.id, provider);
+        sessionsCompleted++;
+      } catch (err) {
+        console.error(`[TrainingV7] Error running debate for query ${query.id} on ${provider}:`, err);
+      }
+    }
+  }
+
+  // Mark the day run as completed
+  await db.update(trainingDayRuns)
+    .set({
+      status: "completed",
+      completedAt: new Date(),
+      sessionsCompleted,
+      sessionsTotal: queries.length * providers.length,
+    } as any)
+    .where(eq(trainingDayRuns.id, dayRunId));
+
+  console.log(`[TrainingV7] Completed training day for campaign ${campaignId} — ${sessionsCompleted} sessions`);
+}

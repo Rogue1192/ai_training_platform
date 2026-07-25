@@ -129,7 +129,24 @@ export const v7AccountRouter = router({
     }),
   
   // ── Session Logs ─────────────────────────────────────────────────────────────
-  
+
+  listSessionLogs: publicProcedure
+    .input(z.object({ limit: z.number().default(20) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      const logs = await db.select({
+        id: v7SessionLogs.id,
+        provider: v7SessionLogs.targetProvider,
+        query: v7SessionLogs.phraseText,
+        success: v7SessionLogs.sessionWin,
+        createdAt: v7SessionLogs.createdAt,
+      })
+        .from(v7SessionLogs)
+        .orderBy(desc(v7SessionLogs.createdAt))
+        .limit(input.limit);
+      return logs;
+    }),
+
   getSessionLogs: publicProcedure
     .input(z.object({
       campaignId: z.number(),

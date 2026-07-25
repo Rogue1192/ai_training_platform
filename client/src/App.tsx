@@ -32,6 +32,7 @@ import AuditHistory from "./pages/AuditHistory";
 import PublicAuditReport from "./pages/PublicAuditReport";
 import AuditOverageSuccess from "./pages/AuditOverageSuccess";
 import AuditWidget from "./pages/AuditWidget";
+import V7Accounts from "./pages/V7Accounts";
 // ── CTR Module pages ──────────────────────────────────────────────────────────
 import CtrDashboard from "./pages/ctr/CtrDashboard";
 import CtrCampaigns from "./pages/ctr/CtrCampaigns";
@@ -58,6 +59,7 @@ import {
   FileBarChart,
   MousePointerClick,
   Navigation,
+  BrainCircuit,
 } from "lucide-react";
 
 // CTR Module navigation items
@@ -86,6 +88,7 @@ const adminNavigationItems = [
   { href: "/cost-tracking", label: "Cost Tracking", icon: DollarSign },
   { href: "/prospect-audit", label: "AI Visibility Audit", icon: FileBarChart, openInNewWindow: true },
   { href: "/audit-history", label: "Audit History", icon: BarChart3 },
+  { href: "/v7-accounts", label: "V7 Accounts", icon: BrainCircuit },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -228,6 +231,11 @@ function Router() {
       <Route path="/cost-tracking">
         <DashboardLayout navigationItems={navItems}>
           <CostTracking />
+        </DashboardLayout>
+      </Route>
+      <Route path="/v7-accounts">
+        <DashboardLayout navigationItems={navItems}>
+          <V7Accounts />
         </DashboardLayout>
       </Route>
 
