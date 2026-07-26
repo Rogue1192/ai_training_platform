@@ -85,9 +85,13 @@ Return ONLY a JSON array of ${BONUS_QUERIES_PER_TRACKED} query strings, no expla
     if (!Array.isArray(queries)) return [];
 
     // Filter out any that are already tracked (case-insensitive)
+    // Also reject any query that contains the business name — those are brand queries
+    // that will always return a mention and are not valid competitive visibility signals.
+    const businessNameLower = businessName.toLowerCase();
     return queries
       .filter((q) => typeof q === "string" && q.length > 5)
       .filter((q) => !alreadyTrackedQueries.has(q.toLowerCase().trim()))
+      .filter((q) => !q.toLowerCase().includes(businessNameLower))
       .slice(0, BONUS_QUERIES_PER_TRACKED);
   } catch (err) {
     console.error("[BonusScanner] Failed to generate adjacent queries:", err);
