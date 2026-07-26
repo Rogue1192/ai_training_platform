@@ -37,7 +37,7 @@ export const v7AccountRouter = router({
   
   addAccount: publicProcedure
     .input(z.object({
-      provider: z.enum(["chatgpt", "gemini"]),
+      provider: z.enum(["chatgpt", "gemini", "google_ai_mode"]),
       email: z.string().email(),
       password: z.string().min(8),
       proxyId: z.number().optional(),
@@ -181,6 +181,12 @@ export const v7AccountRouter = router({
         active: accounts.filter(a => a.provider === "gemini" && a.status === "active").length,
         warming: accounts.filter(a => a.provider === "gemini" && a.status === "warming").length,
         flagged: accounts.filter(a => a.provider === "gemini" && a.status === "flagged").length,
+      },
+      google_ai_mode: {
+        total: accounts.filter(a => a.provider === "google_ai_mode").length,
+        active: accounts.filter(a => a.provider === "google_ai_mode" && a.status === "active").length,
+        warming: accounts.filter(a => a.provider === "google_ai_mode" && a.status === "warming").length,
+        flagged: accounts.filter(a => a.provider === "google_ai_mode" && a.status === "flagged").length,
       },
       proxies: {
         total: proxies.length,

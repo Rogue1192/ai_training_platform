@@ -206,9 +206,9 @@ function AddProfileModal({
 }) {
   const [name, setName] = useState("");
   const [cloakProfileId, setCloakProfileId] = useState("");
-  const [proxyCredId, setProxyCredId] = useState<string>("");
-  const [chatgptCredId, setChatgptCredId] = useState<string>("");
-  const [googleCredId, setGoogleCredId] = useState<string>("");
+  const [proxyCredId, setProxyCredId] = useState<string>("__none__");
+  const [chatgptCredId, setChatgptCredId] = useState<string>("__none__");
+  const [googleCredId, setGoogleCredId] = useState<string>("__none__");
   const [timezone, setTimezone] = useState("America/New_York");
   const [notes, setNotes] = useState("");
 
@@ -227,9 +227,9 @@ function AddProfileModal({
       pool,
       name,
       cloakProfileId: cloakProfileId || undefined,
-      proxyCredentialId: proxyCredId ? parseInt(proxyCredId) : undefined,
-      chatgptCredentialId: chatgptCredId ? parseInt(chatgptCredId) : undefined,
-      googleCredentialId: googleCredId ? parseInt(googleCredId) : undefined,
+      proxyCredentialId: (proxyCredId && proxyCredId !== "__none__") ? parseInt(proxyCredId) : undefined,
+      chatgptCredentialId: (chatgptCredId && chatgptCredId !== "__none__") ? parseInt(chatgptCredId) : undefined,
+      googleCredentialId: (googleCredId && googleCredId !== "__none__") ? parseInt(googleCredId) : undefined,
       timezone,
       notes,
     });
@@ -256,7 +256,7 @@ function AddProfileModal({
             <Select value={proxyCredId} onValueChange={setProxyCredId}>
               <SelectTrigger><SelectValue placeholder="Select a proxy..." /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No proxy</SelectItem>
+                <SelectItem value="__none__">No proxy</SelectItem>
                 {proxies.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.label}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -267,7 +267,7 @@ function AddProfileModal({
               <Select value={chatgptCredId} onValueChange={setChatgptCredId}>
                 <SelectTrigger><SelectValue placeholder="Select ChatGPT account..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="__none__">None</SelectItem>
                   {chatgptAccounts.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.label}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -278,7 +278,7 @@ function AddProfileModal({
             <Select value={googleCredId} onValueChange={setGoogleCredId}>
               <SelectTrigger><SelectValue placeholder="Select Google account..." /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="__none__">None</SelectItem>
                 {googleAccounts.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.label}</SelectItem>)}
               </SelectContent>
             </Select>

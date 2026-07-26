@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -11,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   Plus, Trash2, RefreshCw, Bot, Globe, Shield, AlertTriangle,
-  CheckCircle2, Clock, Ban, Wifi, WifiOff
+  CheckCircle2, Clock, Ban, Wifi, WifiOff, Sparkles
 } from "lucide-react";
 
 // ── Status badge helpers ──────────────────────────────────────────────────────
@@ -35,11 +34,13 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Add Account Modal ─────────────────────────────────────────────────────────
 
+type ProviderType = "chatgpt" | "gemini" | "google_ai_mode";
+
 function AddAccountModal({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void }) {
-  const [provider, setProvider] = useState<"chatgpt" | "gemini">("chatgpt");
+  const [provider, setProvider] = useState<ProviderType>("chatgpt");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [proxyId, setProxyId] = useState<string>("");
+  const [proxyId, setProxyId] = useState<string>("__none__");
   const [notes, setNotes] = useState("");
 
   const { data: proxies } = trpc.v7Accounts.listProxies.useQuery();
@@ -54,7 +55,7 @@ function AddAccountModal({ open, onClose, onSuccess }: { open: boolean; onClose:
       provider,
       email,
       password,
-      proxyId: proxyId ? parseInt(proxyId) : undefined,
+      proxyId: (proxyId && proxyId !== "__none__") ? parseInt(proxyId) : undefined,
       notes: notes || undefined,
     });
   };
@@ -68,11 +69,12 @@ function AddAccountModal({ open, onClose, onSuccess }: { open: boolean; onClose:
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label>Platform</Label>
-            <Select value={provider} onValueChange={(v) => setProvider(v as any)}>
+            <Select value={provider} onValueChange={(v) => setProvider(v as ProviderType)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="chatgpt">ChatGPT</SelectItem>
                 <SelectItem value="gemini">Google / Gemini</SelectItem>
+                <SelectItem value="google_ai_mode">Google AI Mode</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -90,7 +92,7 @@ function AddAccountModal({ open, onClose, onSuccess }: { open: boolean; onClose:
             <Select value={proxyId} onValueChange={setProxyId}>
               <SelectTrigger><SelectValue placeholder="No proxy assigned" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No proxy</SelectItem>
+                <SelectItem value="__none__">No proxy</SelectItem>
                 {(proxies ?? []).map((p: any) => (
                   <SelectItem key={p.id} value={String(p.id)}>
                     {p.city}, {p.state} — {p.provider}
@@ -161,6 +163,50 @@ function AddProxyModal({ open, onClose, onSuccess }: { open: boolean; onClose: (
   );
 }
 
+// ── Account Card ──────────────────────────────────────────────────────────────
+
+function AccountCard({ account, updateStatusMutation, deleteAccountMutation }: {
+  account: any;
+  updateStatusMutation: any;
+  deleteAccountMutation: any;
+}) {
+  return (
+    <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-card/50">
+      <div className="flex items-center gap-3">
+        <StatusBadge status={account.status} />
+        <div>
+          <p className="text-sm font-medium">{account.email}</p>
+          <p className="text-xs text-muted-foreground">
+            {account.totalSessionsRun ?? 0} sessions · {account.consecutiveErrors ?? 0} consecutive errors
+            {account.lastUsedAt ? ` · Last used ${new Date(account.lastUsedAt).toLocaleDateString()}` : ""}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Select
+          value={account.status}
+          onValueChange={(v) => updateStatusMutation.mutate({ id: account.id, status: v as any })}
+        >
+          <SelectTrigger className="h-7 w-28 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(STATUS_CONFIG).map(([val, cfg]) => (
+              <SelectItem key={val} value={val}>{(cfg as any).label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
+          onClick={() => { if (confirm("Remove this account?")) deleteAccountMutation.mutate({ id: account.id }); }}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function V7Accounts() {
@@ -186,9 +232,37 @@ export default function V7Accounts() {
 
   const chatgptAccounts = (accounts ?? []).filter((a: any) => a.provider === "chatgpt");
   const geminiAccounts = (accounts ?? []).filter((a: any) => a.provider === "gemini");
+  const googleAiModeAccounts = (accounts ?? []).filter((a: any) => a.provider === "google_ai_mode");
 
   const activeCount = (accounts ?? []).filter((a: any) => a.status === "active").length;
   const flaggedCount = (accounts ?? []).filter((a: any) => a.status === "flagged").length;
+
+  const accountSections = [
+    {
+      title: "ChatGPT Accounts",
+      description: `${chatgptAccounts.length} account${chatgptAccounts.length !== 1 ? "s" : ""} — used for ChatGPT training sessions`,
+      icon: <Bot className="w-4 h-4" />,
+      accounts: chatgptAccounts,
+      emptyText: "No ChatGPT accounts yet",
+      emptySubtext: "Add accounts to enable V7 ChatGPT training sessions",
+    },
+    {
+      title: "Google / Gemini Accounts",
+      description: `${geminiAccounts.length} account${geminiAccounts.length !== 1 ? "s" : ""} — used for Gemini training sessions`,
+      icon: <Shield className="w-4 h-4" />,
+      accounts: geminiAccounts,
+      emptyText: "No Gemini accounts yet",
+      emptySubtext: "Add Google accounts to enable Gemini training sessions",
+    },
+    {
+      title: "Google AI Mode Accounts",
+      description: `${googleAiModeAccounts.length} account${googleAiModeAccounts.length !== 1 ? "s" : ""} — used for Google AI Mode training & CTR sessions`,
+      icon: <Sparkles className="w-4 h-4" />,
+      accounts: googleAiModeAccounts,
+      emptyText: "No Google AI Mode accounts yet",
+      emptySubtext: "Add Google accounts to enable AI Mode training and CTR sessions",
+    },
+  ];
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
@@ -197,7 +271,7 @@ export default function V7Accounts() {
         <div>
           <h1 className="text-2xl font-bold">V7 Browser Accounts</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Manage ChatGPT and Gemini accounts used for V7 browser-based AI training sessions.
+            Manage ChatGPT, Gemini, and Google AI Mode accounts used for V7 browser-based training sessions.
           </p>
         </div>
         <div className="flex gap-2">
@@ -245,125 +319,43 @@ export default function V7Accounts() {
         </div>
       </div>
 
-      {/* ChatGPT Accounts */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Bot className="w-4 h-4" /> ChatGPT Accounts
-              </CardTitle>
-              <CardDescription className="text-xs mt-0.5">{chatgptAccounts.length} account{chatgptAccounts.length !== 1 ? "s" : ""}</CardDescription>
+      {/* Account sections */}
+      {accountSections.map((section) => (
+        <Card key={section.title}>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  {section.icon} {section.title}
+                </CardTitle>
+                <CardDescription className="text-xs mt-0.5">{section.description}</CardDescription>
+              </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loadingAccounts ? (
-            <p className="text-sm text-muted-foreground">Loading...</p>
-          ) : chatgptAccounts.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Bot className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No ChatGPT accounts yet</p>
-              <p className="text-xs mt-1">Add accounts to enable V7 ChatGPT training sessions</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {chatgptAccounts.map((account: any) => (
-                <div key={account.id} className="flex items-center justify-between p-3 rounded-lg border border-border bg-card/50">
-                  <div className="flex items-center gap-3">
-                    <StatusBadge status={account.status} />
-                    <div>
-                      <p className="text-sm font-medium">{account.email}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {account.totalSessionsRun ?? 0} sessions · {account.consecutiveErrors ?? 0} consecutive errors
-                        {account.lastUsedAt ? ` · Last used ${new Date(account.lastUsedAt).toLocaleDateString()}` : ""}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Select
-                      value={account.status}
-                      onValueChange={(v) => updateStatusMutation.mutate({ id: account.id, status: v as any })}
-                    >
-                      <SelectTrigger className="h-7 w-28 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(STATUS_CONFIG).map(([val, cfg]) => (
-                          <SelectItem key={val} value={val}>{cfg.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => { if (confirm("Remove this account?")) deleteAccountMutation.mutate({ id: account.id }); }}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Gemini Accounts */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Shield className="w-4 h-4" /> Google / Gemini Accounts
-          </CardTitle>
-          <CardDescription className="text-xs">{geminiAccounts.length} account{geminiAccounts.length !== 1 ? "s" : ""} — also used for AI Overview training</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {geminiAccounts.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Shield className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No Google/Gemini accounts yet</p>
-              <p className="text-xs mt-1">Add Google accounts to enable Gemini and AI Overview training</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {geminiAccounts.map((account: any) => (
-                <div key={account.id} className="flex items-center justify-between p-3 rounded-lg border border-border bg-card/50">
-                  <div className="flex items-center gap-3">
-                    <StatusBadge status={account.status} />
-                    <div>
-                      <p className="text-sm font-medium">{account.email}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {account.totalSessionsRun ?? 0} sessions · {account.consecutiveErrors ?? 0} consecutive errors
-                        {account.lastUsedAt ? ` · Last used ${new Date(account.lastUsedAt).toLocaleDateString()}` : ""}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Select
-                      value={account.status}
-                      onValueChange={(v) => updateStatusMutation.mutate({ id: account.id, status: v as any })}
-                    >
-                      <SelectTrigger className="h-7 w-28 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(STATUS_CONFIG).map(([val, cfg]) => (
-                          <SelectItem key={val} value={val}>{cfg.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => { if (confirm("Remove this account?")) deleteAccountMutation.mutate({ id: account.id }); }}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            {loadingAccounts ? (
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            ) : section.accounts.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <div className="w-8 h-8 mx-auto mb-2 opacity-30 flex items-center justify-center">{section.icon}</div>
+                <p className="text-sm">{section.emptyText}</p>
+                <p className="text-xs mt-1">{section.emptySubtext}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {section.accounts.map((account: any) => (
+                  <AccountCard
+                    key={account.id}
+                    account={account}
+                    updateStatusMutation={updateStatusMutation}
+                    deleteAccountMutation={deleteAccountMutation}
+                  />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
 
       {/* Proxies */}
       <Card>
