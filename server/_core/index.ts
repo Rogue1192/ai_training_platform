@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import { createProxyMiddleware } from "http-proxy-middleware";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 import { appRouter, llmInsightsRouter, agencyRouter } from "../routers";
@@ -77,6 +78,55 @@ async function startServer() {
 
   // Webhook routes (must be before tRPC to avoid conflicts)
   app.use(createWebhookRouter());
+
+  // ── noVNC proxy ──────────────────────────────────────────────────────────────────────────────────
+  // Each CloakBrowser login session runs on a unique virtual display.
+  // noVNC websockify listens on localhost:6080+displayNum.
+  // Since Railway only exposes one port, we proxy /novnc-proxy/:displayNum/* here.
+  //
+  // Route: /novnc-proxy/:displayNum/websockify  → ws://localhost:(6080+displayNum)
+  // Route: /novnc-proxy/:displayNum/*           → http://localhost:(6080+displayNum)/*
+  app.use("/novnc-proxy/:displayNum", (req, res, next) => {
+    const displayNum = parseInt(req.params.displayNum, 10);
+    if (isNaN(displayNum) || displayNum < 10 || displayNum > 200) {
+      res.status(400).send("Invalid display number");
+      return;
+    }
+    const targetPort = 6080 + displayNum;
+    const proxy = createProxyMiddleware({
+      target: `http://localhost:${targetPort}`,
+      changeOrigin: true,
+      ws: true,
+      pathRewrite: { [`^/novnc-proxy/${displayNum}`]: "" },
+      on: {
+        error: (err: any, _req: any, res: any) => {
+          if (res && typeof (res as any).status === "function") {
+            (res as any).status(502).send("noVNC session not ready — try again in a moment");
+          }
+        },
+      },
+    });
+    (proxy as any)(req, res, next);
+  });
+
+  // WebSocket upgrade for noVNC (must be wired to the http.Server, not express app)
+  // We do this after server.listen so the server object is available.
+  // Stored for later attachment.
+  const novncWsUpgradeHandler = (req: any, socket: any, head: any) => {
+    const match = req.url?.match(/^\/novnc-proxy\/(\d+)\//);
+    if (!match) return;
+    const displayNum = parseInt(match[1], 10);
+    if (isNaN(displayNum) || displayNum < 10 || displayNum > 200) { socket.destroy(); return; }
+    const targetPort = 6080 + displayNum;
+    const proxy = createProxyMiddleware({
+      target: `http://localhost:${targetPort}`,
+      changeOrigin: true,
+      ws: true,
+      pathRewrite: { [`^/novnc-proxy/${displayNum}`]: "" },
+    });
+    (proxy as any).upgrade(req, socket, head);
+  };
+  server.on("upgrade", novncWsUpgradeHandler);
 
   // ── Audit widget embed script ──────────────────────────────────────────────
   // Served at /embed/audit-widget.js

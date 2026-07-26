@@ -15,13 +15,17 @@ nixPkgs = [
   "xorg.libXfixes",
   "xorg.libXrandr",
   "xorg.libxcb",
+  "xorg.xvfb",
   "mesa",
   "expat",
   "libxkbcommon",
   "alsa-lib",
   "pango",
   "cairo",
-  "glib"
+  "glib",
+  "x11vnc",
+  "novnc",
+  "bash"
 ]
 
 [phases.install]
@@ -34,4 +38,4 @@ cmds = [
 cmds = ["pnpm build"]
 
 [start]
-cmd = "pnpm start"
+cmd = "bash scripts/start.sh"

@@ -267,7 +267,7 @@ export const ctrSettingsRouter = router({
       return { ok: true };
     }),
 
-  deleteProfile: protectedProcedure
+    deleteProfile: protectedProcedure
     .input(z.object({ pool: z.enum(["ai", "ctr"]), id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -280,4 +280,112 @@ export const ctrSettingsRouter = router({
       return { ok: true };
     }),
 
+  // ── noVNC Profile Login Session ───────────────────────────────────────────
+
+  launchProfileSession: protectedProcedure
+    .input(z.object({ profileId: z.string() }))
+    .mutation(async ({ input }) => {
+      const { spawn } = await import("child_process");
+      const path = await import("path");
+      const fs = await import("fs");
+
+      const profilesDir = process.env.CLOAK_PROFILES_DIR ?? "/data/cloakprofiles";
+      const profileDir = path.join(profilesDir, `profile_${input.profileId}`);
+      if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
+
+      // Pick a free display number based on profile ID hash
+      const displayNum = 10 + (parseInt(input.profileId.replace(/\D/g, "").slice(0, 4) || "0") % 50);
+      const vncPort = 5900 + displayNum;
+      const novncPort = 6080 + displayNum;
+
+      // Kill any existing session for this profile
+      spawn("pkill", ["-f", `Xvfb :${displayNum}`], { stdio: "ignore" });
+      spawn("pkill", ["-f", `x11vnc.*:${vncPort}`], { stdio: "ignore" });
+      spawn("pkill", ["-f", `websockify.*${novncPort}`], { stdio: "ignore" });
+
+      await new Promise(r => setTimeout(r, 500));
+
+      // Start Xvfb virtual display
+      const xvfb = spawn("Xvfb", [`:${displayNum}`, "-screen", "0", "1280x800x24"], {
+        stdio: "ignore",
+        detached: true,
+      });
+      xvfb.unref();
+
+      await new Promise(r => setTimeout(r, 800));
+
+      // Start x11vnc VNC server on that display
+      const vnc = spawn("x11vnc", [
+        "-display", `:${displayNum}`,
+        "-rfbport", String(vncPort),
+        "-nopw", "-forever", "-shared", "-bg",
+        "-noxdamage", "-quiet",
+      ], { stdio: "ignore", detached: true });
+      vnc.unref();
+
+      await new Promise(r => setTimeout(r, 500));
+
+      // Start noVNC websockify proxy
+      // NOVNC_WEB_DIR is resolved by start.sh at boot (handles Nix store paths)
+      const novncWebDir = process.env.NOVNC_WEB_DIR ?? "/usr/share/novnc";
+      const novnc = spawn("websockify", [
+        "--web", novncWebDir,
+        String(novncPort),
+        `localhost:${vncPort}`,
+      ], { stdio: "ignore", detached: true });
+      novnc.unref();
+
+      await new Promise(r => setTimeout(r, 800));
+
+      // Launch CloakBrowser on this display
+      const licenseKey = process.env.CLOAKBROWSER_LICENSE_KEY ?? "";
+      const launchScript = `
+const { launch } = require('cloakbrowser');
+(async () => {
+  const browser = await launch({
+    licenseKey: '${licenseKey}',
+    headless: false,
+    humanize: true,
+    humanPreset: 'careful',
+    geoip: false,
+    userDataDir: '${profileDir}',
+    env: { DISPLAY: ':${displayNum}' },
+  });
+  const page = await browser.newPage();
+  await page.goto('https://accounts.google.com');
+  // Keep alive until killed externally
+  await new Promise(() => {});
+})();
+`;
+      const scriptPath = path.join(profileDir, "login_session.js");
+      fs.writeFileSync(scriptPath, launchScript);
+
+      const browser = spawn("node", [scriptPath], {
+        stdio: "ignore",
+        detached: true,
+        env: { ...process.env, DISPLAY: `:${displayNum}` },
+      });
+      browser.unref();
+
+      // Build the noVNC URL — served through the same origin via /novnc-proxy path
+      const novncUrl = `/novnc-proxy/${displayNum}/vnc.html?host=${encodeURIComponent(process.env.RAILWAY_PUBLIC_DOMAIN ?? "localhost")}&port=443&path=novnc-proxy/${displayNum}/websockify&encrypt=1&autoconnect=1&resize=scale`;
+
+      return { novncUrl, displayNum, vncPort, novncPort };
+    }),
+
+  closeProfileSession: protectedProcedure
+    .input(z.object({ profileId: z.string() }))
+    .mutation(async ({ input }) => {
+      const { spawn } = await import("child_process");
+      const displayNum = 10 + (parseInt(input.profileId.replace(/\D/g, "").slice(0, 4) || "0") % 50);
+      const vncPort = 5900 + displayNum;
+      const novncPort = 6080 + displayNum;
+
+      spawn("pkill", ["-f", `login_session.*${input.profileId}`], { stdio: "ignore" });
+      spawn("pkill", ["-f", `Xvfb :${displayNum}`], { stdio: "ignore" });
+      spawn("pkill", ["-f", `x11vnc.*:${vncPort}`], { stdio: "ignore" });
+      spawn("pkill", ["-f", `websockify.*${novncPort}`], { stdio: "ignore" });
+
+      return { ok: true };
+    }),
 });

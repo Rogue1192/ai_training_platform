@@ -46,8 +46,12 @@ import {
   User,
   Monitor,
   Chrome,
+  LogIn,
+  X,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRef, useEffect, useCallback } from "react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -306,7 +310,81 @@ function AddProfileModal({
 
 // ── Profile Card ─────────────────────────────────────────────────────────────
 
+// ── noVNC Login Modal ───────────────────────────────────────────────────────
+function NoVncLoginModal({ profileId, profileName, onClose }: { profileId: string; profileName: string; onClose: () => void }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [launching, setLaunching] = useState(true);
+  const [novncUrl, setNovncUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const launchSession = trpc.ctrSettings.launchProfileSession.useMutation({
+    onSuccess: (data: any) => {
+      setNovncUrl(data.novncUrl);
+      setLaunching(false);
+    },
+    onError: (e: any) => {
+      setError(e.message);
+      setLaunching(false);
+    },
+  });
+
+  const closeSession = trpc.ctrSettings.closeProfileSession.useMutation({
+    onSuccess: () => onClose(),
+    onError: () => onClose(),
+  });
+
+  useEffect(() => {
+    launchSession.mutate({ profileId });
+    return () => { closeSession.mutate({ profileId }); };
+  }, [profileId]);
+
+  return (
+    <Dialog open onOpenChange={() => { closeSession.mutate({ profileId }); }}>
+      <DialogContent className="max-w-5xl w-full p-0 overflow-hidden">
+        <DialogHeader className="px-4 py-3 border-b flex-row items-center justify-between">
+          <DialogTitle className="text-sm font-medium flex items-center gap-2">
+            <Monitor className="h-4 w-4" />
+            Login Session — {profileName}
+          </DialogTitle>
+          <p className="text-xs text-muted-foreground">Log into Google, ChatGPT, or Gemini. Session is saved automatically when you close.</p>
+        </DialogHeader>
+        <div className="relative bg-black" style={{ height: "600px" }}>
+          {launching && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <p className="text-sm">Launching browser profile...</p>
+            </div>
+          )}
+          {error && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+              <XCircle className="h-8 w-8 text-destructive" />
+              <p className="text-sm text-destructive">{error}</p>
+              <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+            </div>
+          )}
+          {novncUrl && (
+            <iframe
+              ref={iframeRef}
+              src={novncUrl}
+              className="w-full h-full border-0"
+              allow="clipboard-read; clipboard-write"
+              title="CloakBrowser Profile Session"
+            />
+          )}
+        </div>
+        <div className="px-4 py-3 border-t flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">Cookies and session data are saved to the persistent volume automatically.</p>
+          <Button size="sm" onClick={() => closeSession.mutate({ profileId })}>Save &amp; Close</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Profile Card ─────────────────────────────────────────────────────────────
 function ProfileCard({ profile, pool, credentials, onDeleted }: { profile: any; pool: "ai" | "ctr"; credentials: any[]; onDeleted: () => void }) {
+  const [loginSessionOpen, setLoginSessionOpen] = useState(false);
+
   const deleteProfile = trpc.ctrSettings.deleteProfile.useMutation({
     onSuccess: () => { toast.success("Profile deleted"); onDeleted(); },
     onError: (e) => toast.error(e.message),
@@ -360,12 +438,29 @@ function ProfileCard({ profile, pool, credentials, onDeleted }: { profile: any; 
               </div>
             </div>
           </div>
-          <button
-            onClick={() => deleteProfile.mutate({ pool, id: profile.id })}
-            className="text-muted-foreground hover:text-destructive transition-colors shrink-0 mt-0.5"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0 mt-0.5">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs"
+              onClick={() => setLoginSessionOpen(true)}
+            >
+              <LogIn className="h-3 w-3" /> Login
+            </Button>
+            <button
+              onClick={() => deleteProfile.mutate({ pool, id: profile.id })}
+              className="text-muted-foreground hover:text-destructive transition-colors"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+          {loginSessionOpen && (
+            <NoVncLoginModal
+              profileId={profile.id}
+              profileName={profile.name}
+              onClose={() => setLoginSessionOpen(false)}
+            />
+          )}
         </div>
       </CardContent>
     </Card>
