@@ -385,6 +385,27 @@ export async function submitCampaignForIndexing(params: {
   };
 }
 
-// verifyCampaignIndexing removed — indexing_verification step was cosmetic fluff
-// (HTTP HEAD checks only, not actual Google index checks). The pipeline now advances
-// directly from indexing to training via the checkPendingTrainingKickoffs scheduler job.
+/**
+ * verifyCampaignIndexing
+ *
+ * Returns a summary of indexing status for a campaign's published URLs.
+ * Since we don't store per-URL tracking IDs in the schema, this returns
+ * a lightweight summary from the campaign's published content pages.
+ */
+export async function verifyCampaignIndexing(campaignId: number): Promise<{
+  campaignId: number;
+  publishedUrlCount: number;
+  checkedAt: string;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const pages = await db
+    .select({ publishedUrl: contentPages.publishedUrl })
+    .from(contentPages)
+    .where(and(eq(contentPages.campaignId, campaignId), isNotNull(contentPages.publishedUrl)));
+  return {
+    campaignId,
+    publishedUrlCount: pages.length,
+    checkedAt: new Date().toISOString(),
+  };
+}

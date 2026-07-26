@@ -84,7 +84,8 @@ export class V7BrowserWorker {
         launchArgs.push("--fingerprint-allow-3p-cookies");
       }
 
-      ctx = await launchPersistentContext(profileDir, {
+      ctx = await launchPersistentContext({
+        userDataDir: profileDir,
         licenseKey,
         headless: false,           // headed — Google and ChatGPT detect headless
         humanize: true,

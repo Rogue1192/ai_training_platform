@@ -188,7 +188,7 @@ interface PollResult {
 
 async function pollCombo(
   ql: typeof campaignQueryLocations.$inferSelect,
-  business: { name: string; website?: string | null; phone?: string | null; agencyId?: number | null },
+  business: { name: string; website?: string | null; phone?: string | null; agencyId?: number | null; location?: string | null },
   campaignId: number,
   businessId: number,
   campaignCreatedAt: Date,

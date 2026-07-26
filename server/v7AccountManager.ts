@@ -19,15 +19,17 @@ export class V7AccountManager {
    * Gets the next available account for a specific provider (chatgpt or gemini).
    * Uses round-robin rotation based on lastUsedAt.
    */
-  static async getNextAccount(provider: "chatgpt" | "gemini"): Promise<AccountWithProxy | null> {
+  static async getNextAccount(provider: "chatgpt" | "gemini" | "google_ai_mode"): Promise<AccountWithProxy | null> {
     const db = await getDb();
-    
+    if (!db) return null;
+    // google_ai_mode uses the same Google accounts as gemini
+    const dbProvider: "chatgpt" | "gemini" = provider === "google_ai_mode" ? "gemini" : provider;
     // Find the least recently used active account for this provider
     const accounts = await db.select()
       .from(v7Accounts)
       .where(
         and(
-          eq(v7Accounts.provider, provider),
+          eq(v7Accounts.provider, dbProvider),
           eq(v7Accounts.status, "active")
         )
       )
@@ -61,7 +63,7 @@ export class V7AccountManager {
    */
   static async markAccountUsed(accountId: number, success: boolean): Promise<void> {
     const db = await getDb();
-    
+    if (!db) return;
     if (success) {
       await db.update(v7Accounts)
         .set({
@@ -73,7 +75,7 @@ export class V7AccountManager {
         .where(eq(v7Accounts.id, accountId));
     } else {
       // If error, increment consecutive errors. If it hits 3, flag the account.
-      const accounts = await db.select({ consecutiveErrors: v7Accounts.consecutiveErrors })
+      const accounts = await db!.select({ consecutiveErrors: v7Accounts.consecutiveErrors })
         .from(v7Accounts)
         .where(eq(v7Accounts.id, accountId))
         .limit(1);
@@ -100,6 +102,7 @@ export class V7AccountManager {
    */
   static async flagProxy(proxyId: number): Promise<void> {
     const db = await getDb();
+    if (!db) return;
     await db.update(v7Proxies)
       .set({
         status: "flagged",

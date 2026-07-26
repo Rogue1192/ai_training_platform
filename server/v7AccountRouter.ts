@@ -17,6 +17,7 @@ export const v7AccountRouter = router({
   
   listAccounts: publicProcedure.query(async () => {
     const db = await getDb();
+    if (!db) throw new Error("Database not available");
     const accounts = await db.select({
       id: v7Accounts.id,
       provider: v7Accounts.provider,
@@ -45,6 +46,7 @@ export const v7AccountRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
+      if (!db) throw new Error("Database not available");
       const encryptedPassword = encrypt(input.password);
       
       const [account] = await db.insert(v7Accounts).values({
@@ -66,6 +68,7 @@ export const v7AccountRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
+      if (!db) throw new Error("Database not available");
       await db.update(v7Accounts)
         .set({ status: input.status, updatedAt: new Date() })
         .where(eq(v7Accounts.id, input.id));
@@ -76,6 +79,7 @@ export const v7AccountRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
+      if (!db) throw new Error("Database not available");
       await db.delete(v7Accounts).where(eq(v7Accounts.id, input.id));
       return { success: true };
     }),
@@ -84,6 +88,7 @@ export const v7AccountRouter = router({
   
   listProxies: publicProcedure.query(async () => {
     const db = await getDb();
+    if (!db) throw new Error("Database not available");
     const proxies = await db.select({
       id: v7Proxies.id,
       city: v7Proxies.city,
@@ -108,6 +113,7 @@ export const v7AccountRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
+      if (!db) throw new Error("Database not available");
       const encryptedConnectionString = encrypt(input.connectionString);
       
       const [proxy] = await db.insert(v7Proxies).values({
@@ -124,6 +130,7 @@ export const v7AccountRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
+      if (!db) throw new Error("Database not available");
       await db.delete(v7Proxies).where(eq(v7Proxies.id, input.id));
       return { success: true };
     }),
@@ -134,6 +141,7 @@ export const v7AccountRouter = router({
     .input(z.object({ limit: z.number().default(20) }))
     .query(async ({ input }) => {
       const db = await getDb();
+      if (!db) throw new Error("Database not available");
       const logs = await db.select({
         id: v7SessionLogs.id,
         provider: v7SessionLogs.targetProvider,
@@ -154,6 +162,7 @@ export const v7AccountRouter = router({
     }))
     .query(async ({ input }) => {
       const db = await getDb();
+      if (!db) throw new Error("Database not available");
       const logs = await db.select()
         .from(v7SessionLogs)
         .where(eq(v7SessionLogs.campaignId, input.campaignId))
@@ -166,6 +175,7 @@ export const v7AccountRouter = router({
   
   getPoolSummary: publicProcedure.query(async () => {
     const db = await getDb();
+    if (!db) throw new Error("Database not available");
     const accounts = await db.select().from(v7Accounts);
     const proxies = await db.select().from(v7Proxies);
     

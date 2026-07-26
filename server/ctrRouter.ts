@@ -29,7 +29,7 @@ export const ctrRouter = router({
       GROUP BY c.id
       ORDER BY c."createdAt" DESC
     `);
-    return rows.rows as any[];
+    return rows as any[];
   }),
 
   getCampaign: protectedProcedure
@@ -43,15 +43,15 @@ export const ctrRouter = router({
         WHERE c.id = ${input.id} AND c."userId" = ${ctx.user.id}
         LIMIT 1
       `);
-      if (!rows.rows[0]) throw new Error("Campaign not found");
-      const campaign = rows.rows[0] as any;
+      if (!rows[0]) throw new Error("Campaign not found");
+      const campaign = rows[0] as any;
 
       const keywords = await db.execute(sql`
         SELECT * FROM ctr_keywords
         WHERE "campaignId" = ${input.id}
         ORDER BY "createdAt" ASC
       `);
-      return { ...campaign, keywords: keywords.rows };
+      return { ...campaign, keywords: Array.from(keywords) };
     }),
 
   createCampaign: protectedProcedure
@@ -88,7 +88,7 @@ export const ctrRouter = router({
         )
         RETURNING id
       `);
-      const campaignId = (campResult.rows[0] as any).id;
+      const campaignId = (campResult[0] as any).id;
 
       for (const kw of input.keywords) {
         await db.execute(sql`
@@ -209,7 +209,7 @@ export const ctrRouter = router({
           ORDER BY s."createdAt" DESC
           LIMIT ${input.limit}
         `);
-        return rows.rows as any[];
+        return rows as any[];
       }
       const rows = await db.execute(sql`
         SELECT s.* FROM ctr_sessions s
@@ -218,7 +218,7 @@ export const ctrRouter = router({
         ORDER BY s."createdAt" DESC
         LIMIT ${input.limit}
       `);
-      return rows.rows as any[];
+      return rows as any[];
     }),
 
   // ── Drive Journeys ─────────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ export const ctrRouter = router({
         ORDER BY j."createdAt" DESC
         LIMIT 50
       `);
-      return rows.rows as any[];
+      return rows as any[];
     }),
 
   createDriveJourney: protectedProcedure
@@ -255,7 +255,7 @@ export const ctrRouter = router({
       const camp = await db.execute(sql`
         SELECT id FROM ctr_campaigns WHERE id = ${input.campaignId} AND "userId" = ${ctx.user.id} LIMIT 1
       `);
-      if (!camp.rows[0]) throw new Error("Campaign not found");
+      if (!camp[0]) throw new Error("Campaign not found");
 
       const scheduledAt = input.scheduledFor ? new Date(input.scheduledFor).toISOString() : null;
       await db.execute(sql`
@@ -292,7 +292,7 @@ export const ctrRouter = router({
           ORDER BY r."weekStartDate" DESC
           LIMIT 20
         `);
-        return rows.rows as any[];
+        return rows as any[];
       }
       const rows = await db.execute(sql`
         SELECT r.* FROM ctr_ramp_snapshots r
@@ -301,7 +301,7 @@ export const ctrRouter = router({
         ORDER BY r."weekStartDate" DESC
         LIMIT 50
       `);
-      return rows.rows as any[];
+      return rows as any[];
     }),
 
 });

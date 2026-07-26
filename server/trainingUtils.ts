@@ -135,7 +135,7 @@ export async function runEndOfDayWebSearch(campaignId: number, dayRunId: number)
 
       for (const [provider, webMentioned] of Object.entries(providerMap)) {
         const statusRows = await db.select().from(trainingPhraseStatus)
-          .where(and(eq(trainingPhraseStatus.queryId, query.id), eq(trainingPhraseStatus.provider, provider as any)))
+          .where(and(eq(trainingPhraseStatus.queryId, query.id), eq(trainingPhraseStatus.targetAiProvider, provider)))
           .limit(1);
 
         if (statusRows.length > 0) {
@@ -143,7 +143,7 @@ export async function runEndOfDayWebSearch(campaignId: number, dayRunId: number)
           if (status.isGraduated && !webMentioned) {
             // Graduated in training but not confirmed in real search — revert
             await db.update(trainingPhraseStatus)
-              .set({ isGraduated: false, consecutiveWins: 0, updatedAt: new Date() } as any)
+              .set({ isGraduated: false, consecutiveWins: 0, updatedAt: new Date() })
               .where(eq(trainingPhraseStatus.id, status.id));
             console.log(`[TrainingUtils] Reverted graduation: "${query.phraseText}" on ${provider} — not in web search`);
             phrasesInRotation++;
@@ -154,7 +154,7 @@ export async function runEndOfDayWebSearch(campaignId: number, dayRunId: number)
                 consecutiveWins: webMentioned ? (status.consecutiveWins ?? 0) + 1 : 0,
                 isGraduated: nowGraduated,
                 updatedAt: new Date(),
-              } as any)
+              })
               .where(eq(trainingPhraseStatus.id, status.id));
             if (nowGraduated) {
               phrasesGraduated++;

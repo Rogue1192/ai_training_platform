@@ -109,6 +109,7 @@ export async function runV7DebateIteration(
   iterationIndex: number
 ): Promise<{ cleanProbeMentioned: boolean; totalTurns: number }> {
   const db = await getDb();
+  if (!db) throw new Error("Database not available");
 
   const campaignData = await db
     .select({ campaign: campaigns, business: businesses, query: trainingQueries })
@@ -207,16 +208,21 @@ export async function runV7DebateIteration(
 
 async function updatePhraseStatus(queryId: number, provider: string, win: boolean): Promise<void> {
   const db = await getDb();
+  if (!db) return;
   const existing = await db
     .select()
     .from(trainingPhraseStatus)
-    .where(and(eq(trainingPhraseStatus.queryId, queryId), eq(trainingPhraseStatus.provider, provider as any)))
+    .where(and(eq(trainingPhraseStatus.queryId, queryId), eq(trainingPhraseStatus.targetAiProvider, provider)))
     .limit(1);
 
   if (existing.length === 0) {
     await db.insert(trainingPhraseStatus).values({
-      queryId, provider: provider as any,
-      consecutiveWins: win ? 1 : 0, totalWins: win ? 1 : 0, totalSessions: 1, isGraduated: false,
+      queryId,
+      targetAiProvider: provider,
+      consecutiveWins: win ? 1 : 0,
+      totalWins: win ? 1 : 0,
+      totalSessions: 1,
+      isGraduated: false,
     } as any);
   } else {
     const current = existing[0]!;
@@ -225,7 +231,7 @@ async function updatePhraseStatus(queryId: number, provider: string, win: boolea
     const newSessions = (current.totalSessions ?? 0) + 1;
     const isGraduated = newConsecutive >= 3;
     await db.update(trainingPhraseStatus)
-      .set({ consecutiveWins: newConsecutive, totalWins: newTotal, totalSessions: newSessions, isGraduated, updatedAt: new Date() } as any)
+      .set({ consecutiveWins: newConsecutive, totalWins: newTotal, totalSessions: newSessions, isGraduated, updatedAt: new Date() })
       .where(eq(trainingPhraseStatus.id, current.id));
     if (isGraduated && !current.isGraduated) {
       console.log(`[V7] Phrase ${queryId} graduated on ${provider} after ${newConsecutive} consecutive clean probe wins`);
@@ -254,9 +260,9 @@ export async function runTrainingDay(campaignId: number, dayRunId: number): Prom
     return;
   }
 
-  const graduatedStatuses = await db.select({ queryId: trainingPhraseStatus.queryId, provider: trainingPhraseStatus.provider })
+  const graduatedStatuses = await db.select({ queryId: trainingPhraseStatus.queryId, targetAiProvider: trainingPhraseStatus.targetAiProvider })
     .from(trainingPhraseStatus).where(eq(trainingPhraseStatus.isGraduated, true));
-  const graduatedSet = new Set(graduatedStatuses.map((g) => `${g.queryId}:${g.provider}`));
+  const graduatedSet = new Set(graduatedStatuses.map((g) => `${g.queryId}:${g.targetAiProvider}`));
 
   const providers: Array<"chatgpt" | "gemini" | "google_ai_mode"> = ["chatgpt", "gemini", "google_ai_mode"];
   let sessionsCompleted = 0;

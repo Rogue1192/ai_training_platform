@@ -363,8 +363,6 @@ export function createWebhookRouter(): Router {
         if (payload.address) updateFields.address = payload.address;
         if (payload.notes) updateFields.notes = payload.notes;
         if (payload.description) updateFields.description = payload.description;
-        if (payload.googleReviewCount) updateFields.googleReviewCount = payload.googleReviewCount;
-        if (payload.googleRating) updateFields.googleRating = payload.googleRating;
 
         await db.update(businesses).set(updateFields).where(eq(businesses.id, businessId));
       } else {
@@ -382,7 +380,6 @@ export function createWebhookRouter(): Router {
             // ISSUE-014 FIX: Store ALL locations, ";"-delimited so a "City, ST"
             // location is never re-split on its internal comma.
             location: serializeLocations(finalLocations),
-            description: null,
             yearsInBusiness: payload.yearsFounded || null,
             certifications: payload.certifications?.join(", ") || null,
             awards: payload.awards?.join(", ") || null,
@@ -399,8 +396,6 @@ export function createWebhookRouter(): Router {
             address: payload.address || null,
             notes: payload.notes || null,
             description: payload.description || null,
-            googleReviewCount: payload.googleReviewCount || null,
-            googleRating: payload.googleRating || null,
             createdAt: new Date(),
             updatedAt: new Date(),
           })

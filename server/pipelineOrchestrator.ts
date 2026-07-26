@@ -208,7 +208,8 @@ export async function runPipelineStep(
           // call fails, log the error and auto-advance to credibility_research.
           // Ops can run the audit manually later from the Fan-Out Audit tab.
           console.warn(`[Pipeline] Fan-out audit skipped for campaign ${campaignId}: ${auditErr.message}`);
-          await updateCampaign(campaignId, {
+          const { updateCampaign: updateCampaignFanOut } = await import('./dbCampaigns');
+          await updateCampaignFanOut(campaignId, {
             fanOutAuditCompletedAt: new Date(),
             fanOutGapList: [],
           } as any);
@@ -542,7 +543,7 @@ export async function runPipelineStep(
 
         // ── V3: Create 4-day sprint schedule ──────────────────────────────────────
         // checkV3SprintRuns fires Day 1 on its next 30-min tick.
-        const { createSprintSchedule } = await import("./trainingWorkerV3");
+        const { createSprintSchedule } = await import("./trainingUtils");
 
         // Idempotency: only create the sprint schedule if no day runs exist yet
         const { trainingDayRuns: tdrCheck } = await import("../drizzle/schema");

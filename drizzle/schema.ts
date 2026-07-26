@@ -1003,7 +1003,11 @@ export const trainingPhraseStatus = pgTable("trainingPhraseStatus", {
   targetAiProvider: varchar("targetAiProvider", { length: 20 }).notNull(),
   // Number of consecutive session wins (clean probe hits) — resets if web search doesn't confirm
   consecutiveWins: integer("consecutiveWins").default(0).notNull(),
-  // True when consecutiveWins >= 2 AND confirmed by end-of-day web search
+  // Cumulative wins across all sessions (never resets)
+  totalWins: integer("totalWins").default(0).notNull(),
+  // Total sessions run for this phrase/provider combination
+  totalSessions: integer("totalSessions").default(0).notNull(),
+  // True when consecutiveWins >= 3 AND confirmed by end-of-day web search
   isGraduated: boolean("isGraduated").default(false).notNull(),
   lastTrainedAt: timestamp("lastTrainedAt"),
   lastWebSearchAt: timestamp("lastWebSearchAt"),

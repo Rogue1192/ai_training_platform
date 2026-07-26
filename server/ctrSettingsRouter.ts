@@ -45,8 +45,8 @@ export const ctrSettingsRouter = router({
       FROM cloak_config
       LIMIT 1
     `);
-    if (rows.rows.length === 0) return null;
-    return rows.rows[0] as any;
+    if (rows.length === 0) return null;
+    return rows[0] as any;
   }),
 
   saveConfig: publicProcedure
@@ -106,7 +106,7 @@ export const ctrSettingsRouter = router({
       WHERE is_active = true
       ORDER BY platform, label
     `);
-    return rows.rows as any[];
+    return rows as any[];
   }),
 
   saveCredential: publicProcedure
@@ -179,7 +179,7 @@ export const ctrSettingsRouter = router({
           WHERE p.is_active = true
           ORDER BY p.name
         `);
-        return rows.rows as any[];
+        return rows as any[];
       } else {
         const rows = await db.execute(sql`
           SELECT
@@ -196,7 +196,7 @@ export const ctrSettingsRouter = router({
           WHERE p.is_active = true
           ORDER BY p.name
         `);
-        return rows.rows as any[];
+        return rows as any[];
       }
     }),
 

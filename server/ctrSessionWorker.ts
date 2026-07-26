@@ -1,6 +1,7 @@
 import path from "path";
 import fs from "fs";
-import { getDb, sql } from "./db";
+import { getDb } from "./db";
+import { sql } from "drizzle-orm";
 
 /**
  * CTR Session Worker
@@ -80,7 +81,8 @@ export async function runCtrSession(opts: CtrSessionOptions): Promise<{ success:
       );
     }
 
-    ctx = await launchPersistentContext(profileDir, {
+    ctx = await launchPersistentContext({
+      userDataDir: profileDir,
       licenseKey,
       headless: false,
       humanize: true,
@@ -214,7 +216,8 @@ function extractCid(mapsUrl: string): string {
 
 async function markSessionComplete(sessionId: number, success: boolean, errorMessage?: string): Promise<void> {
   try {
-    const db = getDb();
+    const db = await getDb();
+    if (!db) return;
     await db.execute(sql`
       UPDATE ctr_sessions
       SET
