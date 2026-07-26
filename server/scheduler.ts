@@ -1512,30 +1512,23 @@ export async function checkV3SprintRuns(): Promise<void> {
           .from(cTable)
           .where(eqV3(cTable.id, run.campaignId))
           .limit(1);
-        const trainingVersion = runCampaign?.trainingVersion ?? 'v3';
+        const trainingVersion = runCampaign?.trainingVersion ?? 'v7';
 
-        console.log(`[SchedulerV3] Executing training day run ${run.id} (campaign ${run.campaignId}, day ${run.runDay}, engine ${trainingVersion})`);
+        console.log(`[Scheduler] Executing training day run ${run.id} (campaign ${run.campaignId}, day ${run.runDay}, engine ${trainingVersion})`);
 
         if (trainingVersion === 'v7') {
           const { runTrainingDay: runTrainingDayV7 } = await import('./trainingWorkerV7');
           await runTrainingDayV7(run.campaignId, run.id);
         } else if (trainingVersion === 'v6') {
+          // V6 kept temporarily for any legacy campaigns still on v6
           const { runTrainingDay: runTrainingDayV6 } = await import('./trainingWorkerV6');
           await runTrainingDayV6(run.campaignId, run.id);
-        } else if (trainingVersion === 'v5') {
-          const { runTrainingDay: runTrainingDayV5 } = await import('./trainingWorkerV5');
-          await runTrainingDayV5(run.campaignId, run.id);
-        } else if (trainingVersion === 'v4') {
-          const { runTrainingDay: runTrainingDayV4 } = await import('./trainingWorkerV4');
-          await runTrainingDayV4(run.campaignId, run.id);
         } else {
-          const { runTrainingDay } = await import('./trainingWorkerV3');
-          await runTrainingDay(run.campaignId, run.id);
+          // Unknown version — default to V7
+          console.warn(`[Scheduler] Unknown trainingVersion '${trainingVersion}' for campaign ${run.campaignId} — defaulting to V7`);
+          const { runTrainingDay: runTrainingDayV7 } = await import('./trainingWorkerV7');
+          await runTrainingDayV7(run.campaignId, run.id);
         }
-        // End-of-day web search runs on all engine versions — pure web search,
-        // no trainer AI — so results are comparable across V3/V4/V5.
-        const { runEndOfDayWebSearch } = await import('./trainingWorkerV3');
-        await runEndOfDayWebSearch(run.campaignId, run.id);
 
         // After each sprint run completes, check if all 4 sprint days are now done.
         // If so: stamp sprintCompletedAt (anchors 7-day rank tracking + 14-day bonus scan)
@@ -1622,54 +1615,10 @@ export async function checkV3WeeklyMaintenance(): Promise<void> {
 
     const { trainingDayRuns: tdrTable, campaigns: cTable, trainingQueries: tqTable } = await import('../drizzle/schema');
     const { eq: eqV3, and: andV3, sql: sqlV3 } = await import('drizzle-orm');
-    const { createWeeklyMaintenanceRun } = await import('./trainingWorkerV3');
-
-    const SEVEN_DAYS_AGO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-    const v3Campaigns = await db
-      .selectDistinct({ campaignId: tqTable.campaignId })
-      .from(tqTable)
-      .where(eqV3(tqTable.isActive, true));
-
-    for (const { campaignId } of v3Campaigns) {
-      const [campaign] = await db
-        .select()
-        .from(cTable)
-        .where(eqV3(cTable.id, campaignId))
-        .limit(1);
-
-      if (!campaign) continue;
-
-      const sprintRuns = await db
-        .select()
-        .from(tdrTable)
-        .where(andV3(eqV3(tdrTable.campaignId, campaignId), eqV3(tdrTable.runType, 'sprint')));
-
-      const sprintComplete = sprintRuns.length >= 4 && sprintRuns.every(r => r.status === 'completed');
-      if (!sprintComplete) continue;
-
-      const pendingMaintenance = await db
-        .select()
-        .from(tdrTable)
-        .where(andV3(eqV3(tdrTable.campaignId, campaignId), eqV3(tdrTable.runType, 'maintenance'), eqV3(tdrTable.status, 'pending')))
-        .limit(1);
-
-      if (pendingMaintenance.length > 0) continue;
-
-      const lastCompleted = await db
-        .select()
-        .from(tdrTable)
-        .where(andV3(eqV3(tdrTable.campaignId, campaignId), eqV3(tdrTable.status, 'completed')))
-        .orderBy(sqlV3`${tdrTable.completedAt} DESC`)
-        .limit(1);
-
-      if (lastCompleted.length > 0 && lastCompleted[0].completedAt && lastCompleted[0].completedAt > SEVEN_DAYS_AGO) {
-        continue;
-      }
-
-      await createWeeklyMaintenanceRun(campaignId);
-      console.log(`[SchedulerV3] Created weekly maintenance run for campaign ${campaignId}`);
-    }
+        // V7 maintenance is handled by the sprint completion logic above — no separate weekly maintenance needed.
+    // This function is kept as a no-op stub for now.
+    console.log('[Scheduler] Weekly maintenance check — V7 handles maintenance via sprint completion, skipping legacy V3 maintenance.');
+    return;
   } catch (err: any) {
     console.error('[SchedulerV3] checkV3WeeklyMaintenance error:', err.message);
   }

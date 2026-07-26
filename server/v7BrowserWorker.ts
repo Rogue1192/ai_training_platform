@@ -60,7 +60,7 @@ export class V7BrowserWorker {
   static async runSession(
     account: V7Account,
     proxy: V7Proxy | null,
-    provider: "chatgpt" | "gemini",
+    provider: "chatgpt" | "gemini" | "google_ai_mode",
     query: string,
     followUpArguments: string[] = []
   ): Promise<BrowserSessionResult> {
@@ -79,8 +79,8 @@ export class V7BrowserWorker {
       const { launchPersistentContext } = await import("cloakbrowser");
 
       const launchArgs: string[] = [`--fingerprint=${fingerprint}`];
-      // Allow 3rd-party cookies for embedded logins (needed for Google SSO on Gemini)
-      if (provider === "gemini") {
+      // Allow 3rd-party cookies for embedded logins (needed for Google SSO on Gemini/AI Mode)
+      if (provider === "gemini" || provider === "google_ai_mode") {
         launchArgs.push("--fingerprint-allow-3p-cookies");
       }
 
@@ -100,6 +100,8 @@ export class V7BrowserWorker {
 
       if (provider === "chatgpt") {
         responseContent = await V7BrowserWorker._runChatGPTSession(page, query, followUpArguments);
+      } else if (provider === "google_ai_mode") {
+        responseContent = await V7BrowserWorker._runGoogleAIModeSession(page, query, followUpArguments);
       } else {
         responseContent = await V7BrowserWorker._runGeminiSession(page, query, followUpArguments);
       }
@@ -218,5 +220,56 @@ export class V7BrowserWorker {
       (els: Element[]) => els.map(el => el.textContent ?? "")
     );
     return messages[messages.length - 1] ?? "";
+  }
+
+  // ── Google AI Mode session ───────────────────────────────────────────────────
+  // Google AI Mode (AI Overviews / AI Mode in Google Search) — accessed via
+  // https://www.google.com/search?udm=50 which forces AI Mode results.
+
+  private static async _runGoogleAIModeSession(
+    page: any,
+    query: string,
+    followUps: string[]
+  ): Promise<string> {
+    // Navigate to Google AI Mode
+    const encodedQuery = encodeURIComponent(query);
+    await page.goto(`https://www.google.com/search?q=${encodedQuery}&udm=50`, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+    // Wait for AI Mode response to load
+    await page.waitForTimeout(5000);
+
+    // Extract the AI Mode response text
+    let response = await V7BrowserWorker._extractGoogleAIModeResponse(page);
+
+    // Submit follow-up questions via the AI Mode conversation input
+    for (const arg of followUps) {
+      await page.waitForTimeout(2000 + Math.random() * 2000);
+      // Find the follow-up input in AI Mode
+      const input = await page.$('textarea[aria-label], input[aria-label*="Search"], div[contenteditable="true"]');
+      if (input) {
+        await input.click();
+        await input.fill(arg);
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(5000);
+        response = await V7BrowserWorker._extractGoogleAIModeResponse(page);
+      }
+    }
+
+    return response;
+  }
+
+  private static async _extractGoogleAIModeResponse(page: any): Promise<string> {
+    try {
+      // AI Mode response containers — these selectors may need updating as Google changes their DOM
+      const text = await page.$eval(
+        '[data-attrid="wa:/description"], .ai-overview-content, [jsname="yEVEwb"], .kp-blk',
+        (el: Element) => el.textContent ?? ""
+      ).catch(() => "");
+      if (text) return text;
+      // Fallback: grab all visible text from the main content area
+      return await page.$eval('main, #main, #rcnt', (el: Element) => el.textContent ?? "").catch(() => "");
+    } catch {
+      return "";
+    }
   }
 }

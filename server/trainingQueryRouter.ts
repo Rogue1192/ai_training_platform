@@ -146,7 +146,7 @@ export const trainingQueryRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database not available");
 
-      const { generateQueryVariations } = await import("./trainingWorkerV3");
+      const { generateQueryVariations } = await import("./trainingUtils");
 
       const queries = await db
         .select()
@@ -184,7 +184,7 @@ export const trainingQueryRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database not available");
 
-      const { createSprintSchedule } = await import("./trainingWorkerV3");
+      const { createSprintSchedule } = await import("./trainingUtils");
 
       // Verify all phrases have variations
       const queries = await db
@@ -443,7 +443,7 @@ export const trainingQueryRouter = router({
       const db = await getDb();
       if (!db) throw new Error('Database not available');
 
-      const { runTrainingDay } = await import('./trainingWorkerV3');
+      const { runTrainingDay } = await import('./trainingWorkerV7');
 
       // Verify campaign exists
       const [campaign] = await db

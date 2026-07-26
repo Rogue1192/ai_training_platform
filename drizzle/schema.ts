@@ -1095,7 +1095,7 @@ export type InsertTrainingSessionLog = typeof trainingSessionLogs.$inferInsert;
 // for that provider, so multiple independent users appear to recommend the same
 // business — a consensus signal far stronger than a single account.
 
-export const v7AccountProviderEnum = pgEnum("v7_account_provider", ["chatgpt", "gemini"]);
+export const v7AccountProviderEnum = pgEnum("v7_account_provider", ["chatgpt", "gemini", "google_ai_mode"]);
 export const v7AccountStatusEnum = pgEnum("v7_account_status", [
   "active",
   "warming",

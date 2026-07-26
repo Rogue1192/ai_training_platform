@@ -1925,7 +1925,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           dayRunId = inserted.id;
         }
 
-        const { runEndOfDayWebSearch } = await import("./trainingWorkerV3");
+        const { runEndOfDayWebSearch } = await import("./trainingUtils");
         // Run in background so the mutation returns immediately
         runEndOfDayWebSearch(input.campaignId, dayRunId).catch((err: any) => {
           console.error(`[EOD] Manual web search failed for campaign ${input.campaignId}:`, err.message);
