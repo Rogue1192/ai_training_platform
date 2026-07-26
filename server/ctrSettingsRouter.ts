@@ -4,7 +4,7 @@
  * Completely isolated — no impact on AI Answer Forge tables.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "./_core/trpc";
+import { publicProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -36,7 +36,7 @@ export const ctrSettingsRouter = router({
 
   // ── CloakBrowser Config ───────────────────────────────────────────────────
 
-  getConfig: protectedProcedure.query(async () => {
+  getConfig: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const rows = await db.execute(sql`
@@ -49,7 +49,7 @@ export const ctrSettingsRouter = router({
     return rows.rows[0] as any;
   }),
 
-  saveConfig: protectedProcedure
+  saveConfig: publicProcedure
     .input(z.object({
       licenseKey: z.string().optional(),
       maxConcurrent: z.number().min(1).max(200).default(5),
@@ -75,7 +75,7 @@ export const ctrSettingsRouter = router({
       return { ok: true };
     }),
 
-  testCloakConnection: protectedProcedure
+  testCloakConnection: publicProcedure
     .input(z.object({ licenseKey: z.string() }))
     .mutation(async ({ input }) => {
       // CloakBrowser Pro validates the license key on first launch.
@@ -97,7 +97,7 @@ export const ctrSettingsRouter = router({
 
   // ── Credentials Vault ─────────────────────────────────────────────────────
 
-  listCredentials: protectedProcedure.query(async () => {
+  listCredentials: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const rows = await db.execute(sql`
@@ -109,7 +109,7 @@ export const ctrSettingsRouter = router({
     return rows.rows as any[];
   }),
 
-  saveCredential: protectedProcedure
+  saveCredential: publicProcedure
     .input(z.object({
       id: z.number().optional(),
       label: z.string().min(1),
@@ -146,7 +146,7 @@ export const ctrSettingsRouter = router({
       return { ok: true };
     }),
 
-  deleteCredential: protectedProcedure
+  deleteCredential: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -158,7 +158,7 @@ export const ctrSettingsRouter = router({
 
   // ── Profile Pools ─────────────────────────────────────────────────────────
 
-  listProfiles: protectedProcedure
+  listProfiles: publicProcedure
     .input(z.object({ pool: z.enum(["ai", "ctr"]) }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -200,7 +200,7 @@ export const ctrSettingsRouter = router({
       }
     }),
 
-  saveProfile: protectedProcedure
+  saveProfile: publicProcedure
     .input(z.object({
       id: z.number().optional(),
       pool: z.enum(["ai", "ctr"]),
@@ -267,7 +267,7 @@ export const ctrSettingsRouter = router({
       return { ok: true };
     }),
 
-    deleteProfile: protectedProcedure
+    deleteProfile: publicProcedure
     .input(z.object({ pool: z.enum(["ai", "ctr"]), id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -282,7 +282,7 @@ export const ctrSettingsRouter = router({
 
   // ── noVNC Profile Login Session ───────────────────────────────────────────
 
-  launchProfileSession: protectedProcedure
+  launchProfileSession: publicProcedure
     .input(z.object({ profileId: z.string() }))
     .mutation(async ({ input }) => {
       const { spawn } = await import("child_process");
@@ -373,7 +373,7 @@ const { launch } = require('cloakbrowser');
       return { novncUrl, displayNum, vncPort, novncPort };
     }),
 
-  closeProfileSession: protectedProcedure
+  closeProfileSession: publicProcedure
     .input(z.object({ profileId: z.string() }))
     .mutation(async ({ input }) => {
       const { spawn } = await import("child_process");
