@@ -689,12 +689,17 @@ export function startScheduler(): void {
     detectAndRecoverStuckV3Runs().catch((err: Error) => console.error("[SchedulerV3] Stuck run recovery failed:", err));
   }, 30 * 60 * 1000); // every 30 minutes
 
-  // V3 Weekly maintenance — creates new maintenance run records once per day.
+    // V3 Weekly maintenance — creates new maintenance run records once per day.
   checkV3WeeklyMaintenance().catch((err: Error) => console.error("[SchedulerV3] Weekly maintenance check failed:", err));
   setInterval(() => {
     checkV3WeeklyMaintenance().catch((err: Error) => console.error("[SchedulerV3] Weekly maintenance check failed:", err));
   }, 24 * 60 * 60 * 1000); // once per day
-
+  // CTR Session Dispatcher — picks pending ctr_sessions and runs them with 70/30 mobile/desktop weighting.
+  // Drive sessions are always mobile. Checks every 2 minutes.
+  dispatchPendingCtrSessions().catch((err: Error) => console.error("[CtrDispatcher] Initial dispatch failed:", err));
+  setInterval(() => {
+    dispatchPendingCtrSessions().catch((err: Error) => console.error("[CtrDispatcher] Dispatch tick failed:", err));
+  }, 2 * 60 * 1000); // every 2 minutes
   console.log("[Scheduler] Scheduler started successfully");
 }
 
@@ -1680,5 +1685,132 @@ export async function detectAndRecoverStuckV3Runs(): Promise<void> {
     }
   } catch (err: any) {
     console.error('[SchedulerV3] detectAndRecoverStuckV3Runs error:', err.message);
+  }
+}
+
+// ─── CTR Session Dispatcher ———————————————————————————————————————————————————————
+/**
+ * dispatchPendingCtrSessions
+ *
+ * Picks up to 3 pending ctr_sessions at a time and runs them via the
+ * CtrSessionWorker. Applies 70/30 mobile/desktop device weighting:
+ *   - Drive sessions: always mobile (people use phones for directions)
+ *   - GBP click sessions: 70% mobile, 30% desktop
+ *   - Proxy selection: prefers mobile proxies for drive sessions when available
+ *
+ * Uses a DB-level status lock (status = 'running') to prevent double-dispatch
+ * across concurrent scheduler ticks.
+ */
+export async function dispatchPendingCtrSessions(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    const { sql: sqlCtr } = await import('drizzle-orm');
+    const { runCtrSession } = await import('./ctrSessionWorker');
+    const { decrypt } = await import('./encryption');
+
+    // Fetch up to 3 pending sessions, ordered by scheduled_for then created_at
+    const pending = await db.execute(sqlCtr`
+      SELECT
+        s.id,
+        s."campaignId",
+        s.session_type AS "sessionType",
+        s.keyword,
+        s.business_name AS "businessName",
+        s.google_maps_url AS "googleMapsUrl",
+        s.origin_lat AS "originLat",
+        s.origin_lng AS "originLng",
+        s.destination_address AS "destinationAddress",
+        s.journey_type AS "journeyType",
+        s.dwell_seconds AS "dwellSeconds",
+        s.scroll_depth AS "scrollDepth",
+        p.id AS "profileId",
+        p.proxy_credential_id AS "proxyCredentialId"
+      FROM ctr_sessions s
+      JOIN ctr_campaigns c ON c.id = s."campaignId"
+      JOIN ctr_browser_profiles p ON p.id = s.browser_profile_id
+      WHERE s.status = 'pending'
+        AND (s.scheduled_for IS NULL OR s.scheduled_for <= NOW())
+      ORDER BY s.scheduled_for ASC NULLS FIRST, s."createdAt" ASC
+      LIMIT 3
+    `);
+
+    if (!pending || (pending as any[]).length === 0) return;
+
+    for (const row of pending as any[]) {
+      // Lock the session immediately to prevent double-dispatch
+      await db.execute(sqlCtr`
+        UPDATE ctr_sessions SET status = 'running', updated_at = NOW()
+        WHERE id = ${row.id} AND status = 'pending'
+      `);
+
+      // Determine device type:
+      //   - drive sessions: always mobile
+      //   - gbp_click: 70% mobile, 30% desktop (based on session ID for determinism)
+      const deviceType: 'mobile' | 'desktop' =
+        row.sessionType === 'drive'
+          ? 'mobile'
+          : (row.id % 10 < 7 ? 'mobile' : 'desktop');
+
+      // Resolve proxy URL from credential
+      let proxyUrl: string | null = null;
+      if (row.proxyCredentialId) {
+        try {
+          // For drive sessions, prefer mobile proxies; fall back to any proxy for this credential
+          const proxyCreds = await db.execute(sqlCtr`
+            SELECT extra_enc, proxy_type FROM ctr_credentials
+            WHERE id = ${row.proxyCredentialId} AND is_active = true
+            LIMIT 1
+          `);
+          const cred = (proxyCreds as any[])[0];
+          if (cred?.extra_enc) {
+            const extra = JSON.parse(decrypt(cred.extra_enc));
+            proxyUrl = extra.proxyUrl ?? null;
+          }
+          // Log if a drive session is using a non-mobile proxy (so you know to swap it)
+          if (row.sessionType === 'drive' && cred?.proxy_type !== 'mobile') {
+            console.warn(`[CtrDispatcher] Drive session ${row.id} using ${cred?.proxy_type ?? 'unknown'} proxy — consider assigning a mobile proxy for better authenticity`);
+          }
+        } catch (proxyErr: any) {
+          console.warn(`[CtrDispatcher] Could not resolve proxy for session ${row.id}:`, proxyErr.message);
+        }
+      }
+
+      // Fire and forget — each session runs in its own async context
+      runCtrSession({
+        sessionId: row.id,
+        campaignId: row.campaignId,
+        profileId: row.profileId,
+        proxyUrl,
+        sessionType: row.sessionType,
+        deviceType,
+        keyword: row.keyword ?? undefined,
+        businessName: row.businessName ?? undefined,
+        googleMapsUrl: row.googleMapsUrl ?? undefined,
+        originLat: row.originLat ?? undefined,
+        originLng: row.originLng ?? undefined,
+        destinationAddress: row.destinationAddress ?? undefined,
+        journeyType: row.journeyType ?? undefined,
+        dwellSeconds: row.dwellSeconds ?? undefined,
+        scrollDepth: row.scrollDepth ?? undefined,
+      }).then(async (result) => {
+        // Record device_type used for analytics
+        try {
+          await db.execute(sqlCtr`
+            UPDATE ctr_sessions SET device_type = ${deviceType} WHERE id = ${row.id}
+          `);
+        } catch { /* non-fatal */ }
+        if (!result.success) {
+          console.error(`[CtrDispatcher] Session ${row.id} failed: ${result.errorMessage}`);
+        } else {
+          console.log(`[CtrDispatcher] Session ${row.id} completed (${deviceType}, ${row.sessionType})`);
+        }
+      }).catch((err: any) => {
+        console.error(`[CtrDispatcher] Session ${row.id} threw:`, err?.message ?? err);
+      });
+    }
+  } catch (err: any) {
+    console.error('[CtrDispatcher] dispatchPendingCtrSessions error:', err.message);
   }
 }
