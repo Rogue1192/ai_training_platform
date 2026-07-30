@@ -226,36 +226,150 @@ async function runGbpClickSession(page: any, opts: CtrSessionOptions, deviceType
 
 // ── Drive Simulation Session ──────────────────────────────────────────────────
 // Always runs as mobile (enforced above) — real users request directions on their phone
+//
+// CORRECT FLOW (matches real user behavior + registers as GBP directions engagement):
+//   1. Search Google for the business keyword
+//   2. Find and click the GBP listing in the local pack / knowledge panel
+//   3. Wait for the GBP panel / Maps listing to load
+//   4. Click the "Directions" button ON the GBP listing — this is the signal Google tracks
+//   5. Google Maps opens with the business pre-loaded as destination
+//   6. Enter a randomized nearby origin address in the "Your location" field
+//   7. Route renders — scroll through directions, dwell, close
 
 async function runDriveSession(page: any, opts: CtrSessionOptions): Promise<void> {
   const travelMode = opts.journeyType ?? "driving";
+  const keyword = opts.keyword ?? opts.businessName ?? "business near me";
 
-  // Build origin string from coordinates
-  const origin = opts.originLat !== undefined
-    ? `${opts.originLat},${opts.originLng}`
-    : "current+location";
+  // ── Step 1: Search Google for the business ──────────────────────────────────
+  // Mobile search URL triggers the mobile SERP with local pack
+  const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&source=hp&igu=1`;
+  await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.waitForTimeout(2000 + Math.random() * 2000);
 
-  const destination = encodeURIComponent(opts.destinationAddress ?? "");
+  // ── Step 2: Find and click the GBP listing ─────────────────────────────────
+  // Try multiple selectors — mobile local pack, knowledge panel, Maps link
+  const gbpSelectors = [
+    `[data-cid]`,
+    `a[href*="maps.google.com"]`,
+    `a[href*="maps.app.goo.gl"]`,
+    opts.googleMapsUrl ? `a[href*="${extractCid(opts.googleMapsUrl)}"]` : null,
+    `[data-local-attribute="d3aX5e"]`,  // mobile local pack card
+    `[jscontroller][data-hveid]`,        // knowledge panel
+  ].filter(Boolean) as string[];
 
-  // Open Google Maps directions — use the mobile-friendly URL format
-  const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=${travelMode}`;
-
-  await page.goto(mapsUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await page.waitForTimeout(3000 + Math.random() * 2000);
-
-  // Wait for route to render
-  try {
-    await page.waitForSelector('[data-value="Directions"], [aria-label*="Directions"]', { timeout: 15000 });
-  } catch { /* route may have rendered differently */ }
-
-  // Scroll through the directions panel (touch scroll for mobile)
-  for (let i = 0; i < 4; i++) {
-    await page.evaluate(() => window.scrollBy(0, 200));
-    await page.waitForTimeout(1000 + Math.random() * 1000);
+  let clickedListing = false;
+  for (const selector of gbpSelectors) {
+    try {
+      const el = await page.$(selector);
+      if (el) {
+        await el.click();
+        clickedListing = true;
+        break;
+      }
+    } catch { /* try next */ }
   }
 
-  // Dwell — simulate reading the route
-  await page.waitForTimeout(15000 + Math.random() * 15000);
+  if (!clickedListing) {
+    // Fallback: navigate directly to the Maps listing
+    const fallbackUrl = opts.googleMapsUrl
+      ?? `https://www.google.com/maps/search/${encodeURIComponent(opts.businessName ?? keyword)}`;
+    await page.goto(fallbackUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  }
+
+  // ── Step 3: Wait for GBP panel / Maps listing to fully load ────────────────
+  await page.waitForTimeout(3000 + Math.random() * 2000);
+
+  // ── Step 4: Click the Directions button ON the GBP listing ─────────────────
+  // This is the critical step — it registers as a GBP directions engagement in Google's systems
+  const directionsSelectors = [
+    `button[data-value="Directions"]`,
+    `a[data-value="Directions"]`,
+    `[aria-label="Directions"]`,
+    `[aria-label*="Directions"]`,
+    `[jsaction*="pane.directions"]`,
+    `[data-item-id="directions"]`,
+    // Mobile Maps uses a slightly different structure
+    `button[jsaction*="directions"]`,
+    `[data-tooltip="Directions"]`,
+  ];
+
+  let clickedDirections = false;
+  for (const selector of directionsSelectors) {
+    try {
+      const el = await page.$(selector);
+      if (el) {
+        // Scroll the button into view first (mobile viewport is small)
+        await el.scrollIntoViewIfNeeded?.();
+        await page.waitForTimeout(500 + Math.random() * 500);
+        await el.click();
+        clickedDirections = true;
+        console.log(`[CtrWorker] Clicked Directions button via selector: ${selector}`);
+        break;
+      }
+    } catch { /* try next */ }
+  }
+
+  if (!clickedDirections) {
+    // Last resort: try clicking by visible text content
+    try {
+      await page.getByText("Directions", { exact: true }).first().click();
+      clickedDirections = true;
+      console.log(`[CtrWorker] Clicked Directions button via text match`);
+    } catch { /* ignore */ }
+  }
+
+  if (!clickedDirections) {
+    console.warn(`[CtrWorker] Session ${opts.sessionId}: Could not find Directions button — GBP engagement not registered`);
+  }
+
+  // ── Step 5: Wait for Maps directions UI to open ────────────────────────────
+  await page.waitForTimeout(2000 + Math.random() * 1500);
+
+  // ── Step 6: Enter origin ("Your location" / starting point field) ──────────
+  // Use a randomized nearby address rather than GPS coordinates
+  // This simulates a real user typing their starting point
+  if (opts.destinationAddress || opts.originLat !== undefined) {
+    const originText = opts.originLat !== undefined
+      ? `${opts.originLat.toFixed(4)}, ${opts.originLng?.toFixed(4)}`  // coords as fallback
+      : "My location";
+
+    // The origin input in Google Maps directions
+    const originInputSelectors = [
+      `input[aria-label*="Your location"]`,
+      `input[aria-label*="Starting point"]`,
+      `input[aria-label*="Choose starting point"]`,
+      `input[placeholder*="Your location"]`,
+      `input[placeholder*="Starting point"]`,
+      `[data-index="0"] input`,  // first input in directions panel
+    ];
+
+    for (const selector of originInputSelectors) {
+      try {
+        const input = await page.$(selector);
+        if (input) {
+          await input.click();
+          await page.waitForTimeout(500);
+          await input.fill(originText);
+          await page.waitForTimeout(1000 + Math.random() * 500);
+          await page.keyboard.press("Enter");
+          break;
+        }
+      } catch { /* try next */ }
+    }
+  }
+
+  // ── Step 7: Wait for route to render ───────────────────────────────────────
+  await page.waitForTimeout(3000 + Math.random() * 2000);
+
+  // ── Step 8: Scroll through directions panel (simulate reading the route) ───
+  for (let i = 0; i < 5; i++) {
+    await page.evaluate(() => window.scrollBy(0, 200));
+    await page.waitForTimeout(1200 + Math.random() * 1000);
+  }
+
+  // ── Step 9: Dwell — simulate a real user reviewing the route ───────────────
+  // 20-40 seconds is realistic for someone checking directions before driving
+  await page.waitForTimeout(20000 + Math.random() * 20000);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
