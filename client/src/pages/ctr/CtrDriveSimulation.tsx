@@ -56,7 +56,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function CtrDriveSimulation() {
   const [campaignId, setCampaignId] = useState<string>("");
-  const [journeyType, setJourneyType] = useState("driving");
+  const [journeyType, setJourneyType] = useState<"driving" | "transit" | "walking" | "cycling">("driving");
   const [persona, setPersona] = useState("residential");
   const [originAddress, setOriginAddress] = useState("");
   const [useRadiusOrigin, setUseRadiusOrigin] = useState(true);
@@ -69,8 +69,12 @@ export default function CtrDriveSimulation() {
   const [calendarTitle, setCalendarTitle] = useState("");
   const [scheduledFor, setScheduledFor] = useState("");
 
+  // Queries — must be declared before any code that references their data
+  const { data: campaigns = [] } = trpc.ctr.listCampaigns.useQuery();
+
   // Derive the selected campaign's center coords
   const selectedCampaign = (campaigns as any[]).find((c: any) => String(c.id) === campaignId);
+  const isSAB = selectedCampaign?.isServiceAreaBusiness === true;
 
   function addZip() {
     const zip = zipInput.trim().replace(/\D/g, "").slice(0, 5);
@@ -88,7 +92,6 @@ export default function CtrDriveSimulation() {
     setOriginAddress(`${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}${point.sourceZip ? ` (ZIP ${point.sourceZip})` : ""}`);
   }
 
-  const { data: campaigns = [] } = trpc.ctr.listCampaigns.useQuery();
   const { data: journeys = [], refetch } = trpc.ctr.listDriveJourneys.useQuery(
     { campaignId: parseInt(campaignId) },
     { enabled: !!campaignId }
@@ -149,14 +152,30 @@ export default function CtrDriveSimulation() {
                     <SelectValue placeholder="Select a CTR campaign..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {campaigns.map((c: any) => (
+                    {(campaigns as any[]).map((c: any) => (
                       <SelectItem key={c.id} value={String(c.id)}>
-                        {c.businessName}
+                        {c.businessName}{c.isServiceAreaBusiness ? " (SAB — no drive sim)" : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* SAB warning banner */}
+              {isSAB && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-2">
+                  <svg className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-medium text-amber-400">Drive Simulation Not Available</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      This is a Service Area Business — it hides its address on Google. There is no physical location
+                      for customers to drive to, so drive simulations cannot be used for this campaign.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Journey type */}
               <div className="space-y-1.5">
@@ -167,7 +186,7 @@ export default function CtrDriveSimulation() {
                     return (
                       <button
                         key={jt.value}
-                        onClick={() => setJourneyType(jt.value)}
+                        onClick={() => setJourneyType(jt.value as "driving" | "transit" | "walking" | "cycling")}
                         className={cn(
                           "flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition-colors text-left",
                           journeyType === jt.value
@@ -356,7 +375,7 @@ export default function CtrDriveSimulation() {
               <Button
                 className="w-full gap-2"
                 onClick={handleSubmit}
-                disabled={createJourney.isPending || !campaignId}
+                disabled={createJourney.isPending || !campaignId || isSAB}
               >
                 <Plus className="h-4 w-4" />
                 {createJourney.isPending ? "Scheduling..." : "Schedule Journey"}

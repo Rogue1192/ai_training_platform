@@ -700,6 +700,13 @@ export function startScheduler(): void {
   setInterval(() => {
     dispatchPendingCtrSessions().catch((err: Error) => console.error("[CtrDispatcher] Dispatch tick failed:", err));
   }, 2 * 60 * 1000); // every 2 minutes
+  // Drive Session Ramp Planner — generates drive sessions nightly with progressive
+  // volume (1-2/day week 1 → 5-6/day week 5+) and expanding origin radius.
+  // SABs are automatically skipped.
+  planDriveSessions().catch((err: Error) => console.error("[DriveRamp] Initial plan failed:", err));
+  setInterval(() => {
+    planDriveSessions().catch((err: Error) => console.error("[DriveRamp] Nightly plan failed:", err));
+  }, 24 * 60 * 60 * 1000); // once per day
   console.log("[Scheduler] Scheduler started successfully");
 }
 
@@ -1812,5 +1819,168 @@ export async function dispatchPendingCtrSessions(): Promise<void> {
     }
   } catch (err: any) {
     console.error('[CtrDispatcher] dispatchPendingCtrSessions error:', err.message);
+  }
+}
+
+// ─── Drive Session Ramp Planner ──────────────────────────────────────────────
+/**
+ * planDriveSessions
+ *
+ * Runs nightly. For each active CTR campaign that:
+ *   - Has a physical address (isServiceAreaBusiness = FALSE)
+ *   - Has driveStartedAt set (drive ramp has been activated)
+ *   - Has centerLat/centerLng set (needed to pick origin coordinates)
+ *
+ * Generates the correct number of drive sessions for today based on the
+ * current ramp week, and picks origin coordinates at a radius appropriate
+ * for that week (simulating the business being found from further away as
+ * rankings improve).
+ *
+ * Ramp schedule:
+ *   Week 1: 1–2 sessions/day, radius 1–3 miles
+ *   Week 2: 2–3 sessions/day, radius 2–5 miles
+ *   Week 3: 3–4 sessions/day, radius 4–8 miles
+ *   Week 4: 4–5 sessions/day, radius 6–12 miles
+ *   Week 5+: 5–6 sessions/day, radius 8–20 miles
+ *
+ * Sessions are spread across the day (8am–8pm local time) with random offsets.
+ * Already-planned sessions for today are counted to avoid double-booking.
+ */
+export async function planDriveSessions(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const { sql: sqlDr } = await import('drizzle-orm');
+
+    // Fetch all active non-SAB campaigns with drive ramp started and coords set
+    const campaigns = await db.execute(sqlDr`
+      SELECT
+        id,
+        "businessName",
+        "centerLat",
+        "centerLng",
+        "driveStartedAt",
+        "radiusMiles",
+        keyword
+      FROM ctr_campaigns
+      WHERE
+        is_active = TRUE
+        AND "isServiceAreaBusiness" = FALSE
+        AND "driveStartedAt" IS NOT NULL
+        AND "centerLat" IS NOT NULL
+        AND "centerLng" IS NOT NULL
+    `);
+
+    if (!campaigns || (campaigns as any[]).length === 0) return;
+
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    for (const camp of campaigns as any[]) {
+      try {
+        // Calculate current ramp week (1-indexed)
+        const driveStart = new Date(camp.driveStartedAt);
+        const daysSinceStart = Math.floor((now.getTime() - driveStart.getTime()) / (1000 * 60 * 60 * 24));
+        const rampWeek = Math.min(Math.floor(daysSinceStart / 7) + 1, 5);
+
+        // Ramp schedule: [minSessions, maxSessions, minRadiusMiles, maxRadiusMiles]
+        const rampSchedule: Record<number, [number, number, number, number]> = {
+          1: [1, 2, 1, 3],
+          2: [2, 3, 2, 5],
+          3: [3, 4, 4, 8],
+          4: [4, 5, 6, 12],
+          5: [5, 6, 8, 20],
+        };
+        const [minSessions, maxSessions, minRadius, maxRadius] = rampSchedule[rampWeek];
+
+        // How many sessions are already planned for today?
+        const existing = await db.execute(sqlDr`
+          SELECT COUNT(*) AS cnt FROM ctr_sessions
+          WHERE "campaignId" = ${camp.id}
+            AND session_type = 'drive'
+            AND (
+              scheduled_for BETWEEN ${todayStart.toISOString()} AND ${todayEnd.toISOString()}
+              OR (scheduled_for IS NULL AND "createdAt" BETWEEN ${todayStart.toISOString()} AND ${todayEnd.toISOString()})
+            )
+        `);
+        const existingCount = parseInt((existing as any[])[0]?.cnt ?? '0', 10);
+
+        // Target: random count between min and max for this week
+        const targetCount = minSessions + Math.floor(Math.random() * (maxSessions - minSessions + 1));
+        const toCreate = Math.max(0, targetCount - existingCount);
+
+        if (toCreate === 0) continue;
+
+        // Spread sessions across 8am–8pm (12-hour window = 43200 seconds)
+        const windowStart = new Date(todayStart);
+        windowStart.setHours(8, 0, 0, 0);
+        const windowSeconds = 12 * 60 * 60;
+
+        for (let i = 0; i < toCreate; i++) {
+          // Pick a random radius within the week's range
+          const radiusMiles = minRadius + Math.random() * (maxRadius - minRadius);
+          const radiusMeters = radiusMiles * 1609.34;
+
+          // Pick a random point within the radius ring (not too close — min 0.5 miles)
+          const minRadiusMeters = Math.max(800, radiusMeters * 0.4);
+          const r = minRadiusMeters + Math.random() * (radiusMeters - minRadiusMeters);
+          const bearing = Math.random() * 2 * Math.PI;
+
+          // Convert polar offset to lat/lng delta
+          const earthRadius = 6371000; // meters
+          const latDelta = (r * Math.cos(bearing)) / earthRadius * (180 / Math.PI);
+          const lngDelta = (r * Math.sin(bearing)) / (earthRadius * Math.cos(camp.centerLat * Math.PI / 180)) * (180 / Math.PI);
+
+          const originLat = camp.centerLat + latDelta;
+          const originLng = camp.centerLng + lngDelta;
+
+          // Schedule at a random time within the 8am–8pm window
+          const offsetSeconds = Math.floor(Math.random() * windowSeconds);
+          const scheduledFor = new Date(windowStart.getTime() + offsetSeconds * 1000);
+
+          // Don't schedule in the past
+          const finalScheduledFor = scheduledFor < now
+            ? new Date(now.getTime() + 5 * 60 * 1000) // 5 min from now
+            : scheduledFor;
+
+          await db.execute(sqlDr`
+            INSERT INTO ctr_sessions (
+              "campaignId",
+              session_type,
+              keyword,
+              business_name,
+              origin_lat,
+              origin_lng,
+              status,
+              scheduled_for,
+              "createdAt",
+              "updatedAt"
+            ) VALUES (
+              ${camp.id},
+              'drive',
+              ${camp.keyword ?? null},
+              ${camp.businessName ?? null},
+              ${originLat},
+              ${originLng},
+              'pending',
+              ${finalScheduledFor.toISOString()},
+              NOW(),
+              NOW()
+            )
+          `);
+        }
+
+        if (toCreate > 0) {
+          console.log(`[DriveRamp] Campaign ${camp.id} (${camp.businessName}): week ${rampWeek}, scheduled ${toCreate} drive sessions (radius ${minRadius}–${maxRadius} mi)`);
+        }
+      } catch (campErr: any) {
+        console.warn(`[DriveRamp] Campaign ${camp.id} planning failed:`, campErr.message);
+      }
+    }
+  } catch (err: any) {
+    console.error('[DriveRamp] planDriveSessions error:', err.message);
   }
 }

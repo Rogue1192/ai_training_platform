@@ -1772,3 +1772,28 @@ export async function ensureTrainingQueryTables(): Promise<void> {
     console.warn('[DB] ensureTrainingQueryTables:', err.message);
   }
 }
+
+/**
+ * Ensure drive ramp + SAB columns exist on ctr_campaigns.
+ * Migration 0031 — safe to run on every startup (ADD COLUMN IF NOT EXISTS).
+ *
+ * driveStartedAt        — when the drive session ramp started; used to calculate
+ *                         current ramp week + origin radius
+ * isServiceAreaBusiness — TRUE = SAB (hides address on GBP); drive simulations
+ *                         are disabled for SABs — no physical location to drive to
+ */
+export async function ensureCtrDriveRampColumns(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const client = (db as any).$client as import("postgres").Sql;
+    await client`
+      ALTER TABLE ctr_campaigns
+        ADD COLUMN IF NOT EXISTS "driveStartedAt"        TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS "isServiceAreaBusiness" BOOLEAN NOT NULL DEFAULT FALSE
+    `;
+    console.log('[DB] ctr_campaigns drive ramp columns ensured');
+  } catch (err: any) {
+    console.warn('[DB] ensureCtrDriveRampColumns:', err.message);
+  }
+}

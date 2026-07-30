@@ -500,17 +500,17 @@ export default function CtrSettings() {
   const [headless, setHeadless] = useState(false);
   const [geoip, setGeoip] = useState(true);
 
-  const { data: config } = trpc.ctrSettings.getConfig.useQuery(undefined, {
-    onSuccess: (d: any) => {
-      if (d) {
-        setLicenseKey(d.licenseKey ?? "");
-        setMaxConcurrent(d.maxConcurrent ?? 5);
-        setHumanize(d.humanize ?? true);
-        setHeadless(d.headless ?? false);
-        setGeoip(d.geoip ?? true);
-      }
-    },
-  });
+  const { data: config } = trpc.ctrSettings.getConfig.useQuery(undefined);
+  useEffect(() => {
+    if (config) {
+      const d = config as any;
+      setLicenseKey(d.licenseKey ?? "");
+      setMaxConcurrent(d.maxConcurrent ?? 5);
+      setHumanize(d.humanize ?? true);
+      setHeadless(d.headless ?? false);
+      setGeoip(d.geoip ?? true);
+    }
+  }, [config]);
 
   const saveConfig = trpc.ctrSettings.saveConfig.useMutation({
     onSuccess: () => toast.success("CloakBrowser config saved"),

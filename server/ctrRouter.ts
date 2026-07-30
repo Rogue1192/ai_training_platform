@@ -64,6 +64,7 @@ export const ctrRouter = router({
       gscSiteUrl: z.string().optional(),
       weeklyRampPct: z.number().min(3).max(7).default(5),
       rampMode: z.enum(["auto", "manual"]).default("auto"),
+      isServiceAreaBusiness: z.boolean().default(false),
       keywords: z.array(z.object({
         keyword: z.string(),
         keywordType: z.enum(["primary", "brand", "local"]).default("primary"),
@@ -79,11 +80,13 @@ export const ctrRouter = router({
           "userId", "businessName", "mapsUrl", "phone",
           "targetCity", "targetCountry", "gscSiteUrl",
           "weeklyRampPct", "rampMode", "useRealBrowser",
+          "isServiceAreaBusiness",
           "createdAt", "updatedAt"
         ) VALUES (
           ${ctx.user.id}, ${input.businessName}, ${input.mapsUrl ?? null}, ${input.phone ?? null},
           ${input.targetCity}, ${input.targetCountry}, ${input.gscSiteUrl ?? null},
           ${input.weeklyRampPct}, ${input.rampMode}, true,
+          ${input.isServiceAreaBusiness},
           NOW(), NOW()
         )
         RETURNING id

@@ -1729,7 +1729,7 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           // Training hold — when true the scheduler will not fire the sprint
           trainingHeld: z.boolean().optional(),
           // Training engine version — 'v3' | 'v4' | 'v5'
-          trainingVersion: z.enum(["v3", "v4", "v5"]).optional(),
+          trainingVersion: z.enum(["v3", "v4", "v5", "v6", "v7"]).optional(),
           // Primary keywords — 3 core money keywords driving query generation
           primaryKeywords: z.array(z.string()).optional(),
         })

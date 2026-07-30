@@ -34,6 +34,7 @@ import {
   ensureAuditSourceColumn,
   ensureAuditCampaignScopeColumn,
   ensureTrainingQueryTables,
+  ensureCtrDriveRampColumns,
 } from "../db";
 
 // Combined router with all sub-routers including llmInsights, agency, costTracking, prospectAudit, and trainingQuery
@@ -307,6 +308,9 @@ ensureAuditCampaignScopeColumn().catch((err) =>
 );
 ensureTrainingQueryTables().catch((err) =>
   console.warn("[Startup] ensureTrainingQueryTables failed (non-fatal):", err.message)
+);
+ensureCtrDriveRampColumns().catch((err) =>
+  console.warn("[Startup] ensureCtrDriveRampColumns failed (non-fatal):", err.message)
 );
 
 // One-time migration: set Eagle Air Co (campaign 3) to V4 training engine.

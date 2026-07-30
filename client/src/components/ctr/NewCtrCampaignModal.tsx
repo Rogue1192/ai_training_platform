@@ -75,6 +75,7 @@ export function NewCtrCampaignModal({
   const [businessName, setBusinessName] = useState("");
   const [mapsUrl, setMapsUrl] = useState("");
   const [phone, setPhone] = useState("");
+  const [isServiceAreaBusiness, setIsServiceAreaBusiness] = useState(false);
 
   // Step 2 — Location
   const [targetCity, setTargetCity] = useState("");
@@ -153,6 +154,7 @@ export function NewCtrCampaignModal({
       gscSiteUrl,
       weeklyRampPct,
       rampMode,
+      isServiceAreaBusiness,
       keywords: keywords.map((k) => ({
         keyword: k.text,
         keywordType: k.type,
@@ -220,6 +222,34 @@ export function NewCtrCampaignModal({
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
               />
+            </div>
+            {/* SAB toggle */}
+            <div
+              className={cn(
+                "flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors",
+                isServiceAreaBusiness
+                  ? "border-amber-500/40 bg-amber-500/10"
+                  : "border-border hover:border-border/80"
+              )}
+              onClick={() => setIsServiceAreaBusiness(!isServiceAreaBusiness)}
+            >
+              <div className={cn(
+                "mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
+                isServiceAreaBusiness ? "border-amber-500 bg-amber-500" : "border-muted-foreground"
+              )}>
+                {isServiceAreaBusiness && (
+                  <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 12 12">
+                    <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </div>
+              <div>
+                <p className="text-sm font-medium leading-none">Service Area Business (SAB)</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Check this if the business hides its address on Google (e.g. plumber, electrician, mobile service).
+                  Drive simulations are not available for SABs — there is no physical location to drive to.
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -529,6 +559,12 @@ export function NewCtrCampaignModal({
                 <span className="text-muted-foreground">GSC</span>
                 <span className={gscSiteUrl ? "text-green-400 font-medium" : "text-amber-400 font-medium"}>
                   {gscSiteUrl || "Not connected"}
+                </span>
+              </div>
+              <div className="flex justify-between px-4 py-2.5">
+                <span className="text-muted-foreground">Business Type</span>
+                <span className={isServiceAreaBusiness ? "text-amber-400 font-medium" : "text-green-400 font-medium"}>
+                  {isServiceAreaBusiness ? "Service Area (SAB) — no drive sim" : "Physical Location"}
                 </span>
               </div>
               <div className="flex justify-between px-4 py-2.5">
