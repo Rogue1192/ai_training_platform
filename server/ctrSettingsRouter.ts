@@ -117,13 +117,18 @@ export const ctrSettingsRouter = router({
       email: z.string().optional(),
       password: z.string().optional(),
       proxyUrl: z.string().optional(),
+      proxyType: z.enum(["residential", "mobile", "datacenter"]).optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const passwordEnc = input.password ? encryptPassword(input.password) : null;
-      const extraEnc = input.proxyUrl ? encryptPassword(JSON.stringify({ proxyUrl: input.proxyUrl })) : null;
+      const extraPayload = input.proxyUrl
+        ? JSON.stringify({ proxyUrl: input.proxyUrl, proxyType: input.proxyType ?? "residential" })
+        : null;
+      const extraEnc = extraPayload ? encryptPassword(extraPayload) : null;
+      const proxyTypeVal = input.platform === "proxy" ? (input.proxyType ?? "residential") : null;
 
       if (input.id) {
         await db.execute(sql`
@@ -133,14 +138,15 @@ export const ctrSettingsRouter = router({
             email        = ${input.email ?? null},
             password_enc = COALESCE(${passwordEnc}, password_enc),
             extra_enc    = COALESCE(${extraEnc}, extra_enc),
+            proxy_type   = COALESCE(${proxyTypeVal}, proxy_type),
             notes        = ${input.notes ?? null},
             updated_at   = NOW()
           WHERE id = ${input.id}
         `);
       } else {
         await db.execute(sql`
-          INSERT INTO ctr_credentials (label, platform, email, password_enc, extra_enc, notes)
-          VALUES (${input.label}, ${input.platform}, ${input.email ?? null}, ${passwordEnc}, ${extraEnc}, ${input.notes ?? null})
+          INSERT INTO ctr_credentials (label, platform, email, password_enc, extra_enc, proxy_type, notes)
+          VALUES (${input.label}, ${input.platform}, ${input.email ?? null}, ${passwordEnc}, ${extraEnc}, ${proxyTypeVal}, ${input.notes ?? null})
         `);
       }
       return { ok: true };

@@ -105,6 +105,7 @@ function AddCredentialModal({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [proxyUrl, setProxyUrl] = useState("");
+  const [proxyType, setProxyType] = useState<"residential" | "mobile" | "datacenter">("residential");
   const [notes, setNotes] = useState("");
   const [showPass, setShowPass] = useState(false);
 
@@ -115,7 +116,7 @@ function AddCredentialModal({
 
   function handleSave() {
     if (!label.trim()) { toast.error("Label is required"); return; }
-    save.mutate({ label, platform, email, password, proxyUrl, notes });
+    save.mutate({ label, platform, email, password, proxyUrl, proxyType, notes });
   }
 
   return (
@@ -167,11 +168,25 @@ function AddCredentialModal({
               </div>
             </>
           ) : (
-            <div className="space-y-1.5">
-              <Label>Proxy URL</Label>
-              <Input placeholder="http://user:pass@host:port" value={proxyUrl} onChange={e => setProxyUrl(e.target.value)} />
-              <p className="text-xs text-muted-foreground">Format: http://user:pass@host:port or socks5://...</p>
-            </div>
+            <>
+              <div className="space-y-1.5">
+                <Label>Proxy URL</Label>
+                <Input placeholder="http://user:pass@host:port" value={proxyUrl} onChange={e => setProxyUrl(e.target.value)} />
+                <p className="text-xs text-muted-foreground">Format: http://user:pass@host:port or socks5://...</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Proxy Type</Label>
+                <Select value={proxyType} onValueChange={v => setProxyType(v as "residential" | "mobile" | "datacenter")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="residential">Residential</SelectItem>
+                    <SelectItem value="mobile">Mobile (4G/LTE)</SelectItem>
+                    <SelectItem value="datacenter">Datacenter</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Mobile proxies are used for drive sessions and ~70% of GBP click sessions.</p>
+              </div>
+            </>
           )}
           <div className="space-y-1.5">
             <Label>Notes <span className="text-muted-foreground text-xs font-normal">Optional</span></Label>
