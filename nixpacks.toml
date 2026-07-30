@@ -25,6 +25,7 @@ nixPkgs = [
   "glib",
   "x11vnc",
   "novnc",
+  "websockify",
   "bash"
 ]
 
