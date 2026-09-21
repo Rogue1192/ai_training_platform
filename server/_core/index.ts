@@ -2,7 +2,6 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
-import { createProxyMiddleware } from "http-proxy-middleware";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 import { appRouter, llmInsightsRouter, agencyRouter } from "../routers";
@@ -10,8 +9,6 @@ import { costTrackingRouter } from "../costTrackingRouter";
 import { prospectAuditRouter } from "../prospectAuditRouter";
 import { trainingQueryRouter } from "../trainingQueryRouter";
 import { v7AccountRouter } from "../v7AccountRouter";
-import { ctrRouter } from "../ctrRouter";
-import { ctrSettingsRouter } from "../ctrSettingsRouter";
 import { router } from "./trpc";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -34,7 +31,6 @@ import {
   ensureAuditSourceColumn,
   ensureAuditCampaignScopeColumn,
   ensureTrainingQueryTables,
-  ensureCtrDriveRampColumns,
 } from "../db";
 
 // Combined router with all sub-routers including llmInsights, agency, costTracking, prospectAudit, and trainingQuery
@@ -46,8 +42,6 @@ const combinedRouter = router({
   prospectAudit: prospectAuditRouter,
   trainingQuery: trainingQueryRouter,
   v7Accounts: v7AccountRouter,
-  ctr: ctrRouter,
-  ctrSettings: ctrSettingsRouter,
 });
 export type CombinedRouter = typeof combinedRouter;
 
@@ -83,55 +77,6 @@ async function startServer() {
 
   // Webhook routes (must be before tRPC to avoid conflicts)
   app.use(createWebhookRouter());
-
-  // ── noVNC proxy ──────────────────────────────────────────────────────────────────────────────────
-  // Each CloakBrowser login session runs on a unique virtual display.
-  // noVNC websockify listens on localhost:6080+displayNum.
-  // Since Railway only exposes one port, we proxy /novnc-proxy/:displayNum/* here.
-  //
-  // Route: /novnc-proxy/:displayNum/websockify  → ws://localhost:(6080+displayNum)
-  // Route: /novnc-proxy/:displayNum/*           → http://localhost:(6080+displayNum)/*
-  app.use("/novnc-proxy/:displayNum", (req, res, next) => {
-    const displayNum = parseInt(req.params.displayNum, 10);
-    if (isNaN(displayNum) || displayNum < 10 || displayNum > 200) {
-      res.status(400).send("Invalid display number");
-      return;
-    }
-    const targetPort = 6080 + displayNum;
-    const proxy = createProxyMiddleware({
-      target: `http://localhost:${targetPort}`,
-      changeOrigin: true,
-      ws: true,
-      pathRewrite: { [`^/novnc-proxy/${displayNum}`]: "" },
-      on: {
-        error: (err: any, _req: any, res: any) => {
-          if (res && typeof (res as any).status === "function") {
-            (res as any).status(502).send("noVNC session not ready — try again in a moment");
-          }
-        },
-      },
-    });
-    (proxy as any)(req, res, next);
-  });
-
-  // WebSocket upgrade for noVNC (must be wired to the http.Server, not express app)
-  // We do this after server.listen so the server object is available.
-  // Stored for later attachment.
-  const novncWsUpgradeHandler = (req: any, socket: any, head: any) => {
-    const match = req.url?.match(/^\/novnc-proxy\/(\d+)\//);
-    if (!match) return;
-    const displayNum = parseInt(match[1], 10);
-    if (isNaN(displayNum) || displayNum < 10 || displayNum > 200) { socket.destroy(); return; }
-    const targetPort = 6080 + displayNum;
-    const proxy = createProxyMiddleware({
-      target: `http://localhost:${targetPort}`,
-      changeOrigin: true,
-      ws: true,
-      pathRewrite: { [`^/novnc-proxy/${displayNum}`]: "" },
-    });
-    (proxy as any).upgrade(req, socket, head);
-  };
-  server.on("upgrade", novncWsUpgradeHandler);
 
   // ── Audit widget embed script ──────────────────────────────────────────────
   // Served at /embed/audit-widget.js
@@ -308,9 +253,6 @@ ensureAuditCampaignScopeColumn().catch((err) =>
 );
 ensureTrainingQueryTables().catch((err) =>
   console.warn("[Startup] ensureTrainingQueryTables failed (non-fatal):", err.message)
-);
-ensureCtrDriveRampColumns().catch((err) =>
-  console.warn("[Startup] ensureCtrDriveRampColumns failed (non-fatal):", err.message)
 );
 
 // One-time migration: set Eagle Air Co (campaign 3) to V4 training engine.

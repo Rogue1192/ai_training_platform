@@ -23,9 +23,6 @@ nixPkgs = [
   "pango",
   "cairo",
   "glib",
-  "x11vnc",
-  "novnc",
-  "python3Packages.websockify",
   "bash"
 ]
 

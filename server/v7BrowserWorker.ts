@@ -1,6 +1,7 @@
 import path from "path";
 import fs from "fs";
 import { V7Account, V7Proxy } from "../drizzle/schema";
+import { decrypt } from "./encryption";
 
 /**
  * V7 Browser Worker
@@ -42,10 +43,7 @@ function getFingerprint(accountId: number): number {
 function buildProxyString(proxy: V7Proxy | null): string | undefined {
   if (!proxy) return undefined;
   try {
-    // Stored as encrypted but we decrypt at runtime via the encrypt/decrypt util
-    // For now, treat encryptedConnectionString as the raw connection string
-    // (the CTR settings page stores it encrypted — V7 proxies store it the same way)
-    return proxy.encryptedConnectionString;
+    return decrypt(proxy.encryptedConnectionString);
   } catch {
     return undefined;
   }

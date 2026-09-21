@@ -85,7 +85,7 @@ function AddAccountModal({ open, onClose, onSuccess }: { open: boolean; onClose:
           <div className="space-y-1.5">
             <Label>Password</Label>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-            <p className="text-xs text-muted-foreground">Stored encrypted. Do not enable 2FA on these accounts.</p>
+            <p className="text-xs text-muted-foreground">Stored encrypted. Multi-factor authentication is completed through the browser-profile setup flow.</p>
           </div>
           <div className="space-y-1.5">
             <Label>Proxy (optional)</Label>
@@ -95,7 +95,7 @@ function AddAccountModal({ open, onClose, onSuccess }: { open: boolean; onClose:
                 <SelectItem value="__none__">No proxy</SelectItem>
                 {(proxies ?? []).map((p: any) => (
                   <SelectItem key={p.id} value={String(p.id)}>
-                    {p.city}, {p.state} — {p.provider}
+                    {[p.city, p.state].filter(Boolean).join(", ") || "Unspecified location"} — {p.country ?? "US"}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -256,11 +256,11 @@ export default function V7Accounts() {
     },
     {
       title: "Google AI Mode Accounts",
-      description: `${googleAiModeAccounts.length} account${googleAiModeAccounts.length !== 1 ? "s" : ""} — used for Google AI Mode training & CTR sessions`,
+      description: `${googleAiModeAccounts.length} account${googleAiModeAccounts.length !== 1 ? "s" : ""} — used for Google AI Mode training sessions`,
       icon: <Sparkles className="w-4 h-4" />,
       accounts: googleAiModeAccounts,
       emptyText: "No Google AI Mode accounts yet",
-      emptySubtext: "Add Google accounts to enable AI Mode training and CTR sessions",
+      emptySubtext: "Add Google accounts to enable AI Mode training sessions",
     },
   ];
 
@@ -306,15 +306,14 @@ export default function V7Accounts() {
         ))}
       </div>
 
-      {/* CloakBrowser notice */}
+      {/* Browser runtime status */}
       <div className="flex items-start gap-3 p-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5">
         <AlertTriangle className="w-5 h-5 text-yellow-400 mt-0.5 shrink-0" />
         <div>
-          <p className="text-sm font-medium text-yellow-300">CloakBrowser Pro License Required</p>
+          <p className="text-sm font-medium text-yellow-300">Browser Runtime Transition in Progress</p>
           <p className="text-xs text-muted-foreground mt-1">
-            V7 training sessions use CloakBrowser Pro to launch real browser instances for each account.
-            Add your license key in <strong>CTR Module → Settings → CloakBrowser</strong> to activate live sessions.
-            Until then, V7 runs in simulation mode (debate logic executes but no real browser is launched).
+            CloakBrowser remains the temporary fallback while the AI Answerforge browser-profile flow is moved to Camofox.
+            Manual login and multi-factor authentication will be enabled only after the isolated browser-runtime validation is complete.
           </p>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { Brain, MousePointerClick } from "lucide-react";
+import { Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const MODULES = [
@@ -9,13 +9,6 @@ const MODULES = [
     icon: Brain,
     rootPath: "/",
     matchPrefixes: ["/", "/campaigns", "/businesses", "/packages", "/client-dashboards", "/prompts", "/llm-insights", "/emails", "/agencies", "/cost-tracking", "/audit", "/settings"],
-  },
-  {
-    id: "ctr",
-    label: "CTR Module",
-    icon: MousePointerClick,
-    rootPath: "/ctr",
-    matchPrefixes: ["/ctr"],
   },
 ];
 

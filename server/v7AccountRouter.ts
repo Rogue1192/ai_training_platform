@@ -6,8 +6,8 @@
  */
 
 import { z } from "zod";
-import { eq, and, desc } from "drizzle-orm";
-import { router, publicProcedure } from "./_core/trpc";
+import { eq, desc } from "drizzle-orm";
+import { adminProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
 import { v7Accounts, v7Proxies, v7SessionLogs } from "../drizzle/schema";
 import { encrypt, decrypt } from "./encryption";
@@ -15,7 +15,7 @@ import { encrypt, decrypt } from "./encryption";
 export const v7AccountRouter = router({
   // ── Accounts ────────────────────────────────────────────────────────────────
   
-  listAccounts: publicProcedure.query(async () => {
+  listAccounts: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) throw new Error("Database not available");
     const accounts = await db.select({
@@ -36,7 +36,7 @@ export const v7AccountRouter = router({
     return accounts;
   }),
   
-  addAccount: publicProcedure
+  addAccount: adminProcedure
     .input(z.object({
       provider: z.enum(["chatgpt", "gemini", "google_ai_mode"]),
       email: z.string().email(),
@@ -61,7 +61,7 @@ export const v7AccountRouter = router({
       return { success: true, id: account?.id };
     }),
   
-  updateAccountStatus: publicProcedure
+  updateAccountStatus: adminProcedure
     .input(z.object({
       id: z.number(),
       status: z.enum(["active", "warming", "cooldown", "flagged", "disabled"]),
@@ -75,7 +75,7 @@ export const v7AccountRouter = router({
       return { success: true };
     }),
   
-  deleteAccount: publicProcedure
+  deleteAccount: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -86,7 +86,7 @@ export const v7AccountRouter = router({
   
   // ── Proxies ─────────────────────────────────────────────────────────────────
   
-  listProxies: publicProcedure.query(async () => {
+  listProxies: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) throw new Error("Database not available");
     const proxies = await db.select({
@@ -104,7 +104,7 @@ export const v7AccountRouter = router({
     return proxies;
   }),
   
-  addProxy: publicProcedure
+  addProxy: adminProcedure
     .input(z.object({
       connectionString: z.string(),
       city: z.string().optional(),
@@ -126,7 +126,7 @@ export const v7AccountRouter = router({
       return { success: true, id: proxy?.id };
     }),
   
-  deleteProxy: publicProcedure
+  deleteProxy: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -137,7 +137,7 @@ export const v7AccountRouter = router({
   
   // ── Session Logs ─────────────────────────────────────────────────────────────
 
-  listSessionLogs: publicProcedure
+  listSessionLogs: adminProcedure
     .input(z.object({ limit: z.number().default(20) }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -155,7 +155,7 @@ export const v7AccountRouter = router({
       return logs;
     }),
 
-  getSessionLogs: publicProcedure
+  getSessionLogs: adminProcedure
     .input(z.object({
       campaignId: z.number(),
       limit: z.number().default(50),
@@ -173,7 +173,7 @@ export const v7AccountRouter = router({
   
   // ── Pool Summary ─────────────────────────────────────────────────────────────
   
-  getPoolSummary: publicProcedure.query(async () => {
+  getPoolSummary: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) throw new Error("Database not available");
     const accounts = await db.select().from(v7Accounts);

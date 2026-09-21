@@ -33,12 +33,6 @@ import PublicAuditReport from "./pages/PublicAuditReport";
 import AuditOverageSuccess from "./pages/AuditOverageSuccess";
 import AuditWidget from "./pages/AuditWidget";
 import V7Accounts from "./pages/V7Accounts";
-// ── CTR Module pages ──────────────────────────────────────────────────────────
-import CtrDashboard from "./pages/ctr/CtrDashboard";
-import CtrCampaigns from "./pages/ctr/CtrCampaigns";
-import CtrDriveSimulation from "./pages/ctr/CtrDriveSimulation";
-import CtrAnalytics from "./pages/ctr/CtrAnalytics";
-import CtrSettings from "./pages/ctr/CtrSettings";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Redirect } from "wouter";
 import { useEffect, useRef, useMemo } from "react";
@@ -57,19 +51,8 @@ import {
   Users,
   DollarSign,
   FileBarChart,
-  MousePointerClick,
-  Navigation,
   BrainCircuit,
 } from "lucide-react";
-
-// CTR Module navigation items
-const CTR_NAV_ITEMS = [
-  { href: "/ctr", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/ctr/campaigns", label: "CTR Campaigns", icon: MousePointerClick },
-  { href: "/ctr/drive", label: "Drive Simulation", icon: Navigation },
-  { href: "/ctr/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/ctr/settings", label: "Settings", icon: SettingsIcon },
-];
 
 // Admin navigation — full platform access
 const adminNavigationItems = [
@@ -287,33 +270,6 @@ function Router() {
 
       {/* Public client intake form — no auth required */}
       <Route path="/intake/:token" component={ClientIntakeForm} />
-
-      {/* ── CTR Module routes — completely isolated from AI Answer Forge ── */}
-      <Route path="/ctr">
-        <DashboardLayout navigationItems={CTR_NAV_ITEMS}>
-          <CtrDashboard />
-        </DashboardLayout>
-      </Route>
-      <Route path="/ctr/campaigns">
-        <DashboardLayout navigationItems={CTR_NAV_ITEMS}>
-          <CtrCampaigns />
-        </DashboardLayout>
-      </Route>
-      <Route path="/ctr/drive">
-        <DashboardLayout navigationItems={CTR_NAV_ITEMS}>
-          <CtrDriveSimulation />
-        </DashboardLayout>
-      </Route>
-      <Route path="/ctr/analytics">
-        <DashboardLayout navigationItems={CTR_NAV_ITEMS}>
-          <CtrAnalytics />
-        </DashboardLayout>
-      </Route>
-      <Route path="/ctr/settings">
-        <DashboardLayout navigationItems={CTR_NAV_ITEMS}>
-          <CtrSettings />
-        </DashboardLayout>
-      </Route>
 
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
