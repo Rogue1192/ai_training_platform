@@ -7,7 +7,7 @@
 
 ## Completed scope and remaining decisions
 
-The owner has abandoned the CTR module and wants it removed while retaining the browser-account capabilities necessary for AI Answerforge. The correct implementation is a two-part change:
+At the user's direction, the CTR module was removed while retaining the browser-account capabilities necessary for AI Answerforge. This document records the resulting two-part implementation:
 
 1. Remove CTR pages, routes, workers, scheduler hooks, and related application code.
 2. Extract the remaining AI browser-account and manual-login capabilities from the CTR-named settings implementation into a standalone browser-profile feature.
@@ -89,7 +89,7 @@ The installed dependency audit also reported one high-severity transitive `adm-z
 | **B. Remove CTR; run a separate Camofox proof of concept, then cut over** | CTR disappears. Camofox runs as an internal service with one non-production AI account. CloakBrowser remains available until the POC passes. | Low-risk way to validate Camofox persistence, manual login, API integration, and Railway deployment before moving account profiles. | Requires a new Docker/Railway service, persistent volume, runtime adapter, and an approved test account. |
 | **C. Replace CloakBrowser with Camofox in the same change** | CTR disappears and V7 immediately changes browser runtime. | Removes CloakBrowser fastest. | **Not recommended.** It combines destructive code removal, profile migration, a new browser engine, a new service, and manual login changes with no rollback-tested path. |
 
-**Recommendation:** Approve **Option A** first. It removes the abandoned CTR feature while preserving current AI Answerforge behavior. Then approve **Option B** as a separate, reversible Camofox proof of concept. Only remove CloakBrowser after Camofox passes its acceptance test and the owner approves the cutover.
+**Recorded approach:** Option A was implemented first: CTR was removed while preserving current AI Answerforge behavior. Any Camofox proof of concept remains a separate, reversible step. CloakBrowser should remain available until a Camofox acceptance test passes and the owner approves a cutover.
 
 ## Proposed implementation phases
 
