@@ -19,6 +19,7 @@
 import { getDb } from "./db";
 import { campaigns, businesses } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
+import { getTrainingExecutionEligibility } from "../shared/trainingSafety";
 
 // ============= Types =============
 
@@ -144,6 +145,28 @@ export async function runPipelineStep(
   if (!business) throw new Error("Business not found");
   
   console.log(`[Pipeline] Running step "${step}" for campaign ${campaignId} (${business.name})`);
+
+  // Return before the normal success cleanup below so a held/manual training
+  // request neither creates a sprint nor rewrites campaign timestamps/errors.
+  if (step === "training") {
+    const trainingDecision = getTrainingExecutionEligibility({
+      trainingHeld: campaign.trainingHeld,
+      trainingVersion: campaign.trainingVersion,
+    });
+    if (!trainingDecision.allowed) {
+      const message = trainingDecision.reason === "held"
+        ? "Training is held. No sprint was created; release the training hold when the campaign is ready."
+        : `Training is not scheduled because engine "${trainingDecision.requestedVersion || "unset"}" is unsupported. Select V6 or V7 before releasing the hold.`;
+      console.warn(`[Pipeline] Campaign ${campaignId}: ${message}`);
+      return {
+        step,
+        success: true,
+        message,
+        data: { trainingNotScheduled: true },
+        duration: Date.now() - startTime,
+      };
+    }
+  }
   
   try {
     let result: PipelineStepResult;
@@ -678,6 +701,12 @@ export async function runFullPipeline(
     // Stop after indexing submission — training kickoff is handled by the scheduler
     // (checkPendingTrainingKickoffs) once indexingSubmittedAt is set.
     if (step === "indexing") {
+      return { stepsRun, stoppedAt: step, reason: "waiting" };
+    }
+
+    // Held or unsupported training is an intentional wait, never a completed
+    // sprint and never a failed campaign.
+    if (step === "training" && result.data?.trainingNotScheduled) {
       return { stepsRun, stoppedAt: step, reason: "waiting" };
     }
     

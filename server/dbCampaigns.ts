@@ -1,6 +1,10 @@
 import { and, eq, ne, sql, desc, gte, inArray } from "drizzle-orm";
 import { getDb } from "./db";
 import {
+  DEFAULT_TRAINING_HELD,
+  DEFAULT_TRAINING_VERSION,
+} from "../shared/trainingSafety";
+import {
   packageTiers,
   InsertPackageTier,
   PackageTier,
@@ -118,6 +122,11 @@ export async function createCampaign(campaign: Omit<InsertCampaign, "id" | "crea
   if (!db) throw new Error("Database not available");
 
   const result = await db.insert(campaigns).values({
+    // Supply application defaults explicitly rather than relying on the live
+    // database's legacy default version. Callers may override the engine only
+    // through the validated campaign router.
+    trainingVersion: DEFAULT_TRAINING_VERSION,
+    trainingHeld: DEFAULT_TRAINING_HELD,
     ...campaign,
     createdAt: new Date(),
     updatedAt: new Date(),

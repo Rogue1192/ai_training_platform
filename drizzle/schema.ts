@@ -456,8 +456,9 @@ export const campaigns = pgTable("campaigns", {
   // The pipeline reads this to know it should re-queue from the next incomplete stage.
   // Cleared automatically once the pipeline picks it up and starts running.
   resumeRequestedAt: timestamp("resumeRequestedAt"),
-  // Training engine version — 'v3' (default) | 'v4' (goal-assessment + double-endorsement graduation)
-  trainingVersion: varchar("trainingVersion", { length: 10 }).default("v3").notNull(),
+  // Training engine version — only V6 and V7 have executable workers.
+  // Direct campaign creation also sets this value explicitly in dbCampaigns.
+  trainingVersion: varchar("trainingVersion", { length: 10 }).default("v7").notNull(),
   // Training hold — when true the scheduler will NOT fire the sprint even if llm.txt/schema are verified.
   // Defaults to true (held) for all new campaigns so admins can assign the training version before launch.
   // Set to false manually via the campaign admin panel when ready to start training.

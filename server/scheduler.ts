@@ -21,6 +21,7 @@ import {
 import { resolveModel } from "./aiProviders";
 import { scheduledJobs, trainingSessions, trainingConversations, campaigns, users } from "../drizzle/schema";
 import { eq, and, lte, isNull, lt, sql, desc } from "drizzle-orm";
+import { getTrainingExecutionEligibility } from "../shared/trainingSafety";
 // V2 training system removed — all training runs through V3 (trainingWorkerV3)
 
 // Scheduler interval in milliseconds (1 minute)
@@ -915,14 +916,18 @@ export async function checkPendingTrainingKickoffs(): Promise<void> {
   if (!db) return;
 
   try {
-    // Find campaigns where indexing has been submitted but training hasn't started
+    // Find campaigns where indexing has been submitted, training is explicitly
+    // released, and training has not started. The pipeline applies the same
+    // gate again to protect against a hold being enabled between this query and
+    // the pipeline call.
     const readyCampaigns = await db
       .select()
       .from(campaigns)
       .where(
         and(
           sql`${campaigns.indexingSubmittedAt} IS NOT NULL`,
-          isNull(campaigns.trainingStartedAt)
+          isNull(campaigns.trainingStartedAt),
+          eq(campaigns.trainingHeld, false)
         )
       );
 
@@ -937,6 +942,19 @@ export async function checkPendingTrainingKickoffs(): Promise<void> {
 
     for (const campaign of readyCampaigns) {
       try {
+        const trainingDecision = getTrainingExecutionEligibility({
+          trainingHeld: campaign.trainingHeld,
+          trainingVersion: campaign.trainingVersion,
+        });
+        if (!trainingDecision.allowed) {
+          console.warn(
+            `[Scheduler] Skipping campaign ${campaign.id} training kickoff: ` +
+            (trainingDecision.reason === "held"
+              ? "training remains held"
+              : `unsupported engine "${trainingDecision.requestedVersion || "unset"}"`),
+          );
+          continue;
+        }
         console.log(`[Scheduler] Kicking off training for campaign ${campaign.id} (indexing submitted ${campaign.indexingSubmittedAt?.toISOString()})`);
         const result = await runPipelineStep(campaign.id, 'training', ownerId);
         console.log(`[Scheduler] Training kickoff for campaign ${campaign.id}: ${result.message}`);
@@ -1451,22 +1469,31 @@ export async function checkV3SprintRuns(): Promise<void> {
     const NON_PUBLISHABLE = ['llm_txt', 'schema_package', 'schema_audit', 'schema_delivery'];
 
     for (const run of pendingRuns) {
-      // Day 1 only: verify llm.txt and schema are verified before starting the sprint.
-      // Days 2-4: these were already verified on Day 1 — skip the gate to avoid
-      // blocking training if a flag was accidentally cleared.
-      // Training hold gate — applies to ALL days. Admin must explicitly release the hold
-      // via the campaign panel before the sprint fires (even if llm.txt/schema are verified).
-      const [holdCheck] = await db
-        .select({ trainingHeld: cTable.trainingHeld })
+      // Training safety applies to every day run. Retrieve the campaign once so
+      // the hold state and worker version are evaluated as one decision.
+      const [runCampaign] = await db
+        .select({
+          trainingHeld: cTable.trainingHeld,
+          trainingVersion: cTable.trainingVersion,
+        })
         .from(cTable)
         .where(eqV3(cTable.id, run.campaignId))
         .limit(1);
 
-      if (holdCheck?.trainingHeld === true) {
-        console.log(`[SchedulerV3] Campaign ${run.campaignId} is on training hold — skipping run ${run.id}`);
+      const trainingDecision = getTrainingExecutionEligibility(runCampaign ?? {});
+      if (!trainingDecision.allowed) {
+        console.warn(
+          `[SchedulerV3] Skipping run ${run.id} for campaign ${run.campaignId}: ` +
+          (trainingDecision.reason === "held"
+            ? "training is held"
+            : `unsupported engine "${trainingDecision.requestedVersion || "unset"}"`),
+        );
         continue;
       }
 
+      // Day 1 only: verify llm.txt and schema are verified before starting the sprint.
+      // Days 2-4: these were already verified on Day 1 — skip the gate to avoid
+      // blocking training if a flag was accidentally cleared.
       if (run.runDay === 1) {
         const [campaign] = await db
           .select()
@@ -1505,13 +1532,7 @@ export async function checkV3SprintRuns(): Promise<void> {
       }
 
       try {
-        // Determine which training engine to use for this campaign
-        const [runCampaign] = await db
-          .select({ trainingVersion: cTable.trainingVersion })
-          .from(cTable)
-          .where(eqV3(cTable.id, run.campaignId))
-          .limit(1);
-        const trainingVersion = runCampaign?.trainingVersion ?? 'v7';
+        const trainingVersion = trainingDecision.version;
 
         console.log(`[Scheduler] Executing training day run ${run.id} (campaign ${run.campaignId}, day ${run.runDay}, engine ${trainingVersion})`);
 
@@ -1522,11 +1543,6 @@ export async function checkV3SprintRuns(): Promise<void> {
           // V6 kept temporarily for any legacy campaigns still on v6
           const { runTrainingDay: runTrainingDayV6 } = await import('./trainingWorkerV6');
           await runTrainingDayV6(run.campaignId, run.id);
-        } else {
-          // Unknown version — default to V7
-          console.warn(`[Scheduler] Unknown trainingVersion '${trainingVersion}' for campaign ${run.campaignId} — defaulting to V7`);
-          const { runTrainingDay: runTrainingDayV7 } = await import('./trainingWorkerV7');
-          await runTrainingDayV7(run.campaignId, run.id);
         }
 
         // After each sprint run completes, check if all 4 sprint days are now done.

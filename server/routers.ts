@@ -14,53 +14,6 @@ export const appRouter = router({
         hasSession: !!ctx.user,
       };
     }),
-    // Debug endpoint to check Supabase configuration
-    debug: publicProcedure.query(async ({ ctx }) => {
-      const { isSupabaseConfigured } = await import("./_core/supabase");
-      const authHeader = ctx.req.headers.authorization;
-      
-      let tokenInfo = null;
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        const token = authHeader.substring(7);
-        tokenInfo = {
-          present: true,
-          length: token.length,
-          prefix: token.substring(0, 20) + "...",
-        };
-        
-        // Try to verify the token if Supabase is configured
-        if (isSupabaseConfigured) {
-          try {
-            const { supabase } = await import("./_core/supabase");
-            const { data, error } = await supabase.auth.getUser(token);
-            tokenInfo = {
-              ...tokenInfo,
-              verified: !error,
-              userId: data?.user?.id || null,
-              email: data?.user?.email || null,
-              error: error?.message || null,
-            };
-          } catch (e: any) {
-            tokenInfo = {
-              ...tokenInfo,
-              verified: false,
-              error: e.message,
-            };
-          }
-        }
-      } else {
-        tokenInfo = { present: false };
-      }
-      
-      return {
-        supabaseConfigured: isSupabaseConfigured,
-        supabaseUrl: process.env.SUPABASE_URL ? "set" : "missing",
-        supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ? "set" : "missing",
-        databaseUrl: process.env.DATABASE_URL ? "set" : "missing",
-        token: tokenInfo,
-        user: ctx.user,
-      };
-    }),
     logout: publicProcedure.mutation(() => {
       // Auth is JWT-based via Supabase Bearer tokens — no server-side session cookie to clear.
       // The client calls supabase.auth.signOut() directly after this returns.
@@ -1728,8 +1681,9 @@ scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "custom"]),
           ]).optional(),
           // Training hold — when true the scheduler will not fire the sprint
           trainingHeld: z.boolean().optional(),
-          // Training engine version — 'v3' | 'v4' | 'v5'
-          trainingVersion: z.enum(["v3", "v4", "v5", "v6", "v7"]).optional(),
+          // Only implemented workers are selectable. Unsupported values are
+          // intentionally rejected instead of being silently routed to V7.
+          trainingVersion: z.enum(["v6", "v7"]).optional(),
           // Primary keywords — 3 core money keywords driving query generation
           primaryKeywords: z.array(z.string()).optional(),
         })

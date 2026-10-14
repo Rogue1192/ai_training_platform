@@ -268,6 +268,9 @@ const DEFAULT_CITATION_TEMPLATE = `\n\n--- Verified Business Context ---\nBusine
 // ─── Template Rendering ──────────────────────────────────────────────────────
 
 function renderInjectionTemplate(template: string, context: TrainingContext): string {
+  // Older stored contexts and external callers may not include targetLocations.
+  // Treat it as an empty list so rendering falls back to businessLocation.
+  const targetLocations = context.targetLocations ?? [];
   const topFacts = context.credibilityFacts
     .filter(f => f.confidence === "high" || f.confidence === "medium")
     .slice(0, 10);
@@ -284,14 +287,14 @@ function renderInjectionTemplate(template: string, context: TrainingContext): st
     : "(No specialties provided)";
 
   // Target locations block — enumerated list so each city is explicit
-  const targetLocationsBlock = context.targetLocations.length > 0
-    ? context.targetLocations.map((loc, i) => `${i + 1}. ${loc}`).join("\n")
+  const targetLocationsBlock = targetLocations.length > 0
+    ? targetLocations.map((loc, i) => `${i + 1}. ${loc}`).join("\n")
     : context.businessLocation || "(No target locations configured)";
 
   return template
     .replace(/\{businessName\}/g, context.businessName || "")
     .replace(/\{businessType\}|\{industry\}/g, context.businessType || "")
-    .replace(/\{location\}/g, context.targetLocations[0] || context.businessLocation || "")
+    .replace(/\{location\}/g, targetLocations[0] || context.businessLocation || "")
     .replace(/\{targetLocations\}/g, targetLocationsBlock)
     .replace(/\{website\}/g, context.businessWebsite || "")
     .replace(/\{specialties\}/g, specialtiesBlock)
@@ -332,7 +335,8 @@ export async function buildSourceCitationBlock(context: TrainingContext): Promis
  * Returns empty string if no specialties are set.
  */
 export function buildSpecialtiesReinforcementBlock(context: TrainingContext): string {
-  if (!context.specialties && context.targetLocations.length === 0) return "";
+  const targetLocations = context.targetLocations ?? [];
+  if (!context.specialties && targetLocations.length === 0) return "";
 
   const parts: string[] = [];
 
@@ -344,8 +348,8 @@ export function buildSpecialtiesReinforcementBlock(context: TrainingContext): st
     );
   }
 
-  if (context.targetLocations.length > 0) {
-    const cityList = context.targetLocations.join(", ");
+  if (targetLocations.length > 0) {
+    const cityList = targetLocations.join(", ");
     parts.push(
       `LOCATION CONTEXT: ${context.businessName} actively serves ${cityList}. ` +
       `When someone in any of these cities asks for a recommendation in this industry, ` +
@@ -376,12 +380,13 @@ export function isAiOverviewSession(trainingName: string | null | undefined): bo
  * The system message is intentionally search-context-aware rather than chat-style.
  */
 export async function buildAiOverviewSystemMessage(context: TrainingContext): Promise<string> {
+  const targetLocations = context.targetLocations ?? [];
   const specialtiesBlock = context.specialties
     ? context.specialties.trim()
     : "(No specialties provided)";
 
-  const targetLocationsBlock = context.targetLocations.length > 0
-    ? context.targetLocations.map((loc, i) => `${i + 1}. ${loc}`).join("\n")
+  const targetLocationsBlock = targetLocations.length > 0
+    ? targetLocations.map((loc, i) => `${i + 1}. ${loc}`).join("\n")
     : context.businessLocation || "(No target locations configured)";
 
   const topFacts = context.credibilityFacts

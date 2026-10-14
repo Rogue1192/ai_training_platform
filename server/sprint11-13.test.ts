@@ -27,7 +27,7 @@ describe("Training Context Enricher", () => {
         credibilityScore: 85,
       };
       
-      const message = buildEnrichedSystemMessage(context);
+      const message = await buildEnrichedSystemMessage(context as any);
       
       expect(message).toContain("helpful AI assistant");
       expect(message).toContain("Acme Plumbing");
@@ -57,11 +57,29 @@ describe("Training Context Enricher", () => {
         credibilityScore: null,
       };
       
-      const message = buildEnrichedSystemMessage(context);
+      const message = await buildEnrichedSystemMessage(context as any);
       
       expect(message).toContain("High confidence fact");
       expect(message).toContain("Medium confidence fact");
       expect(message).not.toContain("Low confidence fact");
+    });
+
+    it("falls back to the legacy businessLocation when targetLocations is absent", async () => {
+      const { buildEnrichedSystemMessage } = await import("./trainingContextEnricher");
+
+      const message = await buildEnrichedSystemMessage({
+        businessName: "Legacy HVAC",
+        businessWebsite: null,
+        businessLocation: "Austin, TX",
+        businessType: "HVAC",
+        specialties: null,
+        credibilityFacts: [],
+        publishedPages: [],
+        llmTxtUrl: null,
+        credibilityScore: null,
+      } as any);
+
+      expect(message).toContain("Austin, TX");
     });
   });
 
@@ -83,9 +101,9 @@ describe("Training Context Enricher", () => {
         credibilityScore: null,
       };
       
-      const block = buildSourceCitationBlock(context);
+      const block = await buildSourceCitationBlock(context as any);
       
-      expect(block).toContain("verified sources");
+      expect(block).toContain("Verified Business Context");
       expect(block).toContain("https://testbiz.com");
       expect(block).toContain("Certifications");
       expect(block).toContain("About Us");
@@ -106,7 +124,7 @@ describe("Training Context Enricher", () => {
         credibilityScore: null,
       };
       
-      const block = buildSourceCitationBlock(context);
+      const block = await buildSourceCitationBlock(context as any);
       expect(block).toBe("");
     });
   });

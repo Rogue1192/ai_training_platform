@@ -1527,7 +1527,9 @@ export async function ensureCampaignColumns(): Promise<void> {
     { name: "resumeRequestedAt",  ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "resumeRequestedAt" timestamp` },
     // Sprint completion anchor — set when all 4 sprint days complete; drives 7-day rank tracking and 14-day bonus query scan cadence
     { name: "sprintCompletedAt",  ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "sprintCompletedAt" timestamp` },
-    // Training engine version — 'v3' (default) | 'v4' (goal-assessment + double-endorsement graduation)
+    // Legacy-database fallback only. New application-created campaigns explicitly
+    // use the executable V7 default in dbCampaigns; reconcile this DDL default
+    // through an approved migration rather than changing it at application boot.
     { name: "trainingVersion",    ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "trainingVersion" varchar(10) NOT NULL DEFAULT 'v3'` },
     // llm.txt and schema verification flags
     { name: "llmTxtVerified",     ddl: `ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "llmTxtVerified" boolean NOT NULL DEFAULT false` },
